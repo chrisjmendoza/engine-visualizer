@@ -1,16 +1,23 @@
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PresetSelector } from "./PresetSelector";
 import { useEngineStore } from "../../state/engineStore";
-import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
+import {
+  DEFAULT_ANIMATION,
+  DEFAULT_CONFIG,
+  DEFAULT_PLAYBACK_SPEED,
+} from "../../engine/constants";
 import { ENGINE_PRESETS, type EnginePreset } from "../../engine/presets";
 
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
+    comparisonConfig: null,
     preferences: { displayUnit: "mm", showLabels: true },
     rpm: DEFAULT_ANIMATION.rpm,
+    playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
   });
@@ -104,5 +111,34 @@ describe("PresetSelector", () => {
     for (const preset of ENGINE_PRESETS) {
       expect(getPresetButton(preset)).toHaveAttribute("aria-pressed", "false");
     }
+  });
+
+  describe("comparison slot", () => {
+    it("applies a preset to comparisonConfig (engine B) only, leaving config (engine A) untouched", async () => {
+      act(() => {
+        useEngineStore.getState().enableComparison();
+      });
+      const user = userEvent.setup();
+      render(<PresetSelector slot="comparison" />);
+
+      const preset = ENGINE_PRESETS.find((p) => p.id === "supra-2jzgte");
+      if (!preset) throw new Error("expected supra-2jzgte preset to exist");
+
+      await user.click(getPresetButton(preset));
+
+      expect(useEngineStore.getState().comparisonConfig).toEqual(preset.config);
+      expect(useEngineStore.getState().config).toEqual(DEFAULT_CONFIG);
+    });
+
+    it("marks a preset pressed against its own slot's config, independent of the other slot", () => {
+      act(() => {
+        const preset = ENGINE_PRESETS[0];
+        useEngineStore.getState().enableComparison(preset.config);
+      });
+      render(<PresetSelector slot="comparison" />);
+
+      const first = ENGINE_PRESETS[0];
+      expect(getPresetButton(first)).toHaveAttribute("aria-pressed", "true");
+    });
   });
 });

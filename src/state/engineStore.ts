@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../engine/constants";
+import {
+  DEFAULT_ANIMATION,
+  DEFAULT_CONFIG,
+  DEFAULT_PLAYBACK_SPEED,
+} from "../engine/constants";
+import type { PlaybackSpeed } from "../engine/constants";
 import type {
   CrankMechanismConfig,
   DisplayUnit,
@@ -17,12 +22,26 @@ import type {
  */
 interface EngineStore {
   config: CrankMechanismConfig;
+  /**
+   * Engine B for side-by-side comparison, or null when comparison is off.
+   * Both engines share rpm, playback state, and crank angle, so visible
+   * differences are purely geometric.
+   */
+  comparisonConfig: CrankMechanismConfig | null;
   preferences: UserPreferences;
   rpm: number;
+  /** Visual time scale for rendered motion only; readouts use true rpm. */
+  playbackSpeed: PlaybackSpeed;
   isPlaying: boolean;
   crankAngleRad: number;
 
   setConfig: (partial: Partial<CrankMechanismConfig>) => void;
+  /** Turns comparison on, seeding engine B (defaults to a copy of engine A). */
+  enableComparison: (initial?: CrankMechanismConfig) => void;
+  disableComparison: () => void;
+  /** No-op while comparison is off. */
+  setComparisonConfig: (partial: Partial<CrankMechanismConfig>) => void;
+  setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setDisplayUnit: (unit: DisplayUnit) => void;
   setShowLabels: (show: boolean) => void;
   setRpm: (rpm: number) => void;
@@ -46,13 +65,27 @@ function initialIsPlaying(): boolean {
 
 export const useEngineStore = create<EngineStore>((set) => ({
   config: DEFAULT_CONFIG,
+  comparisonConfig: null,
   preferences: { displayUnit: "mm", showLabels: true },
   rpm: DEFAULT_ANIMATION.rpm,
+  playbackSpeed: DEFAULT_PLAYBACK_SPEED,
   isPlaying: initialIsPlaying(),
   crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
 
   setConfig: (partial) =>
     set((state) => ({ config: { ...state.config, ...partial } })),
+  enableComparison: (initial) =>
+    set((state) => ({
+      comparisonConfig: initial ?? { ...state.config },
+    })),
+  disableComparison: () => set({ comparisonConfig: null }),
+  setComparisonConfig: (partial) =>
+    set((state) =>
+      state.comparisonConfig
+        ? { comparisonConfig: { ...state.comparisonConfig, ...partial } }
+        : {},
+    ),
+  setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
   setDisplayUnit: (unit) =>
     set((state) => ({
       preferences: { ...state.preferences, displayUnit: unit },

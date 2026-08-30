@@ -1,16 +1,23 @@
 /**
- * Verifies the static scene layout derived from a configuration: where the
- * cylinder head sits for a given compression ratio, and that the auto-framing
- * bounds contain everything the scene draws at the validated extremes.
+ * Verifies the static scene layout derived from the configurations: where the
+ * cylinder head sits for a given compression ratio, how a comparison pair is
+ * placed side by side, and that the auto-framing bounds contain everything the
+ * scene draws at the validated extremes.
  *
- * Pure arithmetic on `deriveProportions`, so it needs no WebGL.
+ * Pure arithmetic on `deriveProportions` and `deriveLayout`, so it needs no
+ * WebGL.
  */
 
 import { describe, expect, it } from "vitest";
 import { calculateClearanceHeightMm } from "../engine/calculations";
 import { DEFAULT_CONFIG, INPUT_RANGES } from "../engine/constants";
 import type { CrankMechanismConfig } from "../engine/types";
-import { deriveProportions } from "./sceneGeometry";
+import {
+  COMPARISON_GAP_FRACTION,
+  deriveLayout,
+  deriveProportions,
+} from "./sceneGeometry";
+import type { PlacedMechanism, SceneBounds } from "./sceneGeometry";
 
 /** Geometry extremes that satisfy the `rodLength > stroke / 2` rule. */
 const GEOMETRIES: Array<
@@ -184,5 +191,148 @@ describe("deriveProportions — auto-framing bounds", () => {
     expect(Number.isFinite(p.clearanceHeightMm)).toBe(true);
     expect(Number.isFinite(p.bounds.maxY)).toBe(true);
     expect(p.cylinderWallTopYMm).toBeGreaterThan(p.crownAtTdcYMm);
+  });
+});
+
+/** A large-displacement V8 cylinder and a small four-cylinder's cylinder. */
+const LS7: CrankMechanismConfig = {
+  boreMm: 104.8,
+  strokeMm: 101.6,
+  rodLengthMm: 168.15,
+  compressionRatio: 11,
+};
+
+const B6_1_6: CrankMechanismConfig = {
+  boreMm: 78,
+  strokeMm: 83.6,
+  rodLengthMm: 133.4,
+  compressionRatio: 9.4,
+};
+
+/** World-space extents of a placed mechanism. */
+function worldBounds(placed: PlacedMechanism): SceneBounds {
+  const { bounds } = placed.proportions;
+  return {
+    minX: bounds.minX + placed.offsetXMm,
+    maxX: bounds.maxX + placed.offsetXMm,
+    minY: bounds.minY,
+    maxY: bounds.maxY,
+  };
+}
+
+describe("deriveLayout — single engine", () => {
+  it("places one mechanism at the origin and frames its own bounds", () => {
+    const layout = deriveLayout(DEFAULT_CONFIG, null);
+
+    expect(layout.secondary).toBeNull();
+    expect(layout.primary.offsetXMm).toBe(0);
+    expect(layout.primary.config).toBe(DEFAULT_CONFIG);
+    expect(layout.bounds).toEqual(deriveProportions(DEFAULT_CONFIG).bounds);
+  });
+});
+
+describe("deriveLayout — comparison pair", () => {
+  it("draws both engines at the same scale, unchanged from standalone", () => {
+    const layout = deriveLayout(LS7, B6_1_6);
+
+    // Identical proportions to each engine on its own: the layout only moves
+    // mechanisms, it never rescales them.
+    expect(layout.primary.proportions).toEqual(deriveProportions(LS7));
+    expect(layout.secondary?.proportions).toEqual(deriveProportions(B6_1_6));
+  });
+
+  it("lets the larger engine tower over the smaller one", () => {
+    const layout = deriveLayout(LS7, B6_1_6);
+    const big = worldBounds(layout.primary);
+    const small = worldBounds(layout.secondary!);
+
+    const bigHeight = big.maxY - big.minY;
+    const smallHeight = small.maxY - small.minY;
+
+    expect(bigHeight).toBeGreaterThan(smallHeight);
+    // The union takes the taller engine's height, so the shared zoom is set
+    // by the LS7 and the B6 is drawn genuinely smaller.
+    expect(layout.bounds.maxY - layout.bounds.minY).toBeCloseTo(
+      Math.max(bigHeight, smallHeight),
+      10,
+    );
+    expect(layout.bounds.maxY).toBeCloseTo(Math.max(big.maxY, small.maxY), 10);
+  });
+
+  it("puts engine A on the left and engine B on the right", () => {
+    const layout = deriveLayout(LS7, B6_1_6);
+    const a = worldBounds(layout.primary);
+    const b = worldBounds(layout.secondary!);
+
+    expect(a.maxX).toBeLessThan(b.minX);
+  });
+
+  it("separates them by a gap proportional to their mean width", () => {
+    const layout = deriveLayout(LS7, B6_1_6);
+    const a = worldBounds(layout.primary);
+    const b = worldBounds(layout.secondary!);
+
+    const widthA = a.maxX - a.minX;
+    const widthB = b.maxX - b.minX;
+    const expectedGap = (COMPARISON_GAP_FRACTION * (widthA + widthB)) / 2;
+
+    expect(b.minX - a.maxX).toBeCloseTo(expectedGap, 10);
+    expect(expectedGap).toBeGreaterThan(0);
+  });
+
+  it("centers the pair on x = 0 so the camera need not pan when toggled", () => {
+    const layout = deriveLayout(LS7, B6_1_6);
+    expect((layout.bounds.minX + layout.bounds.maxX) / 2).toBeCloseTo(0, 10);
+  });
+
+  it("mirrors the placement when the two engines are swapped", () => {
+    const forward = deriveLayout(LS7, B6_1_6);
+    const reversed = deriveLayout(B6_1_6, LS7);
+
+    expect(reversed.primary.offsetXMm).toBeCloseTo(
+      -forward.secondary!.offsetXMm,
+      10,
+    );
+    expect(reversed.secondary!.offsetXMm).toBeCloseTo(
+      -forward.primary.offsetXMm,
+      10,
+    );
+    expect(reversed.bounds.maxX).toBeCloseTo(forward.bounds.maxX, 10);
+  });
+
+  for (const [nameA, geometryA] of GEOMETRIES) {
+    for (const [nameB, geometryB] of GEOMETRIES) {
+      it(`keeps the pair separated and framed (${nameA} vs ${nameB})`, () => {
+        // Pair the extremes of geometry with the extremes of compression.
+        const configA = configFor(geometryA, INPUT_RANGES.compressionRatio.min);
+        const configB = configFor(geometryB, INPUT_RANGES.compressionRatio.max);
+        const layout = deriveLayout(configA, configB);
+        const a = worldBounds(layout.primary);
+        const b = worldBounds(layout.secondary!);
+
+        // Neither mechanism's drawn extent may reach into the other's.
+        expect(a.maxX).toBeLessThan(b.minX);
+
+        // The framed union contains both, exactly.
+        expect(layout.bounds.minX).toBeCloseTo(a.minX, 10);
+        expect(layout.bounds.maxX).toBeCloseTo(b.maxX, 10);
+        expect(layout.bounds.minY).toBeCloseTo(Math.min(a.minY, b.minY), 10);
+        expect(layout.bounds.maxY).toBeCloseTo(Math.max(a.maxY, b.maxY), 10);
+
+        for (const value of Object.values(layout.bounds)) {
+          expect(Number.isFinite(value)).toBe(true);
+        }
+      });
+    }
+  }
+
+  it("widens the framed union compared with either engine alone", () => {
+    const solo = deriveLayout(LS7, null);
+    const pair = deriveLayout(LS7, B6_1_6);
+
+    const soloWidth = solo.bounds.maxX - solo.bounds.minX;
+    const pairWidth = pair.bounds.maxX - pair.bounds.minX;
+
+    expect(pairWidth).toBeGreaterThan(soloWidth);
   });
 });

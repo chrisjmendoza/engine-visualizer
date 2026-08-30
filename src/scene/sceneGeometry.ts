@@ -49,6 +49,13 @@ export const CAMERA_DISTANCE_MM = 1000;
 /** Fraction of extra space left around the mechanism when auto-framing. */
 export const FRAME_PADDING = 1.1;
 
+/**
+ * Gap between compared engines, as a fraction of their mean width. Scaling it
+ * to the engines themselves keeps the pair looking equally spaced whether the
+ * comparison is two small motorcycle singles or two large-bore V8 cylinders.
+ */
+export const COMPARISON_GAP_FRACTION = 0.18;
+
 /** Cosmetic part sizes, all derived from the configured engine dimensions. */
 export interface MechanismProportions {
   boreMm: number;
@@ -109,8 +116,11 @@ export interface MechanismProportions {
   /** Z plane for unlit reference geometry, in front of every solid part. */
   referenceZMm: number;
 
-  /** Static extents used to auto-frame the orthographic camera (§12.2). */
-  bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  /**
+   * Static extents of this mechanism, relative to its own crankshaft center.
+   * Used to place it on the stage and to auto-frame the camera (§12.2).
+   */
+  bounds: SceneBounds;
 }
 
 /**
@@ -238,12 +248,108 @@ export function deriveProportions(
   };
 }
 
+/** Axis-aligned extents in scene millimeters. */
+export interface SceneBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/** One mechanism placed on the stage. */
+export interface PlacedMechanism {
+  config: CrankMechanismConfig;
+  proportions: MechanismProportions;
+  /** X offset of this mechanism's crankshaft center, in scene millimeters. */
+  offsetXMm: number;
+}
+
 /**
- * Subscribes to the configured engine dimensions and memoizes the derived
- * part sizes, so Three.js geometry is rebuilt only when a dimension actually
- * changes — never on an animation frame (§18).
+ * Where each mechanism sits and what the camera must frame.
+ *
+ * Both engines are drawn at the same scale — 1 scene unit is 1 mm for
+ * everything — so a large engine genuinely towers over a small one. Only the
+ * offsets differ; neither mechanism is ever scaled to fit.
  */
-export function useMechanismProportions(): MechanismProportions {
+export interface SceneLayout {
+  /** Engine A, on the left when a comparison is shown. */
+  primary: PlacedMechanism;
+  /** Engine B, on the right, or null when comparison is off. */
+  secondary: PlacedMechanism | null;
+  /** Union of every placed mechanism's extents, in world coordinates. */
+  bounds: SceneBounds;
+}
+
+function widthOf(bounds: SceneBounds): number {
+  return bounds.maxX - bounds.minX;
+}
+
+/**
+ * Places one or two mechanisms side by side and returns the union of their
+ * extents for auto-framing.
+ *
+ * With a comparison engine, the pair is laid out left to right — A then a gap
+ * proportional to their mean width, then B — and centered on x = 0, so the
+ * camera position does not have to move laterally when comparison toggles.
+ */
+export function deriveLayout(
+  config: CrankMechanismConfig,
+  comparisonConfig: CrankMechanismConfig | null,
+): SceneLayout {
+  const proportions = deriveProportions(config);
+
+  if (!comparisonConfig) {
+    return {
+      primary: { config, proportions, offsetXMm: 0 },
+      secondary: null,
+      bounds: proportions.bounds,
+    };
+  }
+
+  const comparisonProportions = deriveProportions(comparisonConfig);
+
+  const widthA = widthOf(proportions.bounds);
+  const widthB = widthOf(comparisonProportions.bounds);
+  const gap = (COMPARISON_GAP_FRACTION * (widthA + widthB)) / 2;
+  const total = widthA + gap + widthB;
+  const left = -total / 2;
+
+  // Each mechanism's own bounds are relative to its crankshaft center, so the
+  // offset is whatever puts its left edge at the intended position.
+  const offsetA = left - proportions.bounds.minX;
+  const offsetB = left + widthA + gap - comparisonProportions.bounds.minX;
+
+  return {
+    primary: { config, proportions, offsetXMm: offsetA },
+    secondary: {
+      config: comparisonConfig,
+      proportions: comparisonProportions,
+      offsetXMm: offsetB,
+    },
+    bounds: {
+      minX: left,
+      maxX: left + total,
+      minY: Math.min(
+        proportions.bounds.minY,
+        comparisonProportions.bounds.minY,
+      ),
+      maxY: Math.max(
+        proportions.bounds.maxY,
+        comparisonProportions.bounds.maxY,
+      ),
+    },
+  };
+}
+
+/**
+ * Subscribes to both engine configurations and memoizes the stage layout.
+ * Recomputed only when a configuration changes or comparison is toggled.
+ */
+export function useSceneLayout(): SceneLayout {
   const config = useEngineStore((s) => s.config);
-  return useMemo(() => deriveProportions(config), [config]);
+  const comparisonConfig = useEngineStore((s) => s.comparisonConfig);
+  return useMemo(
+    () => deriveLayout(config, comparisonConfig),
+    [config, comparisonConfig],
+  );
 }

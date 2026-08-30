@@ -11,6 +11,8 @@ import {
 import { mmToIn, radToDeg } from "../../engine/units";
 import type { DisplayUnit, MechanismState } from "../../engine/types";
 import { formatRounded } from "../shared/formatting";
+import { resolveSlotConfig } from "../shared/configSlot";
+import type { ConfigSlot } from "../shared/configSlot";
 import styles from "./CalculationPanel.module.css";
 
 function lengthForDisplay(mm: number, unit: DisplayUnit): string {
@@ -40,40 +42,55 @@ function describeMechanism(state: MechanismState, unit: DisplayUnit): string {
   );
 }
 
+export interface CalculationPanelProps {
+  /**
+   * Which engine's results to show: `"primary"` (engine A, `store.config`)
+   * or `"comparison"` (engine B, `store.comparisonConfig`). Defaults to
+   * `"primary"`. RPM, playback, and crank angle are shared by both engines,
+   * so only the config-derived values differ between slots.
+   */
+  slot?: ConfigSlot;
+}
+
 /**
  * Calculated results panel (TECHNICAL_DESIGN.md §15). Every value is
  * recomputed from store state through the tested `src/engine` functions —
  * this component holds no mechanical math of its own. Values are rounded
  * only for display; the underlying calculations keep full precision.
  */
-export function CalculationPanel() {
+export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
   const config = useEngineStore((state) => state.config);
+  const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
+  const slotConfig = resolveSlotConfig(slot, config, comparisonConfig);
   const rpm = useEngineStore((state) => state.rpm);
   const crankAngleRad = useEngineStore((state) => state.crankAngleRad);
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
 
-  const mechanism = calculateMechanismState(config, crankAngleRad);
+  const mechanism = calculateMechanismState(slotConfig, crankAngleRad);
   const displacementCc = calculateCylinderDisplacementCc(
-    config.boreMm,
-    config.strokeMm,
+    slotConfig.boreMm,
+    slotConfig.strokeMm,
   );
   const boreStrokeRatio = calculateBoreStrokeRatio(
-    config.boreMm,
-    config.strokeMm,
+    slotConfig.boreMm,
+    slotConfig.strokeMm,
   );
   const rodStrokeRatio = calculateRodStrokeRatio(
-    config.rodLengthMm,
-    config.strokeMm,
+    slotConfig.rodLengthMm,
+    slotConfig.strokeMm,
   );
-  const meanPistonSpeedMps = calculateMeanPistonSpeedMps(config.strokeMm, rpm);
+  const meanPistonSpeedMps = calculateMeanPistonSpeedMps(
+    slotConfig.strokeMm,
+    rpm,
+  );
   const clearanceVolumeCc = calculateClearanceVolumeCc(
-    config.boreMm,
-    config.strokeMm,
-    config.compressionRatio,
+    slotConfig.boreMm,
+    slotConfig.strokeMm,
+    slotConfig.compressionRatio,
   );
   const clearanceHeightMm = calculateClearanceHeightMm(
-    config.strokeMm,
-    config.compressionRatio,
+    slotConfig.strokeMm,
+    slotConfig.compressionRatio,
   );
 
   const results: { label: string; value: string }[] = [

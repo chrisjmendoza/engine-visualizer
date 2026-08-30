@@ -10,7 +10,9 @@
  * no React state.
  */
 
-import type { Object3D } from "three";
+import { useMemo, useRef } from "react";
+import type { RefObject } from "react";
+import type { Group, Object3D } from "three";
 import type { MechanismState } from "../engine/types";
 
 export interface MechanismObjects {
@@ -52,4 +54,44 @@ export function applyMechanismTransforms(
   if (objects.piston) {
     objects.piston.position.y = state.pistonPinYmm;
   }
+}
+
+/**
+ * The three moving groups of one mechanism, as React refs.
+ *
+ * Grouping them lets the stage own a set per engine and hand it to the
+ * component that draws that engine, without either side reaching into the
+ * other's internals.
+ */
+export interface MechanismRefs {
+  crank: RefObject<Group | null>;
+  rod: RefObject<Group | null>;
+  piston: RefObject<Group | null>;
+}
+
+/** Creates one mechanism's group refs, stable for the component's lifetime. */
+export function useMechanismRefs(): MechanismRefs {
+  const crank = useRef<Group>(null);
+  const rod = useRef<Group>(null);
+  const piston = useRef<Group>(null);
+  return useMemo(() => ({ crank, rod, piston }), [crank, rod, piston]);
+}
+
+/**
+ * Reads the current group for each ref into a caller-owned carrier and applies
+ * the state. The carrier is refilled in place, so a frame that drives several
+ * mechanisms still allocates nothing (§11).
+ *
+ * A ref that is empty — a comparison engine that has not mounted yet, or has
+ * just unmounted — simply leaves that slot null and is skipped.
+ */
+export function applyMechanismState(
+  carrier: MechanismObjects,
+  refs: MechanismRefs,
+  state: MechanismState,
+): void {
+  carrier.crank = refs.crank.current;
+  carrier.rod = refs.rod.current;
+  carrier.piston = refs.piston.current;
+  applyMechanismTransforms(carrier, state);
 }

@@ -32,3 +32,15 @@ export const TWO_PI = Math.PI * 2;
 
 /** How often the animation loop mirrors the live crank angle into the store. */
 export const READOUT_SYNC_HZ = 10;
+
+/**
+ * Visual playback-speed multipliers. Rendered motion advances at
+ * `rpm × playbackSpeed`; every calculated readout keeps using the true RPM.
+ * Even idle speeds (600 RPM = 10 rev/s) strobe at 60 fps, so the default
+ * slows rendering to one-tenth of real time.
+ */
+export const PLAYBACK_SPEEDS = [1, 0.5, 0.25, 0.1, 0.02] as const;
+
+export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
+
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 0.1;

@@ -3,15 +3,22 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { CalculationPanel } from "./CalculationPanel";
 import { useEngineStore } from "../../state/engineStore";
-import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
+import {
+  DEFAULT_ANIMATION,
+  DEFAULT_CONFIG,
+  DEFAULT_PLAYBACK_SPEED,
+} from "../../engine/constants";
 import { calculateCylinderDisplacementCc } from "../../engine/calculations";
 import { formatRounded } from "../shared/formatting";
+import type { CrankMechanismConfig } from "../../engine/types";
 
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
+    comparisonConfig: null,
     preferences: { displayUnit: "mm", showLabels: true },
     rpm: DEFAULT_ANIMATION.rpm,
+    playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
     crankAngleRad: 0,
   });
@@ -107,5 +114,27 @@ describe("CalculationPanel", () => {
       useEngineStore.setState({ crankAngleRad: Math.PI / 2 });
     });
     expect(getResultValue("Current crank angle")).toBe("90.0°");
+  });
+
+  it("renders engine B's own values when given the comparison slot", () => {
+    const comparisonConfig: CrankMechanismConfig = {
+      boreMm: 100,
+      strokeMm: 90,
+      rodLengthMm: 160,
+      compressionRatio: 9,
+    };
+    act(() => {
+      useEngineStore.getState().enableComparison(comparisonConfig);
+    });
+
+    render(<CalculationPanel slot="comparison" />);
+
+    // Literal values computed independently for boreMm=100, strokeMm=90,
+    // rather than by calling the function under test.
+    expect(getResultValue("Cylinder displacement")).toBe("706.9 cc");
+    expect(getResultValue("Bore-to-stroke ratio")).toBe("1.11:1");
+
+    // Engine A's own config (still DEFAULT_CONFIG) is untouched.
+    expect(useEngineStore.getState().config).toEqual(DEFAULT_CONFIG);
   });
 });

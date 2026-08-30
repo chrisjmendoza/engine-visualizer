@@ -5,6 +5,8 @@ import { validateConfig } from "../../engine/validation";
 import { inToMm, mmToIn } from "../../engine/units";
 import type { CrankMechanismConfig, DisplayUnit } from "../../engine/types";
 import { formatTrimmed } from "../shared/formatting";
+import { resolveSlotConfig } from "../shared/configSlot";
+import type { ConfigSlot } from "../shared/configSlot";
 import styles from "./EngineGeometryControls.module.css";
 
 type ConfigField = keyof CrankMechanismConfig;
@@ -97,6 +99,15 @@ function useFieldDraft(
   return [state, setState] as const;
 }
 
+export interface EngineGeometryControlsProps {
+  /**
+   * Which engine this instance edits: `"primary"` (engine A, `store.config`)
+   * or `"comparison"` (engine B, `store.comparisonConfig`). Defaults to
+   * `"primary"` so existing, non-comparison usage is unaffected.
+   */
+  slot?: ConfigSlot;
+}
+
 /**
  * Bore, stroke, connecting-rod length, and compression-ratio inputs
  * (TECHNICAL_DESIGN.md §16). The first three display in the selected unit;
@@ -109,31 +120,41 @@ function useFieldDraft(
  * with the mechanical-terms message from the offending `ValidationIssue`
  * shown next to *that* field, which may differ from the field the user is
  * typing in (e.g. shrinking the stroke can invalidate an unchanged rod
- * length) — otherwise. Invalid values never reach the store.
+ * length) — otherwise. Invalid values never reach the store. The validation
+ * flow is identical for both slots; only which config is read and which
+ * setter a successful edit commits through differs.
  */
-export function EngineGeometryControls() {
+export function EngineGeometryControls({
+  slot = "primary",
+}: EngineGeometryControlsProps) {
   const config = useEngineStore((state) => state.config);
+  const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
+  const slotConfig = resolveSlotConfig(slot, config, comparisonConfig);
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
   const setConfig = useEngineStore((state) => state.setConfig);
+  const setComparisonConfig = useEngineStore(
+    (state) => state.setComparisonConfig,
+  );
+  const commitSlot = slot === "comparison" ? setComparisonConfig : setConfig;
 
   const [boreState, setBoreState] = useFieldDraft(
     "boreMm",
-    config.boreMm,
+    slotConfig.boreMm,
     displayUnit,
   );
   const [strokeState, setStrokeState] = useFieldDraft(
     "strokeMm",
-    config.strokeMm,
+    slotConfig.strokeMm,
     displayUnit,
   );
   const [rodState, setRodState] = useFieldDraft(
     "rodLengthMm",
-    config.rodLengthMm,
+    slotConfig.rodLengthMm,
     displayUnit,
   );
   const [ratioState, setRatioState] = useFieldDraft(
     "compressionRatio",
-    config.compressionRatio,
+    slotConfig.compressionRatio,
     displayUnit,
   );
 
@@ -171,12 +192,16 @@ export function EngineGeometryControls() {
     const mmValue = isLengthField(field)
       ? toMillimeters(parsed, displayUnit)
       : parsed;
-    const candidate = { ...config, [field]: mmValue } as CrankMechanismConfig;
+    const candidate = {
+      ...slotConfig,
+      [field]: mmValue,
+    } as CrankMechanismConfig;
     const result = validateConfig(candidate);
 
     if (result.ok) {
-      // The field's own hook clears its draft/error once `config` updates.
-      setConfig({ [field]: mmValue } as Partial<CrankMechanismConfig>);
+      // The field's own hook clears its draft/error once the slot's config
+      // updates.
+      commitSlot({ [field]: mmValue } as Partial<CrankMechanismConfig>);
       return;
     }
 

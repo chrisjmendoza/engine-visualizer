@@ -4,13 +4,19 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EngineGeometryControls } from "./EngineGeometryControls";
 import { useEngineStore } from "../../state/engineStore";
-import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
+import {
+  DEFAULT_ANIMATION,
+  DEFAULT_CONFIG,
+  DEFAULT_PLAYBACK_SPEED,
+} from "../../engine/constants";
 
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
+    comparisonConfig: null,
     preferences: { displayUnit: "mm", showLabels: true },
     rpm: DEFAULT_ANIMATION.rpm,
+    playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
   });
@@ -164,5 +170,58 @@ describe("EngineGeometryControls", () => {
       /compression ratio/i,
     ) as HTMLInputElement;
     expect(ratioInputAfterMm.value).toBe(draftBefore);
+  });
+
+  describe("comparison slot", () => {
+    it("seeds engine B as a copy of engine A when comparison is enabled", () => {
+      act(() => {
+        useEngineStore.getState().enableComparison();
+      });
+      expect(useEngineStore.getState().comparisonConfig).toEqual(
+        useEngineStore.getState().config,
+      );
+
+      render(<EngineGeometryControls slot="comparison" />);
+      // DEFAULT_CONFIG.boreMm is 86; engine B starts out showing the same
+      // value as engine A until it is edited.
+      const boreInput = screen.getByLabelText(
+        /bore \(mm\)/i,
+      ) as HTMLInputElement;
+      expect(boreInput.value).toBe("86");
+    });
+
+    it("commits an edit to comparisonConfig (engine B) without touching config (engine A)", async () => {
+      act(() => {
+        useEngineStore.getState().enableComparison();
+      });
+      const user = userEvent.setup();
+      render(<EngineGeometryControls slot="comparison" />);
+
+      const boreInput = screen.getByLabelText(/bore \(mm\)/i);
+      await user.clear(boreInput);
+      await user.type(boreInput, "90");
+
+      expect(useEngineStore.getState().comparisonConfig?.boreMm).toBe(90);
+      expect(useEngineStore.getState().config.boreMm).toBe(
+        DEFAULT_CONFIG.boreMm,
+      );
+    });
+
+    it("commits an edit to config (engine A) without touching comparisonConfig (engine B), while comparing", async () => {
+      act(() => {
+        useEngineStore.getState().enableComparison();
+      });
+      const user = userEvent.setup();
+      render(<EngineGeometryControls slot="primary" />);
+
+      const boreInput = screen.getByLabelText(/bore \(mm\)/i);
+      await user.clear(boreInput);
+      await user.type(boreInput, "95");
+
+      expect(useEngineStore.getState().config.boreMm).toBe(95);
+      expect(useEngineStore.getState().comparisonConfig?.boreMm).toBe(
+        DEFAULT_CONFIG.boreMm,
+      );
+    });
   });
 });

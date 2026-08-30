@@ -265,6 +265,8 @@ The global store will hold user-controlled animation values, but it should not b
 
 The live animation loop will use local references where possible. This prevents the entire React interface from rerendering 60 times per second.
 
+**Amendment (2026-08-30) — playback speed and comparison:** Animation state also carries a visual `playbackSpeed` multiplier (1× to 1/50×, default 1/10×) because realistic engine speeds strobe at display frame rates; readouts always use true RPM. The store additionally holds an optional `comparisonConfig` (engine B) that shares rpm, playback state, and crank angle with engine A and is rendered beside it at the same millimeter scale.
+
 **Live readout throttling:** The results panel and the crank-angle slider display values that change every frame while playing (crank angle, piston displacement, rod angle). These readouts must be driven by a throttled store sync (roughly 10 updates per second is sufficient for legibility) rather than per-frame state updates. When playback is paused or the user scrubs, the displayed values update immediately and exactly.
 
 ---

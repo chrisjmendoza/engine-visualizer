@@ -2,17 +2,32 @@ import { useId, useState } from "react";
 import { useEngineStore } from "../../state/engineStore";
 import { rpmSchema } from "../../engine/validation";
 import { degToRad, radToDeg } from "../../engine/units";
+import { PLAYBACK_SPEEDS } from "../../engine/constants";
+import type { PlaybackSpeed } from "../../engine/constants";
 import { formatRounded } from "../shared/formatting";
 import styles from "./AnimationControls.module.css";
 
+/** Compact multiplier labels shown on the playback-speed control. */
+const PLAYBACK_SPEED_LABELS: Record<PlaybackSpeed, string> = {
+  1: "1×",
+  0.5: "1/2×",
+  0.25: "1/4×",
+  0.1: "1/10×",
+  0.02: "1/50×",
+};
+
 /**
- * Play/pause, RPM, and crank-angle scrub controls (TECHNICAL_DESIGN.md §11,
- * §16). While playing, the slider follows the store's throttled
- * `crankAngleRad` readout (~10 Hz, §7.3) purely by subscribing to the
- * store — this component adds no animation-frame logic of its own.
- * Scrubbing calls `scrubTo`, which pauses playback per the store's
- * documented semantics; changing RPM calls `setRpm` without touching the
- * angle, so playback resumes from wherever it was.
+ * Play/pause, RPM, crank-angle scrub, and playback-speed controls
+ * (TECHNICAL_DESIGN.md §11, §16). While playing, the slider follows the
+ * store's throttled `crankAngleRad` readout (~10 Hz, §7.3) purely by
+ * subscribing to the store — this component adds no animation-frame logic
+ * of its own. Scrubbing calls `scrubTo`, which pauses playback per the
+ * store's documented semantics; changing RPM calls `setRpm` without
+ * touching the angle, so playback resumes from wherever it was.
+ *
+ * `playbackSpeed` only scales how fast the rendered mechanism appears to
+ * move — it never changes `rpm`, so every calculated readout (mean piston
+ * speed, etc.) keeps reflecting the true engine speed.
  */
 export function AnimationControls() {
   const isPlaying = useEngineStore((state) => state.isPlaying);
@@ -21,6 +36,9 @@ export function AnimationControls() {
 
   const rpm = useEngineStore((state) => state.rpm);
   const setRpm = useEngineStore((state) => state.setRpm);
+
+  const playbackSpeed = useEngineStore((state) => state.playbackSpeed);
+  const setPlaybackSpeed = useEngineStore((state) => state.setPlaybackSpeed);
 
   const crankAngleRad = useEngineStore((state) => state.crankAngleRad);
   const scrubTo = useEngineStore((state) => state.scrubTo);
@@ -42,6 +60,8 @@ export function AnimationControls() {
   const rpmInputId = useId();
   const rpmErrorId = useId();
   const angleInputId = useId();
+  const speedGroupId = useId();
+  const speedHintId = useId();
 
   function handleRpmChange(rawText: string) {
     setRpmField((prev) => ({ ...prev, draft: rawText }));
@@ -128,6 +148,36 @@ export function AnimationControls() {
           </output>
         </div>
       </div>
+
+      <fieldset className={styles.speedFieldset} aria-describedby={speedHintId}>
+        <legend className={styles.legend}>Playback speed</legend>
+        <div className={styles.speedOptions}>
+          {PLAYBACK_SPEEDS.map((speed) => {
+            const optionId = `${speedGroupId}-${speed}`;
+            return (
+              <label
+                key={speed}
+                className={styles.speedOption}
+                htmlFor={optionId}
+              >
+                <input
+                  id={optionId}
+                  className={styles.speedRadio}
+                  type="radio"
+                  name={speedGroupId}
+                  value={speed}
+                  checked={playbackSpeed === speed}
+                  onChange={() => setPlaybackSpeed(speed)}
+                />
+                {PLAYBACK_SPEED_LABELS[speed]}
+              </label>
+            );
+          })}
+        </div>
+        <p className={styles.hint} id={speedHintId}>
+          Slows rendering only; readouts use true RPM.
+        </p>
+      </fieldset>
     </div>
   );
 }

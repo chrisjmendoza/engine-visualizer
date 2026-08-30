@@ -3,13 +3,19 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AnimationControls } from "./AnimationControls";
 import { useEngineStore } from "../../state/engineStore";
-import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
+import {
+  DEFAULT_ANIMATION,
+  DEFAULT_CONFIG,
+  DEFAULT_PLAYBACK_SPEED,
+} from "../../engine/constants";
 
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
+    comparisonConfig: null,
     preferences: { displayUnit: "mm", showLabels: true },
     rpm: DEFAULT_ANIMATION.rpm,
+    playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
   });
@@ -86,5 +92,31 @@ describe("AnimationControls", () => {
     await user.type(rpmInput, "2000");
 
     expect(useEngineStore.getState().crankAngleRad).toBe(1.2345);
+  });
+
+  it("commits the selected playback-speed multiplier", async () => {
+    const user = userEvent.setup();
+    render(<AnimationControls />);
+
+    expect(useEngineStore.getState().playbackSpeed).toBe(
+      DEFAULT_PLAYBACK_SPEED,
+    );
+
+    await user.click(screen.getByLabelText("1/2×"));
+    expect(useEngineStore.getState().playbackSpeed).toBe(0.5);
+
+    await user.click(screen.getByLabelText("1×"));
+    expect(useEngineStore.getState().playbackSpeed).toBe(1);
+
+    await user.click(screen.getByLabelText("1/50×"));
+    expect(useEngineStore.getState().playbackSpeed).toBe(0.02);
+  });
+
+  it("labels the playback-speed control with a hint that it only affects rendering", () => {
+    render(<AnimationControls />);
+
+    expect(
+      screen.getByText(/slows rendering only/i, { exact: false }),
+    ).toBeInTheDocument();
   });
 });

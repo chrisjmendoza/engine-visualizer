@@ -1,10 +1,10 @@
 import { Suspense, lazy } from "react";
 import { AnimationControls } from "../components/controls/AnimationControls";
-import { EngineGeometryControls } from "../components/controls/EngineGeometryControls";
-import { PresetSelector } from "../components/controls/PresetSelector";
+import { ComparisonToggle } from "../components/controls/ComparisonToggle";
 import { UnitSelector } from "../components/controls/UnitSelector";
 import { ApplicationShell } from "../components/layout/ApplicationShell";
-import { CalculationPanel } from "../components/results/CalculationPanel";
+import { EnginePanel } from "../components/layout/EnginePanel";
+import { useEngineStore } from "../state/engineStore";
 
 /**
  * Three.js (~330 kB gzipped) loads in its own chunk so the controls and
@@ -16,7 +16,21 @@ const EngineViewport = lazy(() =>
   })),
 );
 
+/**
+ * Application root (TECHNICAL_DESIGN.md §16). `AnimationControls` and
+ * `UnitSelector` are shared: RPM, play/pause, playback speed, crank angle,
+ * and display unit all apply to both engines when comparing. Each engine's
+ * presets, geometry inputs, and calculated results are grouped by
+ * `EnginePanel`, one per slot. In the default (non-comparison) state, a
+ * single unlabeled `EnginePanel` renders exactly the controls this app has
+ * always shown; enabling comparison adds a second, explicitly labeled
+ * "Engine B" group without changing engine A's.
+ */
 export function App() {
+  const isComparing = useEngineStore(
+    (state) => state.comparisonConfig !== null,
+  );
+
   return (
     <ApplicationShell
       viewport={
@@ -26,11 +40,17 @@ export function App() {
       }
       panel={
         <>
-          <PresetSelector />
-          <EngineGeometryControls />
+          <ComparisonToggle />
           <AnimationControls />
           <UnitSelector />
-          <CalculationPanel />
+          {isComparing ? (
+            <>
+              <EnginePanel slot="primary" heading="Engine A" />
+              <EnginePanel slot="comparison" heading="Engine B" />
+            </>
+          ) : (
+            <EnginePanel slot="primary" />
+          )}
         </>
       }
     />

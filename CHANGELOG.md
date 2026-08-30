@@ -8,6 +8,12 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### feat: engine comparison mode and playback speed
+
+- **Playback speed**: rendered motion can be slowed to 1/2×, 1/4×, 1/10× (new default), or 1/50× of real time — 600 RPM is 10 revs/second, which strobes at 60 fps. Slow-motion affects rendering only; every calculated readout still uses true RPM.
+- **Comparison mode**: "Add comparison engine" renders a second complete mechanism beside the first at a strictly shared millimeter scale, driven by the same crank angle and RPM, so all visible differences are purely geometric. Engine B gets its own presets, geometry controls, and results panel ("Engine A" left, "Engine B" right, matching the viewport). The scene mechanism was refactored into a reusable per-config `CrankMechanism` component — the architectural stepping stone toward multi-cylinder layouts (§24).
+- Full suite now 285 tests.
+
 ### feat: sports-car engine presets and compression ratio
 
 - **Engine presets** (`src/engine/presets.ts`): one-click per-cylinder geometry for nine well-known engines — Honda S2000 AP1 (F20C) and AP2 (F22C1), Mazda Miata NA 1.6 (B6), NA/NB 1.8 (BP), and ND 2.0 (PE), Corvette C6 (LS3) and Z06 (LS7), Toyota Supra (2JZ-GTE), and Honda Type R (K20A). Bore and stroke come from factory specs; every rod length and stock compression ratio is corroborated by at least two independent sources (cited in code comments, market variants noted). Preset tests pin each engine's advertised displacement (within 2%) and factory compression ratio as independent literals.

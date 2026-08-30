@@ -13,14 +13,15 @@
  * shank is therefore drawn at the true center-to-center rod length.
  */
 
-import type { RefObject } from "react";
+import type { Ref } from "react";
 import type { Group } from "three";
 import type { MechanismProportions } from "./sceneGeometry";
 import { SCENE_COLORS } from "./sceneGeometry";
 
 interface ConnectingRodProps {
   p: MechanismProportions;
-  ref: RefObject<Group | null>;
+  /** Stage-owned ref to this part's group; the frame loop drives it. */
+  ref: Ref<Group>;
 }
 
 export function ConnectingRod({ p, ref }: ConnectingRodProps) {
