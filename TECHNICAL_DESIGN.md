@@ -152,7 +152,7 @@ On smaller screens:
 | Styling                     | CSS Modules           | Keeps styling local without adding a larger UI framework               |
 | Formatting                  | Prettier              | Provides consistent formatting                                         |
 | Static analysis             | oxlint                | Ships with the current Vite template; fast, ESLint-compatible rule set |
-| Hosting                     | GitHub Pages          | Free static hosting appropriate for a client-only portfolio demo       |
+| Hosting                     | Vercel                | Git-linked auto-deploys with previews for a client-only portfolio demo |
 | CI                          | GitHub Actions        | Runs lint, format check, tests, and production build on every push     |
 
 > **Amendment (2026-08-30):** The Vite template now ships oxlint rather than ESLint, along with Vite 8, TypeScript 6, and React 19.2. React Three Fiber v9 requires React 19, so these versions are compatible. The original draft named ESLint; oxlint is used instead.
@@ -953,7 +953,9 @@ _Added 2026-08-30 — the original draft did not cover hosting or CI, both of wh
 
 ### 26.1 Hosting
 
-The production build deploys to GitHub Pages via a GitHub Actions workflow that runs on pushes to `main`. Because Pages serves project sites from a subpath (`/engine-visualizer/`), `vite.config.ts` sets `base` accordingly.
+The application deploys to Vercel: the GitHub repository is linked to a Vercel project, so every push to `main` builds and deploys automatically, and branches get preview deployments. The app is served from the domain root, so `vite.config.ts` needs no `base` override.
+
+> **Amendment (2026-08-30):** The project originally deployed to GitHub Pages via a workflow. Hosting was consolidated on Vercel; the Pages workflow and the subpath `base` were removed.
 
 ### 26.2 Continuous integration
 

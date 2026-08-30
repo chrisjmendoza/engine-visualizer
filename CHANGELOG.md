@@ -8,6 +8,10 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### chore: consolidate hosting on Vercel
+
+- Removed the GitHub Pages deploy workflow and disabled Pages on the repo; Vercel (git-linked, auto-deploy on push to `main`) is now the sole host. The Vite `base` override is gone — the app serves from the domain root everywhere, including local dev (now `http://localhost:5173/`).
+
 ### feat: static piston-travel range readout
 
 - The results panel now shows "Piston travel (from TDC): 0 – {stroke}" as a fixed reference directly above the live piston-displacement readout, in the selected display unit, per engine slot.
