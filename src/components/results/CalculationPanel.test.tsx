@@ -116,6 +116,35 @@ describe("CalculationPanel", () => {
     expect(getResultValue("Current crank angle")).toBe("90.0°");
   });
 
+  it("displays the static piston-travel range (0 to stroke) in millimeters", () => {
+    render(<CalculationPanel />);
+    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+  });
+
+  it("displays the static piston-travel range in inches", () => {
+    useEngineStore.setState({
+      preferences: { displayUnit: "in", showLabels: true },
+    });
+    render(<CalculationPanel />);
+    // 86 / 25.4 = 3.3858... in, rounded to 3 decimals.
+    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 3.386 in");
+  });
+
+  it("keeps the piston-travel range unchanged as the crank angle changes", () => {
+    render(<CalculationPanel />);
+    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+
+    act(() => {
+      useEngineStore.setState({ crankAngleRad: Math.PI / 2 });
+    });
+    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+
+    act(() => {
+      useEngineStore.setState({ crankAngleRad: Math.PI });
+    });
+    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+  });
+
   it("renders engine B's own values when given the comparison slot", () => {
     const comparisonConfig: CrankMechanismConfig = {
       boreMm: 100,
@@ -133,6 +162,9 @@ describe("CalculationPanel", () => {
     // rather than by calling the function under test.
     expect(getResultValue("Cylinder displacement")).toBe("706.9 cc");
     expect(getResultValue("Bore-to-stroke ratio")).toBe("1.11:1");
+    // Piston-travel range reflects engine B's own stroke (90 mm), not
+    // engine A's (86 mm).
+    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 90.00 mm");
 
     // Engine A's own config (still DEFAULT_CONFIG) is untouched.
     expect(useEngineStore.getState().config).toEqual(DEFAULT_CONFIG);

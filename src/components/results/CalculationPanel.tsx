@@ -123,6 +123,13 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
       value: `${formatRounded(radToDeg(mechanism.crankAngleRad), 1)}°`,
     },
     {
+      // Static reference range: TDC (0) to BDC (the stroke), independent of
+      // crank angle. Placed directly above the live per-angle displacement
+      // row so the pair reads as "range, then current".
+      label: "Piston travel (from TDC)",
+      value: `0 – ${lengthForDisplay(slotConfig.strokeMm, displayUnit)}`,
+    },
+    {
       label: "Piston displacement from TDC",
       value: lengthForDisplay(mechanism.pistonDisplacementMm, displayUnit),
     },
