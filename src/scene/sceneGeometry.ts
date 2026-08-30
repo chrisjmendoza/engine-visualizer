@@ -6,14 +6,17 @@
  * toward the cylinder head, +Z is toward the viewer (the camera looks down
  * -Z). Crank angle 0 is TDC (§8.2).
  *
- * This module contains NO mechanism math: every animated position comes from
- * `calculateMechanismState`. What lives here is purely cosmetic part sizing —
- * how thick a crank web is drawn, how deep the piston is extruded — all of it
- * derived from the real configured bore, stroke, and rod length so the
- * mechanism is never distorted relative to itself (§12.2).
+ * This module contains NO engine math: every animated position comes from
+ * `calculateMechanismState`, and the clearance height above the piston crown
+ * comes from `calculateClearanceHeightMm`. What lives here is purely cosmetic
+ * part sizing — how thick a crank web is drawn, how deep the piston is
+ * extruded — all of it derived from the real configured bore, stroke, rod
+ * length, and compression ratio so the mechanism is never distorted relative
+ * to itself (§12.2).
  */
 
 import { useMemo } from "react";
+import { calculateClearanceHeightMm } from "../engine/calculations";
 import type { CrankMechanismConfig } from "../engine/types";
 import { useEngineStore } from "../state/engineStore";
 
@@ -31,6 +34,8 @@ export const SCENE_COLORS = {
   /** Fixed structure: bore walls, deck. */
   structure: "#39414d",
   structureDark: "#2a313b",
+  /** Bore wall alongside the clearance volume, lifted so the space reads. */
+  clearance: "#4d5766",
   piston: "#c3ccd8",
   rod: "#98a3b2",
   crank: "#7c8797",
@@ -78,9 +83,20 @@ export interface MechanismProportions {
 
   cylinderWallThicknessMm: number;
   cylinderWallBottomYMm: number;
+  /**
+   * Deck face: the underside of the head and the top of the bore walls. Sits
+   * exactly `clearanceHeightMm` above the piston crown at TDC, so raising the
+   * compression ratio visibly lowers the head onto the piston.
+   */
   cylinderWallTopYMm: number;
   cylinderDepthMm: number;
   deckThicknessMm: number;
+  /** Piston crown height at TDC: the floor of the clearance volume. */
+  crownAtTdcYMm: number;
+  /** Clearance height from `calculateClearanceHeightMm` (never recomputed). */
+  clearanceHeightMm: number;
+  /** Thin plate marking the head face, capped to fit a tight clearance. */
+  headFaceThicknessMm: number;
 
   /** Piston-pin height at top dead center (r + l). */
   tdcPinYMm: number;
@@ -109,6 +125,9 @@ export function deriveProportions(
   const bore = Math.max(config.boreMm, 1);
   const stroke = Math.max(config.strokeMm, 1);
   const rodLength = Math.max(config.rodLengthMm, 1);
+  // Only the input is guarded, so the clearance height stays exactly what
+  // `calculateClearanceHeightMm` returns for every valid compression ratio.
+  const compressionRatio = Math.max(config.compressionRatio, 1.05);
   const r = stroke / 2;
 
   const pistonHeight = 0.6 * bore;
@@ -123,7 +142,11 @@ export function deriveProportions(
   const deckThickness = 0.1 * bore;
   const crownAtTdc = r + rodLength + pistonCrownAbovePin;
   const skirtAtBdc = rodLength - r - pistonSkirtBelowPin;
-  const wallTop = crownAtTdc + 0.12 * bore;
+  // The clearance volume is modeled as a flat disc above the crown at TDC, so
+  // the deck face is that height above the crown. Its size comes from the
+  // engine layer; the scene never recomputes stroke / (CR - 1).
+  const clearanceHeight = calculateClearanceHeightMm(stroke, compressionRatio);
+  const wallTop = crownAtTdc + clearanceHeight;
   // The bore cannot extend into the crank circle; a short rod simply means
   // the skirt leaves the bore at BDC, exactly as it would in a real engine.
   const wallBottom = Math.max(skirtAtBdc - 0.15 * bore, r + 0.06 * bore);
@@ -182,6 +205,11 @@ export function deriveProportions(
     cylinderWallTopYMm: wallTop,
     cylinderDepthMm: 0.7 * bore,
     deckThicknessMm: deckThickness,
+    crownAtTdcYMm: crownAtTdc,
+    clearanceHeightMm: clearanceHeight,
+    // Capped so a high-compression engine's thin clearance disc is still
+    // closed by a plate that cannot reach down through the piston crown.
+    headFaceThicknessMm: Math.min(0.024 * bore, 0.35 * clearanceHeight),
 
     tdcPinYMm: r + rodLength,
     bdcPinYMm: rodLength - r,
@@ -202,6 +230,8 @@ export function deriveProportions(
         r + crankWebWidth / 2,
         counterweightWidth / 2,
       ),
+      // The top of the deck, which now rides on the clearance height: a low
+      // compression ratio pushes the head up and the camera frames wider.
       maxY: wallTop + deckThickness,
       minY: -(crankExtentY + 0.06 * bore),
     },

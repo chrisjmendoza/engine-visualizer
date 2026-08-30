@@ -8,6 +8,12 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### feat: sports-car engine presets and compression ratio
+
+- **Engine presets** (`src/engine/presets.ts`): one-click per-cylinder geometry for nine well-known engines — Honda S2000 AP1 (F20C) and AP2 (F22C1), Mazda Miata NA 1.6 (B6), NA/NB 1.8 (BP), and ND 2.0 (PE), Corvette C6 (LS3) and Z06 (LS7), Toyota Supra (2JZ-GTE), and Honda Type R (K20A). Bore and stroke come from factory specs; every rod length and stock compression ratio is corroborated by at least two independent sources (cited in code comments, market variants noted). Preset tests pin each engine's advertised displacement (within 2%) and factory compression ratio as independent literals.
+- **Compression ratio** is now part of the engine configuration (dimensionless, validated 5–20:1). The clearance volume is modeled as a flat disc above the piston crown, so the rendered cylinder head sits exactly `stroke/(CR−1)` above TDC — a 13:1 Skyactiv visibly squeezes the piston while an 8.5:1 2JZ-GTE shows a tall gap — with the clearance band shaded distinctly and camera framing tracking the head position. New calculated results: clearance volume (cc) and clearance height at TDC. The compression-ratio input is unaffected by the mm/in display-unit toggle.
+- Full suite now 221 tests.
+
 ### feat: first working single-cylinder visualizer (Phases 2–5)
 
 - **Simulation** (`src/engine/`): slider-crank kinematics (`calculateMechanismState`), displacement/speed/ratio calculations, unit conversions, and Zod validation with mechanical-terms error messages and the authoritative `rodLength > stroke/2` cross-field rule. 57 unit tests covering known positions (TDC/90°/BDC/360°), invariant sweeps, and validation acceptance/rejection.

@@ -4,6 +4,11 @@
  * Drawn as a cutaway: only the two bore walls and the deck above them, so the
  * piston and rod remain visible from the fixed front viewpoint. Nothing here
  * moves, so this component rerenders only when the configuration changes.
+ *
+ * The bore walls run from the skirt clearance below up to the deck face, and
+ * are split at the piston crown's TDC height: the band above that point is the
+ * clearance volume, shaded slightly lighter so the compression space reads as
+ * a distinct volume that grows and shrinks with the compression ratio.
  */
 
 import type { MechanismProportions } from "./sceneGeometry";
@@ -14,11 +19,18 @@ interface CylinderGuideProps {
 }
 
 export function CylinderGuide({ p }: CylinderGuideProps) {
-  const wallHeight = p.cylinderWallTopYMm - p.cylinderWallBottomYMm;
-  const wallCenterY = (p.cylinderWallTopYMm + p.cylinderWallBottomYMm) / 2;
   const wallCenterX = p.boreMm / 2 + p.cylinderWallThicknessMm / 2;
+
+  // Wall below the TDC crown: the swept section the piston travels through.
+  const travelHeight = p.crownAtTdcYMm - p.cylinderWallBottomYMm;
+  const travelCenterY = (p.crownAtTdcYMm + p.cylinderWallBottomYMm) / 2;
+  // Wall beside the clearance volume, from the TDC crown up to the deck face.
+  const clearanceCenterY = p.crownAtTdcYMm + p.clearanceHeightMm / 2;
+
   const deckWidth = p.boreMm + 2 * p.cylinderWallThicknessMm;
   const deckCenterY = p.cylinderWallTopYMm + p.deckThicknessMm / 2;
+  // Head face plate, hanging just under the deck inside the clearance disc.
+  const headFaceCenterY = p.cylinderWallTopYMm - p.headFaceThicknessMm / 2;
 
   const centerlineHeight = p.bounds.maxY - p.bounds.minY;
   const centerlineCenterY = (p.bounds.maxY + p.bounds.minY) / 2;
@@ -30,15 +42,15 @@ export function CylinderGuide({ p }: CylinderGuideProps) {
 
   return (
     <group>
-      {/* Bore walls: the piston travels between them. */}
+      {/* Bore walls beside the piston's travel. */}
       {[-1, 1].map((side) => (
         <mesh
           key={side}
-          position={[side * wallCenterX, wallCenterY, 0]}
+          position={[side * wallCenterX, travelCenterY, 0]}
           castShadow={false}
         >
           <boxGeometry
-            args={[p.cylinderWallThicknessMm, wallHeight, p.cylinderDepthMm]}
+            args={[p.cylinderWallThicknessMm, travelHeight, p.cylinderDepthMm]}
           />
           <meshStandardMaterial
             color={SCENE_COLORS.structure}
@@ -48,7 +60,40 @@ export function CylinderGuide({ p }: CylinderGuideProps) {
         </mesh>
       ))}
 
-      {/* Deck / head face closing the top of the bore. */}
+      {/* Bore walls beside the clearance volume, up to the deck face. */}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`clearance${side}`}
+          position={[side * wallCenterX, clearanceCenterY, 0]}
+        >
+          <boxGeometry
+            args={[
+              p.cylinderWallThicknessMm,
+              p.clearanceHeightMm,
+              p.cylinderDepthMm,
+            ]}
+          />
+          <meshStandardMaterial
+            color={SCENE_COLORS.clearance}
+            metalness={0.5}
+            roughness={0.5}
+          />
+        </mesh>
+      ))}
+
+      {/* Head face closing the top of the clearance volume. */}
+      <mesh position={[0, headFaceCenterY, 0]}>
+        <boxGeometry
+          args={[p.boreMm, p.headFaceThicknessMm, p.cylinderDepthMm * 0.98]}
+        />
+        <meshStandardMaterial
+          color={SCENE_COLORS.clearance}
+          metalness={0.45}
+          roughness={0.55}
+        />
+      </mesh>
+
+      {/* Deck / cylinder head above the clearance volume. */}
       <mesh position={[0, deckCenterY, 0]}>
         <boxGeometry args={[deckWidth, p.deckThicknessMm, p.cylinderDepthMm]} />
         <meshStandardMaterial

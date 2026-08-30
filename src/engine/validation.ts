@@ -12,7 +12,12 @@ import { z } from "zod";
 import { INPUT_RANGES } from "./constants";
 import type { CrankMechanismConfig, ValidationIssue } from "./types";
 
-const CONFIG_FIELDS = ["boreMm", "strokeMm", "rodLengthMm"] as const;
+const CONFIG_FIELDS = [
+  "boreMm",
+  "strokeMm",
+  "rodLengthMm",
+  "compressionRatio",
+] as const;
 type ConfigField = (typeof CONFIG_FIELDS)[number];
 
 function isConfigField(field: string): field is ConfigField {
@@ -41,6 +46,16 @@ export const crankMechanismConfigSchema = z
       "Connecting-rod length",
       INPUT_RANGES.rodLengthMm,
     ),
+    compressionRatio: z
+      .number("Compression ratio must be a finite number.")
+      .min(
+        INPUT_RANGES.compressionRatio.min,
+        `Compression ratio must be at least ${INPUT_RANGES.compressionRatio.min}:1.`,
+      )
+      .max(
+        INPUT_RANGES.compressionRatio.max,
+        `Compression ratio must be at most ${INPUT_RANGES.compressionRatio.max}:1.`,
+      ),
   })
   .superRefine((value, ctx) => {
     const crankRadiusMm = value.strokeMm / 2;

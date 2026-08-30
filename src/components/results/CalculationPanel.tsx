@@ -2,6 +2,8 @@ import { useEngineStore } from "../../state/engineStore";
 import { calculateMechanismState } from "../../engine/kinematics";
 import {
   calculateBoreStrokeRatio,
+  calculateClearanceHeightMm,
+  calculateClearanceVolumeCc,
   calculateCylinderDisplacementCc,
   calculateMeanPistonSpeedMps,
   calculateRodStrokeRatio,
@@ -64,6 +66,15 @@ export function CalculationPanel() {
     config.strokeMm,
   );
   const meanPistonSpeedMps = calculateMeanPistonSpeedMps(config.strokeMm, rpm);
+  const clearanceVolumeCc = calculateClearanceVolumeCc(
+    config.boreMm,
+    config.strokeMm,
+    config.compressionRatio,
+  );
+  const clearanceHeightMm = calculateClearanceHeightMm(
+    config.strokeMm,
+    config.compressionRatio,
+  );
 
   const results: { label: string; value: string }[] = [
     {
@@ -81,6 +92,14 @@ export function CalculationPanel() {
     {
       label: "Mean piston speed",
       value: `${formatRounded(meanPistonSpeedMps, 2)} m/s`,
+    },
+    {
+      label: "Clearance volume",
+      value: `${formatRounded(clearanceVolumeCc, 1)} cc`,
+    },
+    {
+      label: "Clearance height (TDC)",
+      value: lengthForDisplay(clearanceHeightMm, displayUnit),
     },
     {
       label: "Current crank angle",

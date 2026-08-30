@@ -35,3 +35,33 @@ export function calculateBoreStrokeRatio(
 ): number {
   return boreMm / strokeMm;
 }
+
+/**
+ * Clearance volume at TDC in cubic centimeters.
+ *
+ * From CR = (Vswept + Vclearance) / Vclearance, so Vclearance =
+ * Vswept / (CR - 1). Requires compressionRatio > 1 (validation enforces
+ * a minimum well above that).
+ */
+export function calculateClearanceVolumeCc(
+  boreMm: number,
+  strokeMm: number,
+  compressionRatio: number,
+): number {
+  return (
+    calculateCylinderDisplacementCc(boreMm, strokeMm) / (compressionRatio - 1)
+  );
+}
+
+/**
+ * Height of the clearance space above the piston crown at TDC, in
+ * millimeters, modeling that space as a flat cylindrical disc of bore
+ * diameter (chamber domes, piston dishes, and gasket volume are not
+ * modeled). The bore area cancels, leaving stroke / (CR - 1).
+ */
+export function calculateClearanceHeightMm(
+  strokeMm: number,
+  compressionRatio: number,
+): number {
+  return strokeMm / (compressionRatio - 1);
+}

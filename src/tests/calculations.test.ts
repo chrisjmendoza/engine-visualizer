@@ -1,10 +1,56 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateBoreStrokeRatio,
+  calculateClearanceHeightMm,
+  calculateClearanceVolumeCc,
   calculateCylinderDisplacementCc,
   calculateMeanPistonSpeedMps,
   calculateRodStrokeRatio,
 } from "../engine/calculations";
+
+describe("calculateClearanceVolumeCc", () => {
+  it("matches a hand-computed clearance volume", () => {
+    // Swept 499.557 cc at 10.5:1 -> 499.55721421792737 / 9.5, computed
+    // independently.
+    expect(calculateClearanceVolumeCc(86, 86, 10.5)).toBeCloseTo(
+      52.5849699177,
+      6,
+    );
+  });
+
+  it("halves when (CR - 1) doubles", () => {
+    // 628.3185307179587 / 9 vs / 18, computed independently.
+    expect(calculateClearanceVolumeCc(100, 80, 10)).toBeCloseTo(
+      69.8131700798,
+      6,
+    );
+    expect(calculateClearanceVolumeCc(100, 80, 19)).toBeCloseTo(
+      34.9065850399,
+      6,
+    );
+  });
+});
+
+describe("calculateClearanceHeightMm", () => {
+  it("matches stroke / (CR - 1)", () => {
+    // 86 / 9.5, computed independently.
+    expect(calculateClearanceHeightMm(86, 10.5)).toBeCloseTo(
+      9.052631578947368,
+      9,
+    );
+  });
+
+  it("is consistent with clearance volume over the bore area", () => {
+    // height = volume / area must equal stroke / (CR - 1): the two exported
+    // functions must agree with each other for any bore.
+    const boreAreaMm2 = (Math.PI / 4) * 103.25 * 103.25;
+    const volumeMm3 = calculateClearanceVolumeCc(103.25, 92, 10.7) * 1000;
+    expect(calculateClearanceHeightMm(92, 10.7)).toBeCloseTo(
+      volumeMm3 / boreAreaMm2,
+      9,
+    );
+  });
+});
 
 describe("calculateCylinderDisplacementCc", () => {
   it("matches the hand-computed default-config displacement", () => {

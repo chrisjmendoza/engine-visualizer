@@ -230,10 +230,13 @@ interface CrankMechanismConfig {
   boreMm: number;
   strokeMm: number;
   rodLengthMm: number;
+  compressionRatio: number;
 }
 ```
 
 All engine dimensions will be stored internally in millimeters.
+
+> **Amendment (2026-08-30):** `compressionRatio` (dimensionless, validated 5–20:1) was added to the configuration. The clearance volume is modeled as a flat cylindrical disc above the piston crown at TDC — chamber domes, piston dishes, and gasket volume are not modeled — giving a clearance height of `strokeMm / (compressionRatio − 1)`. The rendered cylinder head sits exactly this height above the TDC crown, and the results panel shows clearance volume and clearance height. The application also ships preset per-cylinder geometries for well-known sports-car engines (`src/engine/presets.ts`), each with bore, stroke, rod length, and stock compression ratio corroborated by at least two independent sources.
 
 ### 7.2 User preferences
 
@@ -577,6 +580,7 @@ const DEFAULT_CONFIG: CrankMechanismConfig = {
   boreMm: 86,
   strokeMm: 86,
   rodLengthMm: 143,
+  compressionRatio: 10.5,
 };
 ```
 

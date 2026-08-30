@@ -81,4 +81,88 @@ describe("EngineGeometryControls", () => {
     expect(rodInput).toHaveAttribute("aria-describedby", alert.id);
     expect(rodInput).toHaveAttribute("aria-invalid", "true");
   });
+
+  it("commits a valid compression ratio to the store unchanged, in millimeter display mode", async () => {
+    const user = userEvent.setup();
+    render(<EngineGeometryControls />);
+
+    const ratioInput = screen.getByLabelText(/compression ratio/i);
+    await user.clear(ratioInput);
+    await user.type(ratioInput, "12");
+
+    expect(useEngineStore.getState().config.compressionRatio).toBe(12);
+  });
+
+  it("commits a valid compression ratio to the store unchanged, in inch display mode", async () => {
+    act(() => {
+      useEngineStore.getState().setDisplayUnit("in");
+    });
+    const user = userEvent.setup();
+    render(<EngineGeometryControls />);
+
+    const ratioInput = screen.getByLabelText(/compression ratio/i);
+    await user.clear(ratioInput);
+    await user.type(ratioInput, "8");
+
+    // Compression ratio is dimensionless: no mm<->in conversion applies.
+    expect(useEngineStore.getState().config.compressionRatio).toBe(8);
+  });
+
+  it("shows a validation message and does not update the store for a compression ratio above 20:1", async () => {
+    const user = userEvent.setup();
+    render(<EngineGeometryControls />);
+
+    const ratioInput = screen.getByLabelText(/compression ratio/i);
+    const ratioBefore = useEngineStore.getState().config.compressionRatio;
+
+    await user.clear(ratioInput);
+    await user.type(ratioInput, "25");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Compression ratio must be at most 20:1.");
+    expect(useEngineStore.getState().config.compressionRatio).toBe(ratioBefore);
+  });
+
+  it("shows a validation message and does not update the store for a compression ratio below 5:1", async () => {
+    const user = userEvent.setup();
+    render(<EngineGeometryControls />);
+
+    const ratioInput = screen.getByLabelText(/compression ratio/i);
+    const ratioBefore = useEngineStore.getState().config.compressionRatio;
+
+    await user.clear(ratioInput);
+    await user.type(ratioInput, "0.5");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Compression ratio must be at least 5:1.");
+    expect(useEngineStore.getState().config.compressionRatio).toBe(ratioBefore);
+  });
+
+  it("leaves the compression-ratio input's displayed value unchanged when toggling display units", () => {
+    render(<EngineGeometryControls />);
+
+    const ratioInputBefore = screen.getByLabelText(
+      /compression ratio/i,
+    ) as HTMLInputElement;
+    const draftBefore = ratioInputBefore.value;
+    expect(draftBefore).toBe("10.5");
+
+    act(() => {
+      useEngineStore.getState().setDisplayUnit("in");
+    });
+
+    const ratioInputAfterIn = screen.getByLabelText(
+      /compression ratio/i,
+    ) as HTMLInputElement;
+    expect(ratioInputAfterIn.value).toBe(draftBefore);
+
+    act(() => {
+      useEngineStore.getState().setDisplayUnit("mm");
+    });
+
+    const ratioInputAfterMm = screen.getByLabelText(
+      /compression ratio/i,
+    ) as HTMLInputElement;
+    expect(ratioInputAfterMm.value).toBe(draftBefore);
+  });
 });

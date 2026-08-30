@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { AnimationControls } from "../components/controls/AnimationControls";
 import { EngineGeometryControls } from "../components/controls/EngineGeometryControls";
+import { PresetSelector } from "../components/controls/PresetSelector";
 import { UnitSelector } from "../components/controls/UnitSelector";
 import { ApplicationShell } from "../components/layout/ApplicationShell";
 import { CalculationPanel } from "../components/results/CalculationPanel";
@@ -25,6 +26,7 @@ export function App() {
       }
       panel={
         <>
+          <PresetSelector />
           <EngineGeometryControls />
           <AnimationControls />
           <UnitSelector />

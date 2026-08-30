@@ -22,6 +22,7 @@ describe("validateConfig - acceptance", () => {
       boreMm: INPUT_RANGES.boreMm.min,
       strokeMm: INPUT_RANGES.strokeMm.min,
       rodLengthMm: INPUT_RANGES.rodLengthMm.min,
+      compressionRatio: INPUT_RANGES.compressionRatio.min,
     });
     expect(result.ok).toBe(true);
   });
@@ -31,6 +32,7 @@ describe("validateConfig - acceptance", () => {
       boreMm: 80,
       strokeMm: 100,
       rodLengthMm: 50.001,
+      compressionRatio: 10,
     });
     expect(result.ok).toBe(true);
   });
@@ -67,6 +69,7 @@ describe("validateConfig - rejection", () => {
       boreMm: 86,
       strokeMm: 86,
       rodLengthMm: 43,
+      compressionRatio: 10.5,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -81,6 +84,7 @@ describe("validateConfig - rejection", () => {
       boreMm: 86,
       strokeMm: 86,
       rodLengthMm: 30,
+      compressionRatio: 10.5,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -99,6 +103,7 @@ describe("validateConfig - rejection", () => {
       boreMm: 90,
       strokeMm: 200,
       rodLengthMm: 90,
+      compressionRatio: 10.5,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -130,6 +135,30 @@ describe("validateConfig - rejection", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("rejects a compression ratio below the practical range", () => {
+    const result = validateConfig({ ...DEFAULT_CONFIG, compressionRatio: 4 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const issue = result.issues.find(
+        (item) => item.field === "compressionRatio",
+      );
+      expect(issue?.message).toBe("Compression ratio must be at least 5:1.");
+    }
+  });
+
+  it("rejects a compression ratio above the practical range", () => {
+    const result = validateConfig({ ...DEFAULT_CONFIG, compressionRatio: 25 });
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a non-finite compression ratio", () => {
+    const result = validateConfig({
+      ...DEFAULT_CONFIG,
+      compressionRatio: Number.NaN,
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("rejects non-object input", () => {
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig(undefined).ok).toBe(false);
@@ -146,6 +175,7 @@ describe("validateConfig - rejection", () => {
       boreMm: 86,
       strokeMm: 86,
       rodLengthMm: 43,
+      compressionRatio: 10.5,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {

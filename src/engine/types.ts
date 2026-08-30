@@ -14,11 +14,19 @@
  * - Crank angle 0 is top dead center.
  */
 
-/** Physical dimensions of a single slider-crank mechanism. */
+/**
+ * Physical dimensions of a single slider-crank mechanism.
+ *
+ * `compressionRatio` is dimensionless (total volume at BDC over clearance
+ * volume at TDC). The clearance space is modeled as a flat cylindrical disc
+ * above the piston crown — chamber domes, piston dishes, and gasket volume
+ * are not modeled — so clearance height is `strokeMm / (compressionRatio - 1)`.
+ */
 export interface CrankMechanismConfig {
   boreMm: number;
   strokeMm: number;
   rodLengthMm: number;
+  compressionRatio: number;
 }
 
 export type DisplayUnit = "mm" | "in";
@@ -53,6 +61,12 @@ export interface MechanismState {
 
 /** A validation problem described in mechanical terms, tied to one input. */
 export interface ValidationIssue {
-  field: "boreMm" | "strokeMm" | "rodLengthMm" | "rpm" | "crankAngleRad";
+  field:
+    | "boreMm"
+    | "strokeMm"
+    | "rodLengthMm"
+    | "compressionRatio"
+    | "rpm"
+    | "crankAngleRad";
   message: string;
 }

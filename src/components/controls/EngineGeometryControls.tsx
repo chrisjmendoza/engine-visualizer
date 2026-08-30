@@ -9,13 +9,24 @@ import styles from "./EngineGeometryControls.module.css";
 
 type ConfigField = keyof CrankMechanismConfig;
 
-const FIELD_ORDER: ConfigField[] = ["boreMm", "strokeMm", "rodLengthMm"];
+const FIELD_ORDER: ConfigField[] = [
+  "boreMm",
+  "strokeMm",
+  "rodLengthMm",
+  "compressionRatio",
+];
 
 const FIELD_LABEL: Record<ConfigField, string> = {
   boreMm: "Bore",
   strokeMm: "Stroke",
   rodLengthMm: "Connecting-rod length",
+  compressionRatio: "Compression ratio",
 };
+
+/** Length fields display in the selected unit; ratios are dimensionless. */
+function isLengthField(field: ConfigField): boolean {
+  return field !== "compressionRatio";
+}
 
 function toDisplayValue(mm: number, unit: DisplayUnit): number {
   return unit === "in" ? mmToIn(mm) : mm;
@@ -29,8 +40,15 @@ function decimalsForUnit(unit: DisplayUnit): number {
   return unit === "in" ? 3 : 2;
 }
 
-function formatField(mm: number, unit: DisplayUnit): string {
-  return formatTrimmed(toDisplayValue(mm, unit), decimalsForUnit(unit));
+function formatField(
+  field: ConfigField,
+  value: number,
+  unit: DisplayUnit,
+): string {
+  if (!isLengthField(field)) {
+    return formatTrimmed(value, 1);
+  }
+  return formatTrimmed(toDisplayValue(value, unit), decimalsForUnit(unit));
 }
 
 interface FieldDraftState {
@@ -52,18 +70,26 @@ interface FieldDraftState {
  * `setState` call below runs synchronously in the render body, so it never
  * triggers the effect-driven cascading-render warning a `useEffect` would.
  */
-function useFieldDraft(committedMm: number, unit: DisplayUnit) {
-  const syncKey = `${committedMm}|${unit}`;
+function useFieldDraft(
+  field: ConfigField,
+  committedValue: number,
+  unit: DisplayUnit,
+) {
+  // Dimensionless fields ignore the display unit, so a unit switch neither
+  // reformats them nor clears an in-progress edit.
+  const syncKey = isLengthField(field)
+    ? `${committedValue}|${unit}`
+    : `${committedValue}`;
   const [state, setState] = useState<FieldDraftState>(() => ({
     syncKey,
-    draft: formatField(committedMm, unit),
+    draft: formatField(field, committedValue, unit),
     error: undefined,
   }));
 
   if (state.syncKey !== syncKey) {
     setState({
       syncKey,
-      draft: formatField(committedMm, unit),
+      draft: formatField(field, committedValue, unit),
       error: undefined,
     });
   }
@@ -72,7 +98,9 @@ function useFieldDraft(committedMm: number, unit: DisplayUnit) {
 }
 
 /**
- * Bore, stroke, and connecting-rod length inputs (TECHNICAL_DESIGN.md §16).
+ * Bore, stroke, connecting-rod length, and compression-ratio inputs
+ * (TECHNICAL_DESIGN.md §16). The first three display in the selected unit;
+ * compression ratio is dimensionless and unaffected by the unit toggle.
  *
  * Each field keeps a local draft string so the user can type freely. A draft
  * is converted to millimeters and checked against the full configuration via
@@ -88,13 +116,24 @@ export function EngineGeometryControls() {
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
   const setConfig = useEngineStore((state) => state.setConfig);
 
-  const [boreState, setBoreState] = useFieldDraft(config.boreMm, displayUnit);
+  const [boreState, setBoreState] = useFieldDraft(
+    "boreMm",
+    config.boreMm,
+    displayUnit,
+  );
   const [strokeState, setStrokeState] = useFieldDraft(
+    "strokeMm",
     config.strokeMm,
     displayUnit,
   );
   const [rodState, setRodState] = useFieldDraft(
+    "rodLengthMm",
     config.rodLengthMm,
+    displayUnit,
+  );
+  const [ratioState, setRatioState] = useFieldDraft(
+    "compressionRatio",
+    config.compressionRatio,
     displayUnit,
   );
 
@@ -102,6 +141,7 @@ export function EngineGeometryControls() {
     boreMm: boreState,
     strokeMm: strokeState,
     rodLengthMm: rodState,
+    compressionRatio: ratioState,
   };
   const fieldSetters: Record<
     ConfigField,
@@ -110,22 +150,27 @@ export function EngineGeometryControls() {
     boreMm: setBoreState,
     strokeMm: setStrokeState,
     rodLengthMm: setRodState,
+    compressionRatio: setRatioState,
   };
 
   const boreErrorId = useId();
   const strokeErrorId = useId();
   const rodErrorId = useId();
+  const ratioErrorId = useId();
   const errorIds: Record<ConfigField, string> = {
     boreMm: boreErrorId,
     strokeMm: strokeErrorId,
     rodLengthMm: rodErrorId,
+    compressionRatio: ratioErrorId,
   };
 
   function handleFieldChange(field: ConfigField, rawText: string) {
     fieldSetters[field]((prev) => ({ ...prev, draft: rawText }));
 
     const parsed = rawText.trim() === "" ? Number.NaN : Number(rawText);
-    const mmValue = toMillimeters(parsed, displayUnit);
+    const mmValue = isLengthField(field)
+      ? toMillimeters(parsed, displayUnit)
+      : parsed;
     const candidate = { ...config, [field]: mmValue } as CrankMechanismConfig;
     const result = validateConfig(candidate);
 
@@ -148,6 +193,10 @@ export function EngineGeometryControls() {
 
   const unitSuffix = displayUnit === "in" ? "in" : "mm";
 
+  function fieldSuffix(field: ConfigField): string {
+    return isLengthField(field) ? unitSuffix : ":1";
+  }
+
   return (
     <fieldset className={styles.fieldset}>
       <legend className={styles.legend}>Engine geometry</legend>
@@ -157,7 +206,7 @@ export function EngineGeometryControls() {
         return (
           <div className={styles.field} key={field}>
             <label className={styles.label} htmlFor={inputId}>
-              {FIELD_LABEL[field]} ({unitSuffix})
+              {FIELD_LABEL[field]} ({fieldSuffix(field)})
             </label>
             <input
               id={inputId}

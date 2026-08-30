@@ -48,6 +48,30 @@ describe("CalculationPanel", () => {
     );
   });
 
+  it("displays the clearance volume and clearance height for the default configuration", () => {
+    render(<CalculationPanel />);
+
+    // Literal values for boreMm=86, strokeMm=86, compressionRatio=10.5,
+    // computed independently from the formulas documented in
+    // src/engine/calculations.ts (Vclearance = Vswept / (CR - 1),
+    // heightMm = strokeMm / (CR - 1)) rather than by calling the functions
+    // under test.
+    expect(getResultValue("Clearance volume")).toBe("52.6 cc");
+    expect(getResultValue("Clearance height (TDC)")).toBe("9.05 mm");
+  });
+
+  it("displays the clearance height in inches when the display unit is inches", () => {
+    useEngineStore.setState({
+      preferences: { displayUnit: "in", showLabels: true },
+    });
+    render(<CalculationPanel />);
+
+    // 86 / 9.5 / 25.4 = 0.35640... in, rounded to 3 decimals.
+    expect(getResultValue("Clearance height (TDC)")).toBe("0.356 in");
+    // Clearance volume stays in cc regardless of the length display unit.
+    expect(getResultValue("Clearance volume")).toBe("52.6 cc");
+  });
+
   it("shows zero piston displacement and zero rod angle at top dead center", () => {
     render(<CalculationPanel />);
 
