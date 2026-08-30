@@ -1,0 +1,33 @@
+/* Global reset and app-wide tokens. Component styling uses CSS Modules. */
+
+:root {
+  color-scheme: dark;
+  --color-bg: #14171c;
+  --color-panel: #1d2229;
+  --color-border: #333a45;
+  --color-text: #e6e9ee;
+  --color-text-muted: #9aa3af;
+  --color-accent: #ff9f43;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
