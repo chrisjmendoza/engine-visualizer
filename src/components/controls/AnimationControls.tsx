@@ -91,37 +91,42 @@ export function AnimationControls() {
 
   return (
     <div className={styles.controls}>
-      <button
-        type="button"
-        className={styles.playButton}
-        aria-pressed={isPlaying}
-        onClick={() => (isPlaying ? pause() : play())}
-      >
-        {isPlaying ? "Pause" : "Play"}
-      </button>
+      {/* Two naturally short controls share a row (wrapping if the viewport
+          is too narrow for both) instead of each claiming a full-width
+          mobile row. */}
+      <div className={styles.topRow}>
+        <button
+          type="button"
+          className={styles.playButton}
+          aria-pressed={isPlaying}
+          onClick={() => (isPlaying ? pause() : play())}
+        >
+          {isPlaying ? "Pause" : "Play"}
+        </button>
 
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor={rpmInputId}>
-          Engine speed (RPM)
-        </label>
-        <input
-          id={rpmInputId}
-          className={styles.input}
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={10000}
-          step="any"
-          value={rpmDraft}
-          aria-invalid={rpmError ? true : undefined}
-          aria-describedby={rpmError ? rpmErrorId : undefined}
-          onChange={(event) => handleRpmChange(event.target.value)}
-        />
-        {rpmError ? (
-          <p className={styles.error} id={rpmErrorId} role="alert">
-            {rpmError}
-          </p>
-        ) : null}
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor={rpmInputId}>
+            Engine speed (RPM)
+          </label>
+          <input
+            id={rpmInputId}
+            className={styles.input}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={10000}
+            step="any"
+            value={rpmDraft}
+            aria-invalid={rpmError ? true : undefined}
+            aria-describedby={rpmError ? rpmErrorId : undefined}
+            onChange={(event) => handleRpmChange(event.target.value)}
+          />
+          {rpmError ? (
+            <p className={styles.error} id={rpmErrorId} role="alert">
+              {rpmError}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div className={styles.field}>

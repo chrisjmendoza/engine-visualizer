@@ -8,6 +8,12 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### fix: responsive layout across all screen sizes
+
+- Fixed the mobile viewport bug where the canvas inflated below a tall panel with the mechanism lost in dead space — the container now has a definite clamped height, so the auto-framing camera fills it correctly.
+- Deliberate layouts per size range: compact single-line header and tightened control density on phones; two-column control/results arrangements on tablet portrait (600–900px) via container queries; a panel minimum width guard at the 900px side-by-side boundary; a wider panel with two-column results on ≥1600px desktops; and comparison mode showing Engine A/B panels side by side at 600–900px and ≥1200px (stacked on phones), mirroring the viewport's left/right arrangement.
+- Verified with real headless-browser screenshots at 360, 768, 1024, 1440, and 1920px, in both single and comparison modes, with zero horizontal overflow at any width.
+
 ### chore: consolidate hosting on Vercel
 
 - Removed the GitHub Pages deploy workflow and disabled Pages on the repo; Vercel (git-linked, auto-deploy on push to `main`) is now the sole host. The Vite `base` override is gone — the app serves from the domain root everywhere, including local dev (now `http://localhost:5173/`).

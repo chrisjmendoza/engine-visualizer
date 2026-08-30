@@ -1,16 +1,71 @@
+/* Responsive tiers: see the comment at the top of ApplicationShell.module.css. */
+
 .group {
-  margin: 0 0 1.25rem;
+  /*
+   * Establishes a query container based on this element's own measured
+   * width — however wide it actually renders (full device width solo, a
+   * half-width column when paired via EngineComparisonLayout, a narrow
+   * side-panel column on desktop) — for `.body` below to read via
+   * `@container`. An element can't query its own size, hence the split
+   * between this (the container) and `.body` (the thing that responds).
+   */
+  container-type: inline-size;
+  margin: 0 0 0.85rem;
   padding-top: 0.25rem;
 }
 
 .group + .group {
   border-top: 1px solid var(--color-border);
-  padding-top: 1.25rem;
+  padding-top: 0.85rem;
 }
 
 .heading {
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.6rem;
   font-size: 1rem;
   font-weight: 700;
   color: var(--color-text);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  .group {
+    margin: 0 0 1.25rem;
+  }
+
+  .group + .group {
+    padding-top: 1.25rem;
+  }
+
+  .heading {
+    margin: 0 0 0.75rem;
+  }
+}
+
+/*
+ * Once `.group` has genuine room — the full-width panel on tablet
+ * portrait, but *not* a narrow half-width column when comparing two
+ * engines side by side (see EngineComparisonLayout), nor the ~300-400px
+ * side-panel column at any desktop width — arrange the geometry inputs and
+ * calculated results side by side instead of stacking. Responding to
+ * `.group`'s actual measured width (rather than a viewport media query)
+ * is what makes this correctly fall back to stacked wherever this
+ * component ends up in a narrower context, without knowing why.
+ */
+@container (min-width: 560px) {
+  .body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 1.25rem;
+    align-items: start;
+  }
+
+  /* PresetSelector's own button grid benefits from the full row; only the
+     geometry inputs and results (the next two children) pair up. */
+  .body > fieldset:first-of-type {
+    grid-column: 1 / -1;
+  }
 }

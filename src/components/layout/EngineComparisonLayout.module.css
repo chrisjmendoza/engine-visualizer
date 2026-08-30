@@ -1,0 +1,28 @@
+.grid {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tablet portrait: the panel is still full device width here (the 900px
+   viewport/panel split hasn't kicked in yet), so there's room for engine A
+   and B side by side. */
+@media (min-width: 600px) and (max-width: 899.98px) {
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: start;
+  }
+}
+
+/* Desktop: only once ApplicationShell has widened the panel column (see its
+   `[data-comparison-layout]` rule) is there enough width for two engines'
+   worth of controls side by side. */
+@media (min-width: 1200px) {
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    align-items: start;
+  }
+}

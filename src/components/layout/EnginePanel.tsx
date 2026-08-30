@@ -37,9 +37,18 @@ export function EnginePanel({ slot, heading }: EnginePanelProps) {
           {heading}
         </h2>
       ) : null}
-      <PresetSelector slot={slot} />
-      <EngineGeometryControls slot={slot} />
-      <CalculationPanel slot={slot} />
+      {/*
+       * A container query needs a container that isn't the element being
+       * queried, so `.group` (which establishes the container, sized by
+       * wherever this panel sits in the page) and `.body` (which reads
+       * that size via `@container`) have to be two different elements —
+       * see EnginePanel.module.css.
+       */}
+      <div className={styles.body}>
+        <PresetSelector slot={slot} />
+        <EngineGeometryControls slot={slot} />
+        <CalculationPanel slot={slot} />
+      </div>
     </section>
   );
 }
