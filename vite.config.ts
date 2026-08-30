@@ -2,9 +2,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// `base` matches the GitHub Pages project-site subpath.
+// GitHub Pages serves project sites from a subpath; Vercel serves from the
+// domain root and sets VERCEL=1 in its build environment.
 export default defineConfig({
-  base: "/engine-visualizer/",
+  base: process.env.VERCEL ? "/" : "/engine-visualizer/",
   plugins: [react()],
   test: {
     environment: "jsdom",

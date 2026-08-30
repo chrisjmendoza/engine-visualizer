@@ -8,6 +8,11 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### chore: Vercel integration
+
+- Vercel plugin for Claude Code enabled at project scope (`.claude/settings.json`), with the plugin's `AGENTS.md` conventions mirror.
+- `vite.config.ts` base is now deploy-target aware: `/` on Vercel builds (`VERCEL=1`), `/engine-visualizer/` for GitHub Pages and local dev.
+
 ### feat: engine comparison mode and playback speed
 
 - **Playback speed**: rendered motion can be slowed to 1/2×, 1/4×, 1/10× (new default), or 1/50× of real time — 600 RPM is 10 revs/second, which strobes at 60 fps. Slow-motion affects rendering only; every calculated readout still uses true RPM.
