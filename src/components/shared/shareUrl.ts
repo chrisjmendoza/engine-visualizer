@@ -18,10 +18,13 @@ export function getShareState(): ShareState {
     config: state.config,
     comparisonConfig: state.comparisonConfig,
     rpm: state.rpm,
+    comparisonRpm: state.comparisonRpm,
+    rpmLinked: state.rpmLinked,
     displayUnit: state.preferences.displayUnit,
     playbackSpeed: state.playbackSpeed,
     isPlaying: state.isPlaying,
     crankAngleRad: state.crankAngleRad,
+    comparisonCrankAngleRad: state.comparisonCrankAngleRad,
   };
 }
 

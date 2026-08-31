@@ -8,6 +8,13 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### feat: independent engine speeds, exposed and shareable
+
+- **Speed controls for comparison mode.** A "Link engine speeds" toggle (linked by default) splits the two engines onto their own rpm inputs, each with an "At redline" button showing that engine's actual figure — so an S2000 at 9,000 rpm against an LS7 at 7,000 is two clicks, and the speed difference is visible in the animation rather than inferred from a table.
+- **Split speeds are shareable.** `brpm` carries engine B's speed and its presence is what marks a link as unlinked (so "unlinked at matching speeds" survives the round trip); `bangle` carries engine B's crank angle when paused. A link without them leaves your current linking alone.
+- **Fixed: engine B's metrics were computed at engine A's crank angle.** An audit while wiring the controls found that piston displacement from TDC, current piston-to-head distance, and connecting-rod angle all called the kinematics with the shared angle for both engines, and mean piston speed used the shared rpm — so every one of them was wrong for engine B the moment the speeds diverged. Each now resolves engine B's own angle and speed. The crank-angle row shows a real difference when unlinked and "—" when linked.
+- **Repo hygiene**: added `.gitattributes` (`eol=lf`) so Windows checkouts stop producing CRLF files that fail the format check without anyone editing them.
+
 ### feat: shareable links, engine labels, power figures, independent redlines
 
 - **Shareable links.** The current setup lives in the URL, so a comparison can be sent to someone: `?a=s2000-ap1&b=corvette-z06-c6-ls7&rpm=3000`. Configurations matching a known car are written as preset ids, others as raw numbers; pausing before copying captures the exact crank angle. Malformed or hand-edited links degrade gracefully, and every decoded configuration passes validation, so a link can never inject impossible geometry. The URL format is documented as an append-only contract in the design doc. A Copy-link button falls back to a selectable field if the clipboard is unavailable.

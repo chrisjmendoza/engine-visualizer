@@ -1,0 +1,4 @@
+# Keep LF in the working tree on every platform. Without this, Windows
+# checkouts get CRLF, which Prettier (endOfLine: "lf") then reports as a
+# formatting failure on files nobody edited.
+* text=auto eol=lf

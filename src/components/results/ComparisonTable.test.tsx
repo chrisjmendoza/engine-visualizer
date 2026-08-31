@@ -18,9 +18,12 @@ function resetStore() {
     comparisonConfig: null,
     preferences: { displayUnit: "mm", showLabels: true },
     rpm: DEFAULT_ANIMATION.rpm,
+    comparisonRpm: DEFAULT_ANIMATION.rpm,
+    rpmLinked: true,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
     crankAngleRad: 0,
+    comparisonCrankAngleRad: 0,
   });
 }
 
@@ -189,6 +192,80 @@ describe("ComparisonTable", () => {
       "25.51 m/s",
       "+27.1%",
     ]);
+  });
+
+  describe("unlinked per-engine speed (rpmLinked: false)", () => {
+    function setUnlinkedScenario() {
+      enableComparisonWith(STROKE_90_CONFIG);
+      useEngineStore.setState({
+        rpmLinked: false,
+        rpm: 60,
+        comparisonRpm: 3000,
+        crankAngleRad: Math.PI / 4, // 45°
+        comparisonCrankAngleRad: Math.PI / 2, // 90°
+      });
+    }
+
+    it("uses engine A's shared rpm and engine B's own comparisonRpm for mean piston speed", () => {
+      setUnlinkedScenario();
+      render(<ComparisonTable />);
+
+      // Literal values computed independently: 2 x 0.086 m x 60 / 60 = 0.172
+      // m/s (A); 2 x 0.090 m x 3000 / 60 = 9.0 m/s (B, from comparisonRpm,
+      // not the shared rpm).
+      expect(getRow("Mean piston speed")).toEqual([
+        "0.17 m/s",
+        "9.00 m/s",
+        "+5132.6%",
+      ]);
+    });
+
+    it("uses the shared rpm for both engines' mean piston speed while linked", () => {
+      // rpmLinked stays true (the default) and comparisonRpm is a
+      // deliberately different value, to prove it's ignored while linked.
+      enableComparisonWith(STROKE_90_CONFIG);
+      useEngineStore.setState({ rpm: 60, comparisonRpm: 3000 });
+      render(<ComparisonTable />);
+
+      expect(getRow("Mean piston speed")).toEqual([
+        "0.17 m/s",
+        "0.18 m/s",
+        "+4.7%",
+      ]);
+    });
+
+    it("shows engine B's own comparisonCrankAngleRad and a real difference for current crank angle while unlinked", () => {
+      setUnlinkedScenario();
+      render(<ComparisonTable />);
+
+      expect(getRow("Current crank angle")).toEqual([
+        "45.0°",
+        "90.0°",
+        "+100.0%",
+      ]);
+    });
+
+    it('keeps "—" for current crank angle while linked, even though the row now supports a real difference', () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      useEngineStore.setState({ crankAngleRad: Math.PI / 4 });
+      render(<ComparisonTable />);
+
+      expect(getRow("Current crank angle")).toEqual(["45.0°", "45.0°", "—"]);
+    });
+
+    it("derives piston displacement and rod angle from each engine's own live angle while unlinked", () => {
+      setUnlinkedScenario();
+      render(<ComparisonTable />);
+
+      // Literal values computed independently from the slider-crank formula
+      // at each engine's own angle (A: 86 mm stroke at 45°; B: 90 mm
+      // stroke at 90°) — not both read from the shared crank angle.
+      expect(getRow("Piston displacement from TDC")).toEqual([
+        "15.86 mm",
+        "52.26 mm",
+        "+229.4%",
+      ]);
+    });
   });
 
   describe("metric info popups", () => {

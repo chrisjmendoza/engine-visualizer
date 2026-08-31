@@ -17,10 +17,19 @@ function resetStore() {
     comparisonConfig: null,
     preferences: { displayUnit: "mm", showLabels: true },
     rpm: DEFAULT_ANIMATION.rpm,
+    comparisonRpm: DEFAULT_ANIMATION.rpm,
+    rpmLinked: true,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
+    comparisonCrankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
   });
+}
+
+function enableComparisonWith(
+  config = { ...DEFAULT_CONFIG, redlineRpm: 8900 },
+) {
+  useEngineStore.getState().enableComparison(config);
 }
 
 beforeEach(() => {
@@ -143,5 +152,160 @@ describe("AnimationControls", () => {
     await user.click(screen.getByLabelText(PLAYBACK_SPEED_LABELS[slowest]));
 
     expect(useEngineStore.getState().playbackSpeed).toBe(slowest);
+  });
+
+  it('shows one "At redline" button next to the single rpm field when not comparing', () => {
+    render(<AnimationControls />);
+
+    expect(
+      screen.queryByLabelText(/link engine speeds/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: `At redline (${DEFAULT_CONFIG.redlineRpm.toLocaleString("en-US")})`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("sets rpm to the engine's own redline when not comparing", async () => {
+    const user = userEvent.setup();
+    render(<AnimationControls />);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: `At redline (${DEFAULT_CONFIG.redlineRpm.toLocaleString("en-US")})`,
+      }),
+    );
+
+    expect(useEngineStore.getState().rpm).toBe(DEFAULT_CONFIG.redlineRpm);
+  });
+
+  describe("comparison mode: per-engine speed", () => {
+    it("shows the link checkbox (checked by default) and a single shared rpm field", () => {
+      enableComparisonWith();
+      render(<AnimationControls />);
+
+      const linkCheckbox = screen.getByLabelText(/link engine speeds/i);
+      expect(linkCheckbox).toBeChecked();
+      expect(
+        screen.getByLabelText(/engine speed \(rpm\).*both engines/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText(/engine a speed/i),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText(/engine b speed/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("unlinking reveals two independent rpm inputs, each committing to its own store field", async () => {
+      const comparisonConfig = { ...DEFAULT_CONFIG, redlineRpm: 8900 };
+      enableComparisonWith(comparisonConfig);
+      const user = userEvent.setup();
+      render(<AnimationControls />);
+
+      await user.click(screen.getByLabelText(/link engine speeds/i));
+
+      const rpmA = screen.getByLabelText(/engine a speed \(rpm\)/i);
+      const rpmB = screen.getByLabelText(/engine b speed \(rpm\)/i);
+
+      await user.clear(rpmA);
+      await user.type(rpmA, "3000");
+      expect(useEngineStore.getState().rpm).toBe(3000);
+      // Engine B's own field is untouched by editing A's.
+      expect(useEngineStore.getState().comparisonRpm).toBe(
+        DEFAULT_ANIMATION.rpm,
+      );
+
+      await user.clear(rpmB);
+      await user.type(rpmB, "5000");
+      expect(useEngineStore.getState().comparisonRpm).toBe(5000);
+      // And editing B's doesn't touch A's, which stays at what was just set.
+      expect(useEngineStore.getState().rpm).toBe(3000);
+    });
+
+    it("re-linking hides the two inputs and re-syncs engine B's angle onto engine A's", async () => {
+      enableComparisonWith();
+      useEngineStore.setState({
+        rpmLinked: false,
+        crankAngleRad: 1.0,
+        comparisonCrankAngleRad: 2.5,
+      });
+      const user = userEvent.setup();
+      render(<AnimationControls />);
+
+      expect(useEngineStore.getState().comparisonCrankAngleRad).not.toBeCloseTo(
+        useEngineStore.getState().crankAngleRad,
+        9,
+      );
+
+      await user.click(screen.getByLabelText(/link engine speeds/i));
+
+      // setRpmLinked(true)'s documented effect: engine B's angle snaps back
+      // onto engine A's immediately, and the per-engine fields disappear.
+      expect(useEngineStore.getState().rpmLinked).toBe(true);
+      expect(useEngineStore.getState().comparisonCrankAngleRad).toBe(
+        useEngineStore.getState().crankAngleRad,
+      );
+      expect(
+        screen.queryByLabelText(/engine a speed/i),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByLabelText(/engine speed \(rpm\).*both engines/i),
+      ).toBeInTheDocument();
+    });
+
+    it("rejects an invalid rpm for one engine without touching the other engine's rpm", async () => {
+      enableComparisonWith();
+      useEngineStore.setState({ rpmLinked: false });
+      render(<AnimationControls />);
+
+      const rpmA = screen.getByLabelText(/engine a speed \(rpm\)/i);
+      const rpmBBefore = useEngineStore.getState().comparisonRpm;
+      fireEvent.change(rpmA, { target: { value: "99999" } });
+
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(useEngineStore.getState().rpm).toBe(DEFAULT_ANIMATION.rpm);
+      expect(useEngineStore.getState().comparisonRpm).toBe(rpmBBefore);
+    });
+
+    it("sets each engine's rpm to its own redline while unlinked", async () => {
+      const comparisonConfig = { ...DEFAULT_CONFIG, redlineRpm: 8900 };
+      enableComparisonWith(comparisonConfig);
+      useEngineStore.setState({ rpmLinked: false });
+      const user = userEvent.setup();
+      render(<AnimationControls />);
+
+      await user.click(
+        screen.getByRole("button", {
+          name: `At redline (${DEFAULT_CONFIG.redlineRpm.toLocaleString("en-US")})`,
+        }),
+      );
+      expect(useEngineStore.getState().rpm).toBe(DEFAULT_CONFIG.redlineRpm);
+      expect(useEngineStore.getState().comparisonRpm).toBe(
+        DEFAULT_ANIMATION.rpm,
+      );
+
+      await user.click(
+        screen.getByRole("button", { name: "At redline (8,900)" }),
+      );
+      expect(useEngineStore.getState().comparisonRpm).toBe(8900);
+      // Engine A's rpm, just set above, is untouched by engine B's button.
+      expect(useEngineStore.getState().rpm).toBe(DEFAULT_CONFIG.redlineRpm);
+    });
+
+    it("while linked, engine B's redline button sets the one shared rpm", async () => {
+      const comparisonConfig = { ...DEFAULT_CONFIG, redlineRpm: 8900 };
+      enableComparisonWith(comparisonConfig);
+      const user = userEvent.setup();
+      render(<AnimationControls />);
+
+      await user.click(
+        screen.getByRole("button", { name: "Engine B at redline (8,900)" }),
+      );
+
+      expect(useEngineStore.getState().rpm).toBe(8900);
+      expect(useEngineStore.getState().rpmLinked).toBe(true);
+    });
   });
 });

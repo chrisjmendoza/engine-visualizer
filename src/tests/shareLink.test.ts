@@ -27,13 +27,19 @@ function baseState(overrides: Partial<ShareState> = {}): ShareState {
     config: DEFAULT_CONFIG,
     comparisonConfig: null,
     rpm: DEFAULT_ANIMATION.rpm,
+    comparisonRpm: DEFAULT_ANIMATION.rpm,
+    rpmLinked: true,
     displayUnit: "mm",
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: true,
     crankAngleRad: 0,
+    comparisonCrankAngleRad: 0,
     ...overrides,
   };
 }
+
+const LS7 = ENGINE_PRESETS.find((p) => p.id === "corvette-z06-c6-ls7")!.config;
+const F20C = ENGINE_PRESETS.find((p) => p.id === "s2000-ap1")!.config;
 
 describe("encodeConfig / decodeConfig", () => {
   it("writes a preset as its id", () => {
@@ -118,6 +124,131 @@ describe("encodeShareState", () => {
       }),
     );
     expect(query).not.toContain("%");
+  });
+});
+
+describe("independent engine speeds", () => {
+  it("omits engine B's speed while the engines are linked", () => {
+    const query = encodeShareState(
+      baseState({
+        config: F20C,
+        comparisonConfig: LS7,
+        rpm: 5000,
+        comparisonRpm: 3000,
+        rpmLinked: true,
+      }),
+    );
+    expect(query).not.toContain("brpm");
+  });
+
+  it("carries engine B's speed when unlinked", () => {
+    const query = encodeShareState(
+      baseState({
+        config: F20C,
+        comparisonConfig: LS7,
+        rpm: 9000,
+        comparisonRpm: 7000,
+        rpmLinked: false,
+      }),
+    );
+    expect(query).toContain("rpm=9000");
+    expect(query).toContain("brpm=7000");
+  });
+
+  it("carries engine B's speed even when it equals engine A's", () => {
+    // Presence of `brpm` is what signals "unlinked", so it must travel even
+    // when the two speeds coincide.
+    const query = encodeShareState(
+      baseState({
+        config: F20C,
+        comparisonConfig: LS7,
+        rpm: 4000,
+        comparisonRpm: 4000,
+        rpmLinked: false,
+      }),
+    );
+    expect(query).toContain("brpm=4000");
+  });
+
+  it("omits engine B's speed when not comparing at all", () => {
+    const query = encodeShareState(
+      baseState({ comparisonConfig: null, rpmLinked: false }),
+    );
+    expect(query).not.toContain("brpm");
+  });
+
+  it("reading a link with brpm unlinks the engines", () => {
+    const state = decodeShareState(
+      "?a=s2000-ap1&b=corvette-z06-c6-ls7&brpm=7000",
+    );
+    expect(state.rpmLinked).toBe(false);
+    expect(state.comparisonRpm).toBe(7000);
+  });
+
+  it("says nothing about linking when brpm is absent", () => {
+    const state = decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7");
+    expect(state.rpmLinked).toBeUndefined();
+    expect(state.comparisonRpm).toBeUndefined();
+  });
+
+  it("ignores an out-of-range or malformed brpm without unlinking", () => {
+    expect(
+      decodeShareState("?a=s2000-ap1&brpm=99999").rpmLinked,
+    ).toBeUndefined();
+    expect(
+      decodeShareState("?a=s2000-ap1&brpm=nope").rpmLinked,
+    ).toBeUndefined();
+  });
+
+  it("carries both crank angles when paused and unlinked", () => {
+    const query = encodeShareState(
+      baseState({
+        config: F20C,
+        comparisonConfig: LS7,
+        rpmLinked: false,
+        comparisonRpm: 7000,
+        isPlaying: false,
+        crankAngleRad: Math.PI,
+        comparisonCrankAngleRad: Math.PI / 2,
+      }),
+    );
+    expect(query).toContain("angle=180");
+    expect(query).toContain("bangle=90");
+  });
+
+  it("omits engine B's angle while linked, since it equals engine A's", () => {
+    const query = encodeShareState(
+      baseState({
+        config: F20C,
+        comparisonConfig: LS7,
+        rpmLinked: true,
+        isPlaying: false,
+        crankAngleRad: Math.PI,
+      }),
+    );
+    expect(query).toContain("angle=180");
+    expect(query).not.toContain("bangle");
+  });
+
+  it("round-trips a full unlinked redline comparison", () => {
+    const original = baseState({
+      config: F20C,
+      comparisonConfig: LS7,
+      rpm: 9000,
+      comparisonRpm: 7000,
+      rpmLinked: false,
+      isPlaying: false,
+      crankAngleRad: 1.2,
+      comparisonCrankAngleRad: 4.8,
+    });
+    const decoded = decodeShareState(encodeShareState(original));
+    expect(decoded.config).toEqual(F20C);
+    expect(decoded.comparisonConfig).toEqual(LS7);
+    expect(decoded.rpm).toBe(9000);
+    expect(decoded.comparisonRpm).toBe(7000);
+    expect(decoded.rpmLinked).toBe(false);
+    expect(decoded.crankAngleRad).toBeCloseTo(1.2, 5);
+    expect(decoded.comparisonCrankAngleRad).toBeCloseTo(4.8, 5);
   });
 });
 

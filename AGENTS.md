@@ -21,7 +21,7 @@ Interactive slider-crank engine visualizer. Vite 8 + React 19 + TypeScript 6, Th
 
 ## Conventions
 
-- **Branch, don't commit to `main`.** Create `feature/<topic>` (or `fix/<topic>`), commit there, push, open a PR, let CI pass, then merge.
+- **Branch, don't commit to `main`.** Create `feature/<topic>` (or `fix/<topic>`), commit there, push, then merge into `main` (fast-forward) and push. This is a solo repo — do not open pull requests unless asked; the branch exists to keep the work reviewable in source control, not to gate it.
 - Conventional-commit subjects; update `CHANGELOG.md` (Keep a Changelog style, dated sections) for user-visible changes.
 - CSS Modules for component styling; global tokens in `src/styles/globals.css`.
 - Tests live in `src/tests/` for engine math, colocated `*.test.tsx` for components.

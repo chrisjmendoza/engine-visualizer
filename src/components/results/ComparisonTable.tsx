@@ -138,12 +138,24 @@ interface TableRow {
  * Each row's label doubles as a trigger that expands an inline explainer
  * row (from `METRIC_INFO`) — see `useMetricInfoToggle`, shared with
  * `CalculationPanel`.
+ *
+ * Engine B's own speed and angle (`comparisonRpm`, `comparisonCrankAngleRad`)
+ * only diverge from engine A's while `rpmLinked` is false; every rpm- or
+ * angle-derived column (mean piston speed, current crank angle, piston
+ * displacement, piston-to-head distance, rod angle) resolves B's effective
+ * rpm/angle once, up front, rather than assuming a shared `rpm`/
+ * `crankAngleRad` the way an earlier version of this table did.
  */
 export function ComparisonTable() {
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const rpm = useEngineStore((state) => state.rpm);
+  const comparisonRpm = useEngineStore((state) => state.comparisonRpm);
+  const rpmLinked = useEngineStore((state) => state.rpmLinked);
   const crankAngleRad = useEngineStore((state) => state.crankAngleRad);
+  const comparisonCrankAngleRad = useEngineStore(
+    (state) => state.comparisonCrankAngleRad,
+  );
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
 
   const { openMetricId, toggleMetric } = useMetricInfoToggle();
@@ -154,10 +166,18 @@ export function ComparisonTable() {
   // changes, rather than reading from a slot that doesn't exist yet.
   const configB = comparisonConfig ?? config;
 
-  const metricsA = computeMetrics(config, rpm, crankAngleRad);
-  const metricsB = computeMetrics(configB, rpm, crankAngleRad);
+  // Engine B only has an independent speed/angle while unlinked — while
+  // linked the store (and the animation loop) keep both exactly equal to
+  // engine A's, so reading `rpm`/`crankAngleRad` for B too is correct, not
+  // just a convenient default.
+  const rpmB = rpmLinked ? rpm : comparisonRpm;
+  const angleRadB = rpmLinked ? crankAngleRad : comparisonCrankAngleRad;
 
-  const sharedAngleDeg = `${formatRounded(radToDeg(crankAngleRad), 1)}°`;
+  const metricsA = computeMetrics(config, rpm, crankAngleRad);
+  const metricsB = computeMetrics(configB, rpmB, angleRadB);
+
+  const angleDegA = `${formatRounded(radToDeg(crankAngleRad), 1)}°`;
+  const angleDegB = `${formatRounded(radToDeg(angleRadB), 1)}°`;
 
   const rows: TableRow[] = [
     {
@@ -242,12 +262,16 @@ export function ComparisonTable() {
     {
       id: "currentCrankAngle",
       label: "Current crank angle",
-      a: sharedAngleDeg,
-      b: sharedAngleDeg,
-      // Both engines share one crank angle by definition — not a per-engine
-      // comparison, so no percentage (a real "0.0%" here would misleadingly
-      // suggest this happens to match rather than can never differ).
-      difference: "—",
+      a: angleDegA,
+      b: angleDegB,
+      // Linked engines share one crank angle by definition — not a
+      // per-engine comparison, so no percentage there (a real "0.0%"
+      // would misleadingly suggest this happens to match rather than can
+      // never differ). Unlinked, the two angles genuinely drift apart, so
+      // this is a real, meaningful difference like any other row's.
+      difference: rpmLinked
+        ? "—"
+        : percentDifference(radToDeg(crankAngleRad), radToDeg(angleRadB)),
     },
     {
       id: "pistonToHeadRange",

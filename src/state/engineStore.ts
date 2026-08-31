@@ -171,8 +171,20 @@ export const useEngineStore = create<EngineStore>((set) => ({
           ? { ...state.preferences, displayUnit: partial.displayUnit }
           : state.preferences,
       rpm: partial.rpm ?? state.rpm,
+      // `rpmLinked` only ever arrives as `false` (decodeShareState sets it
+      // when the link carried engine B's speed), so an absent value leaves
+      // the current linking untouched rather than forcing it back on.
+      comparisonRpm: partial.comparisonRpm ?? state.comparisonRpm,
+      rpmLinked: partial.rpmLinked ?? state.rpmLinked,
       playbackSpeed: partial.playbackSpeed ?? state.playbackSpeed,
       crankAngleRad: partial.crankAngleRad ?? state.crankAngleRad,
+      // While linked the two angles are the same by definition, so a link
+      // carrying only engine A's angle must move engine B's with it.
+      comparisonCrankAngleRad:
+        partial.comparisonCrankAngleRad ??
+        (partial.rpmLinked === false
+          ? state.comparisonCrankAngleRad
+          : (partial.crankAngleRad ?? state.comparisonCrankAngleRad)),
       // `??` preserves an explicit `false` (set together with a decoded
       // angle) while leaving `isPlaying` untouched when the link had no
       // angle at all — see the reduced-motion note on this method above.

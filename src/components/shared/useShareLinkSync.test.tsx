@@ -16,9 +16,12 @@ function resetStore() {
     comparisonConfig: null,
     preferences: { displayUnit: "mm", showLabels: true },
     rpm: DEFAULT_ANIMATION.rpm,
+    comparisonRpm: DEFAULT_ANIMATION.rpm,
+    rpmLinked: true,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: true,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
+    comparisonCrankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
   });
 }
 
@@ -126,6 +129,17 @@ describe("useShareLinkSync — hydration", () => {
     expect(state.rpm).toBe(DEFAULT_ANIMATION.rpm);
     expect(state.isPlaying).toBe(true);
   });
+
+  it("hydrates into unlinked mode with engine B's own speed when the link carries brpm", () => {
+    setLocation("a=s2000-ap1&b=corvette-z06-c6-ls7&rpm=3000&brpm=8900");
+
+    renderShareLinkSync();
+
+    const state = useEngineStore.getState();
+    expect(state.rpm).toBe(3000);
+    expect(state.comparisonRpm).toBe(8900);
+    expect(state.rpmLinked).toBe(false);
+  });
 });
 
 describe("useShareLinkSync — address-bar sync", () => {
@@ -228,5 +242,71 @@ describe("useShareLinkSync — address-bar sync", () => {
 
     expect(window.location.pathname).toBe("/engine-visualizer/");
     expect(window.location.search).toContain("rpm=5000");
+  });
+
+  it("has no brpm in the query while linked, even when comparing", () => {
+    vi.useFakeTimers();
+    renderShareLinkSync();
+
+    act(() => {
+      useEngineStore.getState().enableComparison(DEFAULT_CONFIG);
+      vi.advanceTimersByTime(260);
+    });
+
+    expect(window.location.search).toContain("b=86-86-143-10.5-7000");
+    expect(window.location.search).not.toContain("brpm");
+  });
+
+  it("updates the URL with brpm after unlinking and setting engine B's own rpm", () => {
+    vi.useFakeTimers();
+    renderShareLinkSync();
+
+    act(() => {
+      useEngineStore.getState().enableComparison(DEFAULT_CONFIG);
+      vi.advanceTimersByTime(260);
+    });
+    expect(window.location.search).not.toContain("brpm");
+
+    act(() => {
+      useEngineStore.getState().setRpmLinked(false);
+      useEngineStore.getState().setComparisonRpm(4500);
+      vi.advanceTimersByTime(260);
+    });
+
+    expect(window.location.search).toContain("brpm=4500");
+  });
+
+  it("does not let unlinked playback's two independent 10 Hz angle mirrors block or delay a real pending change", () => {
+    vi.useFakeTimers();
+    useEngineStore.setState({
+      isPlaying: true,
+      comparisonConfig: DEFAULT_CONFIG,
+      rpmLinked: false,
+    });
+    renderShareLinkSync();
+
+    act(() => {
+      useEngineStore.getState().setComparisonRpm(4500);
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+      // Both engines' throttled angle mirrors — encodeShareState omits
+      // both angles entirely while playing, so neither should reset the
+      // debounce (this is the same guard as the single-engine case, now
+      // exercised with two independent store writes per readout tick).
+      useEngineStore.getState().syncCrankAngle(0.5);
+      useEngineStore.getState().syncComparisonCrankAngle(0.7);
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+      useEngineStore.getState().syncCrankAngle(1.0);
+      useEngineStore.getState().syncComparisonCrankAngle(1.3);
+    });
+    act(() => {
+      vi.advanceTimersByTime(60);
+    });
+
+    expect(window.location.search).toContain("brpm=4500");
+    expect(window.location.search).not.toContain("angle");
   });
 });
