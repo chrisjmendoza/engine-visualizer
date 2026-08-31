@@ -233,6 +233,44 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     },
   },
   {
+    id: "tsx-k24a2",
+    name: "Acura TSX (K24A2)",
+    brand: "Honda",
+    engineCode: "K24A2",
+    layoutLabel: "2.4 L inline-4",
+    // Acura-badged (2004-2008 Acura TSX); grouped under brand "Honda" here
+    // so it sits with the other Honda-family cars rather than starting a
+    // one-car "Acura" brand.
+    // bore/stroke 87.0/99.0 mm — this bottom end is shared across most of
+    // the naturally aspirated K24 family (Accord, Element, CR-V, and later
+    // Civic Si all use the same 87x99 architecture), confirmed by
+    // motorreviewer.com ("Honda 2.4L K24A/K24Z/K24W Engine Specs") and a
+    // honda-tech.com forum thread ("K24A1 vs K24A2 vs K24A4 Short Blocks").
+    // rod 152.0 mm (5.984 in) — also shared architecture-wide (a k20a.org
+    // forum thread confirms K24A1 and K24A2 use the same length), and
+    // confirmed by stock-length replacement rods from Manley
+    // (manleyperformance.com, realstreetperformance.com) and K1
+    // Technologies (vividracing.com, lethalperformance.com — distinct from
+    // K1's separate 143.4 mm stroker-length part for the same block).
+    // CR 10.5:1 and redline 7100 rpm are K24A2/TSX-specific, NOT shared
+    // with the rest of the family: the Accord's K24A4/K24A8 run a lower
+    // 9.7:1 with a lower redline, and the later K24Z3 (2009+ TSX) runs a
+    // higher 11.0:1 — both are genuinely different spec sets and are
+    // deliberately not folded into this entry. CR confirmed by
+    // drifted.com ("Ultimate Honda K24 Guide") and a honda-tech.com forum
+    // thread; redline confirmed by an acurazine.com forum thread ("a tiny
+    // bit confused on the stock rpm range") and Hondata's TSX reflash
+    // product pages (hondata.com, evasivemotorsports.com), which document
+    // the stock 7100 rpm limit their reflash raises to 7600.
+    config: {
+      boreMm: 87.0,
+      strokeMm: 99.0,
+      rodLengthMm: 152.0,
+      compressionRatio: 10.5,
+      redlineRpm: 7100,
+    },
+  },
+  {
     id: "miata-nd-2-0",
     name: "Mazda MX-5 Miata (ND)",
     brand: "Mazda",
@@ -351,6 +389,39 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       rodLengthMm: 165.0,
       compressionRatio: 9.0,
       redlineRpm: 7100,
+    },
+  },
+  {
+    id: "240sx-ka24de",
+    name: "Nissan 240SX (S13/S14)",
+    brand: "Nissan",
+    engineCode: "KA24DE",
+    layoutLabel: "2.4 L inline-4",
+    // Twin-cam KA24DE (1991+), not the earlier single-cam KA24E — this is
+    // the naturally aspirated US-market engine that stood in for the
+    // JDM-only turbo SR20DET Silvia preset above; swapping an SR20DET into
+    // a KA24DE-powered 240SX ("KA-to-SR") is a long-running enthusiast
+    // tradition precisely because the two cars are otherwise the same
+    // S13/S14 chassis with different home-market engines.
+    // bore/stroke 89.0/96.0 mm — confirmed by Wikipedia ("Nissan KA
+    // engine") and a nissanclub.com forum thread ("KA24DE specs").
+    // rod 165.0 mm (6.495 in) — stock-length replacement rods from Manley
+    // (both I-Beam and H-Beam catalog listings, manleyperformance.com) and
+    // Eagle (enjukuracing.com) both give 165 mm center-to-center.
+    // CR 9.5:1 — the 1994-98 figure (covers all S14 production plus
+    // late S13), confirmed by a nissanclub.com forum thread ("KA24DE
+    // compression ratios?") and a ka-t.org forum thread citing the factory
+    // service manual (page EM-43); the earlier 1991-93 S13 KA24DE ran a
+    // lower 9.0:1.
+    // Redline 6900 rpm — confirmed by drifted.com ("KA24DE - The Ultimate
+    // Motor Guide") and 180sx.club ("Nissan KA24DE – Complete Engine
+    // Guide"); its single-cam KA24E predecessor was limited to 6500 rpm.
+    config: {
+      boreMm: 89.0,
+      strokeMm: 96.0,
+      rodLengthMm: 165.0,
+      compressionRatio: 9.5,
+      redlineRpm: 6900,
     },
   },
   {

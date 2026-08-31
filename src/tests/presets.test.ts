@@ -23,6 +23,8 @@ const ADVERTISED: Record<string, { cylinders: number; totalCc: number }> = {
   "skyline-gtr-rb26dett": { cylinders: 6, totalCc: 2568 },
   "gtr-r35-vr38dett": { cylinders: 6, totalCc: 3799 },
   "bmw-e46-m3-s54": { cylinders: 6, totalCc: 3246 },
+  "240sx-ka24de": { cylinders: 4, totalCc: 2389 },
+  "tsx-k24a2": { cylinders: 4, totalCc: 2354 },
 };
 
 /**
@@ -46,6 +48,8 @@ const ADVERTISED_COMPRESSION_RATIO: Record<string, number> = {
   "skyline-gtr-rb26dett": 8.5,
   "gtr-r35-vr38dett": 9.0,
   "bmw-e46-m3-s54": 11.5,
+  "240sx-ka24de": 9.5,
+  "tsx-k24a2": 10.5,
 };
 
 /**
@@ -68,6 +72,8 @@ const ADVERTISED_REDLINE_RPM: Record<string, number> = {
   "skyline-gtr-rb26dett": 8000,
   "gtr-r35-vr38dett": 7100,
   "bmw-e46-m3-s54": 8000,
+  "240sx-ka24de": 6900,
+  "tsx-k24a2": 7100,
 };
 
 /** Manufacturer brand for each preset, hardcoded as an independent literal. */
@@ -86,6 +92,8 @@ const ADVERTISED_BRAND: Record<string, string> = {
   "skyline-gtr-rb26dett": "Nissan",
   "gtr-r35-vr38dett": "Nissan",
   "bmw-e46-m3-s54": "BMW",
+  "240sx-ka24de": "Nissan",
+  "tsx-k24a2": "Honda",
 };
 
 function perCylinderCc(boreMm: number, strokeMm: number): number {
@@ -97,6 +105,22 @@ describe("ENGINE_PRESETS", () => {
   it("has a unique id for every preset", () => {
     const ids = ENGINE_PRESETS.map((preset) => preset.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("has no two presets sharing an identical config (bore, stroke, rod, CR, redline)", () => {
+    const configKeys = ENGINE_PRESETS.map((preset) =>
+      [
+        preset.config.boreMm,
+        preset.config.strokeMm,
+        preset.config.rodLengthMm,
+        preset.config.compressionRatio,
+        preset.config.redlineRpm,
+      ].join("|"),
+    );
+    const duplicates = configKeys.filter(
+      (key, index) => configKeys.indexOf(key) !== index,
+    );
+    expect(duplicates).toEqual([]);
   });
 
   it("has a non-empty brand for every preset", () => {

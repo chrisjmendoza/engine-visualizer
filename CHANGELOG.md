@@ -8,6 +8,13 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### feat: naturally aspirated 2.4 presets (KA24DE, K24A2)
+
+- **Nissan 240SX (KA24DE)** — the US-market naturally aspirated twin-cam sibling to the JDM SR20DET Silvia already in the roster, so the two sides of the KA-to-SR swap story can be compared directly. 89 × 96 mm on a 165 mm rod: markedly undersquare, with the longest rod-to-stroke ratio of any four in the roster.
+- **Acura TSX (K24A2)** — Honda's naturally aspirated 2.4, grouped under Honda. Its 10.5:1 compression and 7,100 rpm redline are TSX-specific; the Accord/Element/CR-V variants share the same 87 × 99 bottom end at different compression, noted in the source comments rather than added as near-duplicate entries.
+- **New roster invariant**: no two presets may share an identical spec set, enforced by test — so cars that render identically can never pad the picker as the roster grows.
+- Full suite: 410 tests, 16 presets across seven brands.
+
 ### feat: redlines, brand-grouped presets, metric explainers, squareness labels
 
 - **Redline** is now part of every engine config (editable, validated 3,000–12,000 rpm), shown as a metric with a new **mean piston speed at redline** row — the equalizer stat (most performance engines converge on ~20–25 m/s at their limits). All preset redlines verified against two sources; F20C corrected to 9,000 rpm (8,900 was the US fuel cut) and B6 to 7,200.
