@@ -32,9 +32,13 @@ interface EngineStore {
   preferences: UserPreferences;
   rpm: number;
   /**
-   * Engine B's speed, used only while `rpmLinked` is false. Keeping it in
-   * state even when linked means unlinking restores whatever the user last
-   * chose rather than snapping to engine A's value.
+   * Engine B's speed, used only while `rpmLinked` is false. `enableComparison`
+   * seeds it from engine A's current `rpm`, so the very first unlink starts
+   * both engines at the shared speed instead of snapping engine B back to
+   * the pristine default. Past that seed, keeping it in state even while
+   * linked means unlinking restores whatever the user last chose for engine
+   * B rather than re-snapping to engine A's value — `setRpmLinked` never
+   * writes to it.
    */
   comparisonRpm: number;
   /**
@@ -55,7 +59,11 @@ interface EngineStore {
   comparisonCrankAngleRad: number;
 
   setConfig: (partial: Partial<CrankMechanismConfig>) => void;
-  /** Turns comparison on, seeding engine B (defaults to a copy of engine A). */
+  /**
+   * Turns comparison on, seeding engine B's config (defaults to a copy of
+   * engine A's) and its speed (`comparisonRpm`, always from engine A's
+   * current `rpm` — see the field's doc comment).
+   */
   enableComparison: (initial?: CrankMechanismConfig) => void;
   disableComparison: () => void;
   /** No-op while comparison is off. */
@@ -122,6 +130,11 @@ export const useEngineStore = create<EngineStore>((set) => ({
   enableComparison: (initial) =>
     set((state) => ({
       comparisonConfig: initial ?? { ...state.config },
+      // Seed engine B's speed from engine A's current rpm so the first-ever
+      // unlink starts both engines at the shared speed rather than snapping
+      // engine B to the pristine default (DEFAULT_ANIMATION.rpm). A later
+      // re-enable re-seeds from whatever engine A is running at then.
+      comparisonRpm: state.rpm,
     })),
   disableComparison: () => set({ comparisonConfig: null }),
   setComparisonConfig: (partial) =>

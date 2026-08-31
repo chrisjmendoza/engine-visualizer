@@ -233,6 +233,10 @@ describe("rpmSchema", () => {
     expect(rpmSchema.safeParse(INPUT_RANGES.rpm.max + 1).success).toBe(false);
   });
 
+  it("accepts an rpm equal to the highest legal redline — every redline the config validator accepts must also be an acceptable running speed", () => {
+    expect(rpmSchema.safeParse(INPUT_RANGES.redlineRpm.max).success).toBe(true);
+  });
+
   it("rejects non-finite RPM", () => {
     expect(rpmSchema.safeParse(Number.NaN).success).toBe(false);
     expect(rpmSchema.safeParse(Number.POSITIVE_INFINITY).success).toBe(false);

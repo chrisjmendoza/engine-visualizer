@@ -248,8 +248,11 @@ export function decodeShareState(query: string): PartialShareState {
 
   // A valid `brpm` is the signal that the engines were unlinked; without it
   // the link says nothing about linking and the current setting stands.
+  // It only means anything alongside a successfully decoded engine B —
+  // a hand-edited link carrying `brpm` with no usable `b` must not leave
+  // a future comparison silently pre-unlinked.
   const rawComparisonRpm = params.get("brpm");
-  if (rawComparisonRpm !== null) {
+  if (rawComparisonRpm !== null && state.comparisonConfig) {
     const comparisonRpm = parseRpmParam(rawComparisonRpm);
     if (comparisonRpm !== null) {
       state.comparisonRpm = comparisonRpm;
@@ -281,7 +284,7 @@ export function decodeShareState(query: string): PartialShareState {
   }
 
   const rawComparisonAngle = params.get("bangle");
-  if (rawComparisonAngle !== null) {
+  if (rawComparisonAngle !== null && state.comparisonConfig) {
     const radians = parseAngleParam(rawComparisonAngle);
     if (radians !== null) {
       state.comparisonCrankAngleRad = radians;

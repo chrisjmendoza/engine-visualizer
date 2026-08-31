@@ -3,7 +3,11 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEngineStore } from "../../state/engineStore";
 import { rpmSchema } from "../../engine/validation";
 import { degToRad, radToDeg } from "../../engine/units";
-import { PLAYBACK_SPEED_LABELS, PLAYBACK_SPEEDS } from "../../engine/constants";
+import {
+  INPUT_RANGES,
+  PLAYBACK_SPEED_LABELS,
+  PLAYBACK_SPEEDS,
+} from "../../engine/constants";
 import { formatRounded } from "../shared/formatting";
 import styles from "./AnimationControls.module.css";
 
@@ -75,8 +79,8 @@ function RpmField({
           className={styles.input}
           type="number"
           inputMode="numeric"
-          min={0}
-          max={10000}
+          min={INPUT_RANGES.rpm.min}
+          max={INPUT_RANGES.rpm.max}
           step="any"
           value={field.draft}
           aria-invalid={field.error ? true : undefined}

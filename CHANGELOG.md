@@ -8,6 +8,13 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### fix: review pass over the independent-speeds work
+
+- Running-speed range raised to 12,000 rpm to cover every legal redline — "At redline" could previously store a speed that the rpm validator, the rpm input's own HTML limit, and the share-link decoder all rejected. All three now read the same constant.
+- A hand-edited share link carrying `brpm`/`bangle` without a usable engine B is now ignored entirely, instead of silently pre-unlinking a future comparison.
+- Turning comparison on now seeds engine B's speed from the current speed, so the first-ever unlink starts both engines together instead of dropping B to the pristine default; a user-set speed is still remembered across link/unlink cycles.
+- Share-link contract table in the design doc updated with `brpm`/`bangle`; §13 records the range alignment. 618 tests.
+
 ### feat: independent engine speeds, exposed and shareable
 
 - **Speed controls for comparison mode.** A "Link engine speeds" toggle (linked by default) splits the two engines onto their own rpm inputs, each with an "At redline" button showing that engine's actual figure — so an S2000 at 9,000 rpm against an LS7 at 7,000 is two clicks, and the speed difference is visible in the animation rather than inferred from a table.

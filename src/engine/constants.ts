@@ -27,7 +27,9 @@ export const INPUT_RANGES = {
   rodLengthMm: { min: 30, max: 400 },
   compressionRatio: { min: 5, max: 20 },
   redlineRpm: { min: 3000, max: 12_000 },
-  rpm: { min: 0, max: 10_000 },
+  // Must cover every legal redline (redlineRpm.max), since the "At redline"
+  // button and share links both put redlineRpm directly into rpm.
+  rpm: { min: 0, max: 12_000 },
 } as const;
 
 export const MM_PER_INCH = 25.4;

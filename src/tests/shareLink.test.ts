@@ -191,12 +191,28 @@ describe("independent engine speeds", () => {
     expect(state.comparisonRpm).toBeUndefined();
   });
 
+  it("ignores brpm and bangle when the link carries no usable engine B", () => {
+    // Hand-edited: brpm with no b at all, and brpm with an invalid b.
+    // Neither may leave a future comparison silently pre-unlinked.
+    const noB = decodeShareState("?a=s2000-ap1&brpm=7000&bangle=90");
+    expect(noB.rpmLinked).toBeUndefined();
+    expect(noB.comparisonRpm).toBeUndefined();
+    expect(noB.comparisonCrankAngleRad).toBeUndefined();
+
+    const badB = decodeShareState("?a=s2000-ap1&b=not-real&brpm=7000");
+    expect(badB.rpmLinked).toBeUndefined();
+    expect(badB.comparisonRpm).toBeUndefined();
+  });
+
   it("ignores an out-of-range or malformed brpm without unlinking", () => {
+    // A valid engine B is present, so only the brpm value itself is at fault.
     expect(
-      decodeShareState("?a=s2000-ap1&brpm=99999").rpmLinked,
+      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&brpm=99999")
+        .rpmLinked,
     ).toBeUndefined();
     expect(
-      decodeShareState("?a=s2000-ap1&brpm=nope").rpmLinked,
+      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&brpm=nope")
+        .rpmLinked,
     ).toBeUndefined();
   });
 

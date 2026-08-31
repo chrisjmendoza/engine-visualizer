@@ -560,8 +560,10 @@ Initial practical input ranges:
 | Bore        |   20 mm |  200 mm |
 | Stroke      |   20 mm |  200 mm |
 | Rod length  |   30 mm |  400 mm |
-| RPM         |       0 |  10,000 |
+| RPM         |       0 |  12,000 |
 | Crank angle |      0° |    360° |
+
+> **Amendment (2026-08-30):** Two later configuration fields follow the same pattern: compression ratio validates at 5–20:1 and redline at 3,000–12,000 rpm. The running-speed maximum was raised from 10,000 to 12,000 so that every redline the validator accepts is also an acceptable running speed — the "At redline" control depends on that.
 
 The mathematical validation rule `rodLength > stroke / 2` remains authoritative even when values fall within their individual ranges.
 
@@ -957,14 +959,18 @@ Application state is serialized into the URL query string by `src/engine/shareLi
 
 **The URL format is a public contract.** Shared links outlive releases, so the format is append-only: new optional parameters may be added, but existing parameters must never be repurposed, removed, or reparsed differently.
 
-| Param   | Meaning                                                | Omitted when  |
-| ------- | ------------------------------------------------------ | ------------- |
-| `a`     | Engine A: a preset id, or `bore-stroke-rod-cr-redline` | never         |
-| `b`     | Engine B; its presence enables comparison mode         | not comparing |
-| `rpm`   | Engine speed                                           | at default    |
-| `u`     | `in` for inch display                                  | millimeters   |
-| `sp`    | Playback speed multiplier                              | at default    |
-| `angle` | Crank angle in degrees; implies paused                 | playing       |
+| Param    | Meaning                                                     | Omitted when                    |
+| -------- | ----------------------------------------------------------- | ------------------------------- |
+| `a`      | Engine A: a preset id, or `bore-stroke-rod-cr-redline`      | never                           |
+| `b`      | Engine B; its presence enables comparison mode              | not comparing                   |
+| `rpm`    | Engine speed (engine A's, when speeds are split)            | at default                      |
+| `brpm`   | Engine B's speed; its presence marks the speeds as unlinked | speeds linked, or not comparing |
+| `u`      | `in` for inch display                                       | millimeters                     |
+| `sp`     | Playback speed multiplier                                   | at default                      |
+| `angle`  | Crank angle in degrees; implies paused                      | playing                         |
+| `bangle` | Engine B's crank angle in degrees                           | playing, or speeds linked       |
+
+`brpm` doubles as the unlinked marker — it always travels when the speeds are split, even if the two values happen to coincide, and a link without it says nothing about linking. Both `brpm` and `bangle` are honored only alongside a successfully decoded `b`, so a hand-edited fragment cannot pre-unlink a future comparison.
 
 A configuration is written as its preset id when it matches one exactly (`?a=s2000-ap1` stays readable and keeps its meaning if that preset's researched data is later corrected); otherwise as five hyphen-separated numbers in canonical units. The two forms are distinguished by content, since preset ids always contain a letter and numeric configurations never do.
 
