@@ -148,6 +148,15 @@ interface EngineStore {
    * recipient happens to have open.
    */
   setShowCycle: (show: boolean) => void;
+  /**
+   * "Stand flat engines upright" preference (§24a): in the full-engine view
+   * only, flat/boxer layouts are drawn rotated a further +90° so their pistons
+   * move vertically like every other engine's, while the opposed pair stays
+   * opposed. Purely presentational — it never touches `layoutId`, the layout's
+   * real bank offsets, or any kinematics — and, like `showLabels` and
+   * `showCycle`, session-local rather than carried by a share link.
+   */
+  setUprightFlatEngines: (upright: boolean) => void;
   setRpm: (rpm: number) => void;
   setComparisonRpm: (rpm: number) => void;
   /**
@@ -204,7 +213,12 @@ export const useEngineStore = create<EngineStore>((set) => ({
   comparisonLayoutId: DEFAULT_LAYOUT_ID,
   singleCylinderView: true,
   comparisonSingleCylinderView: true,
-  preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
+  preferences: {
+    displayUnit: "mm",
+    showLabels: true,
+    showCycle: false,
+    uprightFlatEngines: false,
+  },
   rpm: DEFAULT_ANIMATION.rpm,
   comparisonRpm: DEFAULT_ANIMATION.rpm,
   rpmLinked: true,
@@ -257,6 +271,10 @@ export const useEngineStore = create<EngineStore>((set) => ({
   setShowCycle: (show) =>
     set((state) => ({
       preferences: { ...state.preferences, showCycle: show },
+    })),
+  setUprightFlatEngines: (upright) =>
+    set((state) => ({
+      preferences: { ...state.preferences, uprightFlatEngines: upright },
     })),
   setRpm: (rpm) => set({ rpm }),
   setComparisonRpm: (comparisonRpm) => set({ comparisonRpm }),

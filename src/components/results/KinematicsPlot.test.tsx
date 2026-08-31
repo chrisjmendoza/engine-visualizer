@@ -20,7 +20,12 @@ function resetStore() {
     comparisonLayoutId: DEFAULT_LAYOUT_ID,
     singleCylinderView: true,
     comparisonSingleCylinderView: true,
-    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
+    preferences: {
+      displayUnit: "mm",
+      showLabels: true,
+      showCycle: false,
+      uprightFlatEngines: false,
+    },
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,
     rpmLinked: true,
@@ -112,7 +117,12 @@ describe("KinematicsPlot", () => {
 
   it("renders position peaks in inches when the display unit is inches", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "in", showLabels: true, showCycle: false },
+      preferences: {
+        displayUnit: "in",
+        showLabels: true,
+        showCycle: false,
+        uprightFlatEngines: false,
+      },
     });
     render(<KinematicsPlot />);
 

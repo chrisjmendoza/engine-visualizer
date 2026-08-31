@@ -8,7 +8,12 @@ import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
-    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
+    preferences: {
+      displayUnit: "mm",
+      showLabels: true,
+      showCycle: false,
+      uprightFlatEngines: false,
+    },
     rpm: DEFAULT_ANIMATION.rpm,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
@@ -62,5 +67,24 @@ describe("UnitSelector", () => {
 
     await user.click(checkbox);
     expect(useEngineStore.getState().preferences.showCycle).toBe(false);
+  });
+
+  it("toggles the stand-flat-engines-upright preference, off by default", async () => {
+    const user = userEvent.setup();
+    render(<UnitSelector />);
+
+    // Labelled for what it affects: it concerns flat/boxer layouts only.
+    const checkbox = screen.getByLabelText(/stand flat engines upright/i);
+    expect(useEngineStore.getState().preferences.uprightFlatEngines).toBe(
+      false,
+    );
+
+    await user.click(checkbox);
+    expect(useEngineStore.getState().preferences.uprightFlatEngines).toBe(true);
+
+    await user.click(checkbox);
+    expect(useEngineStore.getState().preferences.uprightFlatEngines).toBe(
+      false,
+    );
   });
 });

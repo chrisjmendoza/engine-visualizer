@@ -12,7 +12,12 @@ function resetStore() {
     comparisonLayoutId: DEFAULT_LAYOUT_ID,
     singleCylinderView: true,
     comparisonSingleCylinderView: true,
-    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
+    preferences: {
+      displayUnit: "mm",
+      showLabels: true,
+      showCycle: false,
+      uprightFlatEngines: false,
+    },
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,
     rpmLinked: true,
@@ -226,6 +231,43 @@ describe("singleCylinderView — the view/architecture split (§24a)", () => {
     // ...and re-enabling re-seeds it from engine A rather than restoring the
     // stale value.
     expect(useEngineStore.getState().comparisonSingleCylinderView).toBe(true);
+  });
+});
+
+describe("uprightFlatEngines — a display preference only (§24a)", () => {
+  it("is off by default, so every engine opens in its real orientation", () => {
+    expect(useEngineStore.getState().preferences.uprightFlatEngines).toBe(
+      false,
+    );
+  });
+
+  it("toggles without touching layout, view, crank angle, or playback", () => {
+    useEngineStore.setState({ layoutId: "flat-6", isPlaying: true });
+    const before = useEngineStore.getState();
+
+    useEngineStore.getState().setUprightFlatEngines(true);
+
+    const after = useEngineStore.getState();
+    expect(after.preferences.uprightFlatEngines).toBe(true);
+    // It is a drawing choice, not geometry: nothing else may move with it.
+    expect(after.layoutId).toBe(before.layoutId);
+    expect(after.singleCylinderView).toBe(before.singleCylinderView);
+    expect(after.crankAngleRad).toBe(before.crankAngleRad);
+    expect(after.isPlaying).toBe(before.isPlaying);
+    // ...and it leaves the other preferences where they were.
+    expect(after.preferences.displayUnit).toBe(before.preferences.displayUnit);
+    expect(after.preferences.showLabels).toBe(before.preferences.showLabels);
+    expect(after.preferences.showCycle).toBe(before.preferences.showCycle);
+  });
+
+  it("is session-local: a share link never carries it", () => {
+    useEngineStore.getState().setUprightFlatEngines(true);
+    // Like `showLabels` and `showCycle` (and unlike `displayUnit`), hydrating
+    // from a link leaves it exactly as the recipient had it.
+    useEngineStore.getState().hydrateFromShareState({ displayUnit: "in" });
+
+    expect(useEngineStore.getState().preferences.uprightFlatEngines).toBe(true);
+    expect(useEngineStore.getState().preferences.displayUnit).toBe("in");
   });
 });
 

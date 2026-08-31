@@ -29,9 +29,11 @@ import {
   INLINE_GAP_FRACTION,
   LABEL_BAND_FRACTION,
   LABEL_GAP_FRACTION,
+  UPRIGHT_FLAT_ROTATION_RAD,
   clockwiseTangentRotationZRad,
   deriveLayout,
   deriveProportions,
+  drawnRotationRad,
   rotateBounds,
 } from "./sceneGeometry";
 import type {
@@ -1632,6 +1634,396 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
     expect(centerYB).toBeLessThan(0);
     for (const cylinder of layout.secondary!.cylinders) {
       expect(cylinder.offsetYMm).toBe(centerYB);
+    }
+  });
+});
+
+describe("drawn orientation — presentation, not the layout's real geometry (§24a)", () => {
+  /** Every architecture the picker offers, so nothing is silently skipped. */
+  const ALL = [
+    "inline-3",
+    "inline-4",
+    "inline-5",
+    "inline-6",
+    "v6-60",
+    "v6-90-odd",
+    "v8-cross",
+    "v8-flat",
+    "v10-72",
+    "v12-60",
+    "flat-4",
+    "flat-6",
+  ] as const;
+
+  const FLAT = ["flat-4", "flat-6"] as const;
+  const UNAFFECTED = ["v8-cross", "v12-60", "inline-6", "inline-4"] as const;
+
+  /**
+   * Which way a cylinder's bore points once its drawing has been rotated: the
+   * mechanism's own bore axis is +Y, and a rotation of β about Z takes (0, 1)
+   * to (−sin β, cos β).
+   */
+  function boreDirection(rotationRad: number): { x: number; y: number } {
+    return { x: -Math.sin(rotationRad), y: Math.cos(rotationRad) };
+  }
+
+  it("draws one isolated cylinder upright, whatever engine it came from", () => {
+    // The deliberate abstraction (§24a): the single-cylinder view is about a
+    // cylinder's proportions, not its installed orientation, so a boxer's
+    // cylinder is not left lying on its side next to an upright S2000's.
+    for (const id of ALL) {
+      for (const upright of [false, true]) {
+        const layout = deriveLayout(
+          DEFAULT_CONFIG,
+          null,
+          false,
+          id,
+          "single",
+          true,
+          false,
+          upright,
+        );
+        const cylinder = layout.primary.cylinders[0];
+
+        expect(layout.primary.cylinders).toHaveLength(1);
+        expect(cylinder.drawnRotationRad).toBe(0);
+        // Measured upright too, so framing and spacing follow the drawing.
+        expect(cylinder.bounds).toEqual(layout.primary.proportions.bounds);
+        // ...while the engine's own geometry is reported untouched.
+        expect(cylinder.bankOffsetRad).toBe(
+          createEngineLayout(id).cylinders[0].bankOffsetRad,
+        );
+      }
+    }
+  });
+
+  it("frames one cylinder of any engine exactly as one cylinder of an inline-4", () => {
+    // The point of drawing it upright: two engines' cylinders can be compared
+    // by size because they are drawn in the same orientation.
+    const reference = deriveLayout(
+      DEFAULT_CONFIG,
+      null,
+      true,
+      "inline-4",
+      "single",
+      true,
+    );
+
+    for (const id of ALL) {
+      const one = deriveLayout(DEFAULT_CONFIG, null, true, id, "single", true);
+      expect(one.bounds).toEqual(reference.bounds);
+      expect(one.primary.cylinders[0].bounds).toEqual(
+        reference.primary.cylinders[0].bounds,
+      );
+    }
+  });
+
+  it("draws both compared engines' lone cylinders upright, and still side by side", () => {
+    const layout = deriveLayout(
+      LS7,
+      B6_1_6,
+      false,
+      "flat-6",
+      "v8-cross",
+      true,
+      true,
+    );
+
+    // Part 1 is about rotation only: the arrangement rule keys off how many
+    // cylinders are shown, which it does not touch.
+    expect(layout.arrangement).toBe("side-by-side");
+    expect(layout.primary.cylinders[0].drawnRotationRad).toBe(0);
+    expect(layout.secondary!.cylinders[0].drawnRotationRad).toBe(0);
+    expect(worldBounds(layout.primary).maxX).toBeLessThan(
+      worldBounds(layout.secondary!).minX,
+    );
+  });
+
+  it("keeps every real bank tilt in the full-engine view while the preference is off", () => {
+    for (const id of ALL) {
+      const layout = deriveLayout(DEFAULT_CONFIG, null, false, id);
+      const definition = createEngineLayout(id);
+
+      layout.primary.cylinders.forEach((cylinder, i) => {
+        expect(cylinder.drawnRotationRad).toBe(
+          definition.cylinders[i].bankOffsetRad,
+        );
+        expect(cylinder.bounds).toEqual(
+          rotateBounds(
+            layout.primary.proportions.bounds,
+            cylinder.bankOffsetRad,
+          ),
+        );
+      });
+    }
+  });
+
+  it("turns only flat layouts by a quarter turn when the preference is on", () => {
+    for (const id of ALL) {
+      const off = deriveLayout(DEFAULT_CONFIG, null, false, id);
+      const on = deriveLayout(
+        DEFAULT_CONFIG,
+        null,
+        false,
+        id,
+        "single",
+        false,
+        false,
+        true,
+      );
+      const flat = (FLAT as readonly string[]).includes(id);
+
+      on.primary.cylinders.forEach((cylinder, i) => {
+        expect(cylinder.drawnRotationRad).toBeCloseTo(
+          off.primary.cylinders[i].drawnRotationRad +
+            (flat ? UPRIGHT_FLAT_ROTATION_RAD : 0),
+          12,
+        );
+        // The engine layer keeps describing the real engine either way.
+        expect(cylinder.bankOffsetRad).toBe(
+          off.primary.cylinders[i].bankOffsetRad,
+        );
+      });
+    }
+
+    // Spelled out for the layouts that must be untouched, so a rule that
+    // accidentally caught V or inline engines could not pass the loop above.
+    for (const id of UNAFFECTED) {
+      const on = deriveLayout(
+        DEFAULT_CONFIG,
+        null,
+        false,
+        id,
+        "single",
+        false,
+        false,
+        true,
+      );
+      expect(on).toEqual(deriveLayout(DEFAULT_CONFIG, null, false, id));
+    }
+  });
+
+  it("stands an opposed pair one piston above the crank and its partner below", () => {
+    for (const id of FLAT) {
+      const layout = deriveLayout(
+        DEFAULT_CONFIG,
+        null,
+        false,
+        id,
+        "single",
+        false,
+        false,
+        true,
+      );
+
+      for (const slot of throwSlots(layout.primary)) {
+        expect(slot.cylinders).toHaveLength(2);
+        const up = boreDirection(slot.cylinders[0].drawnRotationRad);
+        const down = boreDirection(slot.cylinders[1].drawnRotationRad);
+
+        // Bank 0's bore points straight up, bank 1's straight down: still one
+        // crank, still 180° opposed, now vertical.
+        expect(up.x).toBeCloseTo(0, 12);
+        expect(up.y).toBeCloseTo(1, 12);
+        expect(down.x).toBeCloseTo(0, 12);
+        expect(down.y).toBeCloseTo(-1, 12);
+      }
+    }
+  });
+
+  it("leaves shared-pin and one-crank-per-throw decisions alone", () => {
+    // Whether a pair shares a crankpin is a fact about the engine, and the
+    // whole pair turns by the same angle, so neither the pin relationship nor
+    // the crank-drawing decision may move with the preference.
+    for (const id of ALL) {
+      const off = deriveLayout(DEFAULT_CONFIG, null, false, id);
+      const on = deriveLayout(
+        DEFAULT_CONFIG,
+        null,
+        false,
+        id,
+        "single",
+        false,
+        false,
+        true,
+      );
+
+      on.primary.cylinders.forEach((cylinder, i) => {
+        expect(cylinder.drawsCrank).toBe(off.primary.cylinders[i].drawsCrank);
+        expect(cylinder.throwIndex).toBe(off.primary.cylinders[i].throwIndex);
+        expect(cylinder.crankPhaseRad).toBe(
+          off.primary.cylinders[i].crankPhaseRad,
+        );
+      });
+
+      for (const slot of throwSlots(on.primary)) {
+        expect(slot.cylinders[0].drawsCrank).toBe(true);
+        if (slot.cylinders.length === 2) {
+          expect(slot.cylinders[1].drawsCrank).toBe(
+            !sharesCrankpin(slot.cylinders[0], slot.cylinders[1]),
+          );
+        }
+      }
+      // ...and the crank-direction ring is still drawn exactly once, on the
+      // cylinder `MechanismStage` gates it on.
+      expect(on.primary.cylinders.filter((c) => c.index === 0)).toHaveLength(1);
+      expect(on.primary.cylinders[0].index).toBe(0);
+    }
+  });
+
+  it("makes an upright boxer's throw tall and narrow instead of wide and short", () => {
+    const flat = deriveLayout(DEFAULT_CONFIG, null, false, "flat-4");
+    const upright = deriveLayout(
+      DEFAULT_CONFIG,
+      null,
+      false,
+      "flat-4",
+      "single",
+      false,
+      false,
+      true,
+    );
+
+    const lying = throwSlots(flat.primary)[0].bounds;
+    const standing = throwSlots(upright.primary)[0].bounds;
+
+    // A quarter turn swaps the footprint's axes exactly.
+    expect(standing.maxX - standing.minX).toBeCloseTo(
+      lying.maxY - lying.minY,
+      9,
+    );
+    expect(standing.maxY - standing.minY).toBeCloseTo(
+      lying.maxX - lying.minX,
+      9,
+    );
+    // ...so the whole row narrows and grows taller, and the framing follows.
+    expect(upright.bounds.maxX - upright.bounds.minX).toBeLessThan(
+      flat.bounds.maxX - flat.bounds.minX,
+    );
+    expect(upright.bounds.maxY - upright.bounds.minY).toBeGreaterThan(
+      flat.bounds.maxY - flat.bounds.minY,
+    );
+  });
+
+  it("frames an upright boxer exactly and never overlaps its throws", () => {
+    for (const id of FLAT) {
+      for (const [, geometry] of GEOMETRIES) {
+        const config = configFor(geometry, 10.5);
+        const layout = deriveLayout(
+          config,
+          null,
+          false,
+          id,
+          "single",
+          false,
+          false,
+          true,
+        );
+        const slots = throwSlots(layout.primary);
+
+        // Adjacent throws stay clear of one another at the new footprint.
+        for (let i = 1; i < slots.length; i += 1) {
+          const gap =
+            slots[i].offsetXMm +
+            slots[i].bounds.minX -
+            (slots[i - 1].offsetXMm + slots[i - 1].bounds.maxX);
+          expect(gap).toBeGreaterThan(0);
+        }
+
+        // ...and the published bounds are exactly the union of what is drawn,
+        // centered on x = 0, so the camera fit cannot clip a standing bore.
+        const world = worldBounds(layout.primary);
+        expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 9);
+        expect(layout.bounds.minX).toBeCloseTo(world.minX, 9);
+        expect(layout.bounds.maxX).toBeCloseTo(world.maxX, 9);
+        expect(layout.bounds.minY).toBeCloseTo(world.minY, 9);
+        expect(layout.bounds.maxY).toBeCloseTo(world.maxY, 9);
+      }
+    }
+  });
+
+  it("leaves the comparison arrangement rule untouched in every mode", () => {
+    // The rule keys off how many cylinders are shown, and neither part of this
+    // change alters that — only how the cylinders that are shown are turned.
+    const cases: Array<[boolean, boolean, string]> = [
+      [true, true, "side-by-side"],
+      [true, false, "stacked"],
+      [false, true, "stacked"],
+      [false, false, "stacked"],
+    ];
+
+    for (const [viewA, viewB, expected] of cases) {
+      for (const upright of [false, true]) {
+        const layout = deriveLayout(
+          LS7,
+          B6_1_6,
+          false,
+          "flat-6",
+          "flat-4",
+          viewA,
+          viewB,
+          upright,
+        );
+        expect(layout.arrangement).toBe(expected);
+
+        // Whatever the axis, the two engines never overlap.
+        const a = worldBounds(layout.primary);
+        const b = worldBounds(layout.secondary!);
+        if (expected === "stacked") {
+          expect(b.maxY).toBeLessThan(a.minY);
+        } else {
+          expect(a.maxX).toBeLessThan(b.minX);
+        }
+      }
+    }
+  });
+
+  it("applies the preference to both compared engines at once", () => {
+    const layout = deriveLayout(
+      LS7,
+      B6_1_6,
+      false,
+      "flat-4",
+      "flat-6",
+      false,
+      false,
+      true,
+    );
+
+    for (const engine of [layout.primary, layout.secondary!]) {
+      for (const cylinder of engine.cylinders) {
+        expect(cylinder.drawnRotationRad).toBeCloseTo(
+          cylinder.bankOffsetRad + UPRIGHT_FLAT_ROTATION_RAD,
+          12,
+        );
+      }
+    }
+  });
+
+  it("is the one rule every drawn rotation comes from", () => {
+    // `drawnRotationRad` is exported so the decision has exactly one
+    // implementation; `deriveLayout` must agree with it cylinder for cylinder.
+    for (const id of ALL) {
+      const definition = createEngineLayout(id);
+      for (const single of [false, true]) {
+        for (const upright of [false, true]) {
+          const layout = deriveLayout(
+            DEFAULT_CONFIG,
+            null,
+            false,
+            id,
+            "single",
+            single,
+            false,
+            upright,
+          );
+          for (const cylinder of layout.primary.cylinders) {
+            expect(cylinder.drawnRotationRad).toBe(
+              drawnRotationRad(cylinder, definition.kind, single, upright),
+            );
+          }
+        }
+      }
     }
   });
 });

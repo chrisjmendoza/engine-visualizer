@@ -9,15 +9,23 @@ const UNIT_OPTIONS: { value: DisplayUnit; label: string }[] = [
 ];
 
 /**
- * Display-unit toggle (mm/in) and the "show labels" and "four-stroke cycle"
- * preferences (TECHNICAL_DESIGN.md §7.2, §16). Switching units only changes
- * how dimensions are presented elsewhere in the interface — it never alters
- * the millimeter values stored in `config`.
+ * Display-unit toggle (mm/in) and the "show labels", "four-stroke cycle", and
+ * "stand flat engines upright" preferences (TECHNICAL_DESIGN.md §7.2, §16,
+ * §24a). Switching units only changes how dimensions are presented elsewhere
+ * in the interface — it never alters the millimeter values stored in `config`.
  *
  * "Four-stroke cycle" gates `StrokeBadge` (`src/engine/cycle.ts`'s
  * pedagogical overlay, rendered inside `AnimationControls` beside the
- * crank-angle readout) — off by default, like the other preferences here,
- * and session-local: it is not carried by share links tonight.
+ * crank-angle readout).
+ *
+ * "Stand flat engines upright" turns a flat/boxer layout a further 90° in the
+ * full-engine view (§24a), so its pistons move vertically like every other
+ * engine's while the opposed pair stays opposed. It concerns flat layouts
+ * only — V and inline engines ignore it — which is why the label says so.
+ *
+ * Both of those are off by default, and all three checkboxes here are
+ * session-local: unlike `displayUnit`, none of them is carried by a share
+ * link.
  */
 export function UnitSelector() {
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
@@ -26,10 +34,17 @@ export function UnitSelector() {
   const setShowLabels = useEngineStore((state) => state.setShowLabels);
   const showCycle = useEngineStore((state) => state.preferences.showCycle);
   const setShowCycle = useEngineStore((state) => state.setShowCycle);
+  const uprightFlatEngines = useEngineStore(
+    (state) => state.preferences.uprightFlatEngines,
+  );
+  const setUprightFlatEngines = useEngineStore(
+    (state) => state.setUprightFlatEngines,
+  );
 
   const groupNameId = useId();
   const showLabelsId = useId();
   const showCycleId = useId();
+  const uprightFlatId = useId();
 
   return (
     <div className={styles.container}>
@@ -80,6 +95,17 @@ export function UnitSelector() {
           onChange={(event) => setShowCycle(event.target.checked)}
         />
         Four-stroke cycle
+      </label>
+
+      <label className={styles.checkboxRow} htmlFor={uprightFlatId}>
+        <input
+          id={uprightFlatId}
+          className={styles.checkbox}
+          type="checkbox"
+          checked={uprightFlatEngines}
+          onChange={(event) => setUprightFlatEngines(event.target.checked)}
+        />
+        Stand flat engines upright
       </label>
     </div>
   );

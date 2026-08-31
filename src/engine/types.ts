@@ -45,6 +45,17 @@ export interface UserPreferences {
    * by share links tonight (see the store's `setShowCycle` doc comment).
    */
   showCycle: boolean;
+  /**
+   * Stands **flat/boxer** layouts upright in the full-engine view (§24a): the
+   * whole engine is drawn rotated a further +90°, so an opposed pair has one
+   * piston above the crank and its partner below instead of left and right.
+   * Purely a drawing choice — the layout's real `bankOffsetRad` is untouched,
+   * and V and inline layouts ignore it entirely.
+   *
+   * Session-local, like `showLabels` and `showCycle`: not carried by share
+   * links (see the store's `setUprightFlatEngines` doc comment).
+   */
+  uprightFlatEngines: boolean;
 }
 
 export interface AnimationControls {

@@ -413,9 +413,11 @@ export interface LabelPlacement {
  *
  * Carries the whole `CylinderDefinition` rather than just the phase so the
  * frame loop can hand it straight to `cylinderCrankAngleRad` and index the
- * stage's per-cylinder registry by `index`, without rebuilding anything —
- * and so the renderer can read `bankOffsetRad` to tilt this cylinder onto
- * its bank.
+ * stage's per-cylinder registry by `index`, without rebuilding anything.
+ *
+ * `bankOffsetRad` comes through with it as the engine's *real* bank geometry;
+ * what the renderer actually rotates by is `drawnRotationRad` below, which is
+ * a presentation decision made in one place (`drawnRotationRad`).
  */
 export interface PlacedCylinder extends CylinderDefinition {
   /**
@@ -471,10 +473,22 @@ export interface PlacedCylinder extends CylinderDefinition {
    */
   drawsCrank: boolean;
   /**
+   * How far this cylinder's whole drawing is rotated about its own crankshaft
+   * center, radians — what `drawnRotationRad` decided, and what the renderer
+   * actually applies (§24a).
+   *
+   * Usually the cylinder's real `bankOffsetRad`, but not always: the
+   * single-cylinder view draws every cylinder upright, and
+   * `uprightFlatEngines` adds a quarter turn to a flat engine's. See
+   * `drawnRotationRad` for why both are deliberate. `bankOffsetRad` is still
+   * carried alongside, unchanged, as the engine's real geometry.
+   */
+  drawnRotationRad: number;
+  /**
    * This cylinder's extents relative to its own crankshaft center, already
-   * rotated onto its bank (§24a). Equal to `proportions.bounds` for an
-   * upright cylinder; for a V or flat cylinder it is the axis-aligned
-   * envelope of the rotated mechanism, which is what keeps a tilted bore from
+   * rotated by `drawnRotationRad` (§24a). Equal to `proportions.bounds` for a
+   * cylinder drawn upright; for a tilted one it is the axis-aligned envelope
+   * of the rotated mechanism, which is what keeps a tilted bore from
    * overlapping its neighbour or being clipped by the camera.
    *
    * Still per cylinder, not per slot: a slot's own footprint is the union of
@@ -577,9 +591,68 @@ export function rotateBounds(
   };
 }
 
+/**
+ * Extra rotation applied to a flat/boxer engine when the "stand flat engines
+ * upright" preference is on: a quarter turn, which takes a bank pointing along
+ * ±X to one pointing along ±Y.
+ */
+export const UPRIGHT_FLAT_ROTATION_RAD = Math.PI / 2;
+
+/**
+ * **The** rule for how far a cylinder's whole drawing is rotated about its own
+ * crankshaft center (§24a) — bore, piston, rod, crank, and reference marks
+ * alike.
+ *
+ * This is the single place that decision is made, and every consumer goes
+ * through it: the footprint each cylinder is measured by (`groupIntoThrows`,
+ * which feeds row spacing and camera framing) and the rotation the renderer
+ * applies (`PlacedCylinder.drawnRotationRad` → `CrankMechanism`). Drawn
+ * orientation is a *presentation* concern and is deliberately kept separate
+ * from the layout's real geometry: `CylinderDefinition.bankOffsetRad` in
+ * `src/engine/` always describes the real engine, whatever this returns, and
+ * neither of the two adjustments below touches the kinematics — every cylinder
+ * is still driven at `cylinderCrankAngleRad(θ, cylinder)`.
+ *
+ * Two deliberate departures from the real bank offset:
+ *
+ * - **Single-cylinder view draws the cylinder upright, whatever the layout.**
+ *   Not a bug: that view already isolates one cylinder from its engine, so the
+ *   cylinder's *installed orientation* is not the subject — its proportions
+ *   are. Drawing a boxer's cylinder 0 lying on its side and a V8's tilted made
+ *   comparing cylinder *size* between two engines needlessly hard, especially
+ *   in comparison mode, where the two would sit next to each other in
+ *   different orientations. The full-engine view keeps every real orientation.
+ * - **`uprightFlatEngines` stands a flat/boxer engine on end** in the
+ *   full-engine view, by adding a quarter turn to *every* cylinder's rotation.
+ *   Bank 0 (`−π/2`) then points +Y and bank 1 (`+π/2`) points −Y, so an
+ *   opposed pair has one piston above the crank and its partner below —
+ *   still one crank, still 180° opposed — and its pistons move in the same
+ *   vertical direction as every other engine's. Because the whole pair turns
+ *   by the same angle, the pair's pin geometry is untouched: `sharesCrankpin`
+ *   and the one-crank-per-throw decision are facts about the engine and read
+ *   the real `bankOffsetRad`, never this. V and inline layouts ignore the
+ *   preference entirely.
+ */
+export function drawnRotationRad(
+  cylinder: CylinderDefinition,
+  kind: EngineLayoutKind,
+  singleCylinderView: boolean,
+  uprightFlatEngines: boolean,
+): number {
+  if (singleCylinderView) {
+    return 0;
+  }
+  if (uprightFlatEngines && kind === "flat") {
+    return cylinder.bankOffsetRad + UPRIGHT_FLAT_ROTATION_RAD;
+  }
+  return cylinder.bankOffsetRad;
+}
+
 /** One cylinder of a measured row: its definition and its rotated footprint. */
 interface MeasuredCylinder {
   definition: CylinderDefinition;
+  /** What `drawnRotationRad` decided for it; becomes the placed cylinder's. */
+  drawnRotationRad: number;
   bounds: SceneBounds;
   /**
    * Position within its slot: 0 for the cylinder that owns the plane, 1 for the
@@ -658,6 +731,8 @@ function groupIntoThrows(
   definitions: readonly CylinderDefinition[],
   kind: EngineLayoutKind,
   proportions: MechanismProportions,
+  singleCylinderView: boolean,
+  uprightFlatEngines: boolean,
 ): MeasuredThrow[] {
   const paired = kind === "v" || kind === "flat";
   const perThrow = paired ? 2 : 1;
@@ -665,18 +740,32 @@ function groupIntoThrows(
 
   for (let start = 0; start < definitions.length; start += perThrow) {
     const group = definitions.slice(start, start + perThrow);
-    const cylinders: MeasuredCylinder[] = group.map((definition, position) => ({
-      definition,
-      bounds: rotateBounds(proportions.bounds, definition.bankOffsetRad),
-      slotPosition: position,
-      // A cylinder draws its own crank unless one already drawn in this slot
-      // would coincide with it at every crank angle. That is a question about
-      // the pins, not about the layout kind: a plain-pin V pair shares one, a
-      // flying-arm V and a boxer each have two real ones.
-      drawsCrank: !group.some(
-        (earlier, j) => j < position && sharesCrankpin(earlier, definition),
-      ),
-    }));
+    const cylinders: MeasuredCylinder[] = group.map((definition, position) => {
+      // One rule, one call: the footprint a cylinder is measured by is the
+      // footprint of the rotation it will actually be drawn at.
+      const rotationRad = drawnRotationRad(
+        definition,
+        kind,
+        singleCylinderView,
+        uprightFlatEngines,
+      );
+      return {
+        definition,
+        drawnRotationRad: rotationRad,
+        bounds: rotateBounds(proportions.bounds, rotationRad),
+        slotPosition: position,
+        // A cylinder draws its own crank unless one already drawn in this slot
+        // would coincide with it at every crank angle. That is a question about
+        // the pins, not about the layout kind: a plain-pin V pair shares one, a
+        // flying-arm V and a boxer each have two real ones. It reads the real
+        // `bankOffsetRad` through `sharesCrankpin`, never the drawn rotation:
+        // whether a pair shares a pin is a fact about the engine, and both
+        // cylinders of a pair are rotated equally anyway.
+        drawsCrank: !group.some(
+          (earlier, j) => j < position && sharesCrankpin(earlier, definition),
+        ),
+      };
+    });
 
     throws.push({
       cylinders,
@@ -727,13 +816,22 @@ function measureRow(
   config: CrankMechanismConfig,
   layoutId: EngineLayoutId,
   singleCylinderView: boolean,
+  uprightFlatEngines: boolean,
 ): MeasuredRow {
   const proportions = deriveProportions(config);
   const layout = createEngineLayout(layoutId);
   // Which cylinders are on stage is decided in exactly one place, in the
   // engine layer (§24a) — the scene never re-derives it from the view flag.
   const definitions = visibleCylinders(layout, singleCylinderView);
-  const throws = groupIntoThrows(definitions, layout.kind, proportions);
+  // How each of them is *rotated* is decided in exactly one place too, in
+  // `drawnRotationRad`, which `groupIntoThrows` calls per cylinder.
+  const throws = groupIntoThrows(
+    definitions,
+    layout.kind,
+    proportions,
+    singleCylinderView,
+    uprightFlatEngines,
+  );
 
   // Uniform spacing, sized so the widest right-hand reach clears the widest
   // left-hand reach whichever two slots end up adjacent.
@@ -793,6 +891,7 @@ function placeRow(
         ...cylinder.definition,
         throwIndex,
         bounds: cylinder.bounds,
+        drawnRotationRad: cylinder.drawnRotationRad,
         drawsCrank: cylinder.drawsCrank,
         offsetXMm: firstCenterX + throwIndex * spacingMm,
         offsetYMm: centerYMm,
@@ -970,7 +1069,9 @@ function placeStacked(
  *
  * Each engine is a row of slots (`singleCylinderView` picks one cylinder or the
  * whole engine, §24a) laid left to right in crankshaft order, all at the same
- * scale (§24), each cylinder tilted onto its own bank. A slot is one cylinder
+ * scale (§24), each cylinder rotated by whatever `drawnRotationRad` decides for
+ * it — its real bank tilt, except where the single-cylinder view or
+ * `uprightFlatEngines` deliberately overrides it. A slot is one cylinder
  * for an inline or single layout and one throw — both of its cylinders, around
  * one crank center — for a V or flat one, which is what makes a V8 four
  * V-shaped units rather than eight separate mechanisms. A single engine's row
@@ -1003,13 +1104,20 @@ export function deriveLayout(
   comparisonLayoutId: EngineLayoutId = "single",
   singleCylinderView = false,
   comparisonSingleCylinderView = false,
+  uprightFlatEngines = false,
 ): SceneLayout {
-  const rowA = measureRow(config, layoutId, singleCylinderView);
+  const rowA = measureRow(
+    config,
+    layoutId,
+    singleCylinderView,
+    uprightFlatEngines,
+  );
   const rowB = comparisonConfig
     ? measureRow(
         comparisonConfig,
         comparisonLayoutId,
         comparisonSingleCylinderView,
+        uprightFlatEngines,
       )
     : null;
 
@@ -1083,10 +1191,10 @@ function rowAsEngine(
 
 /**
  * Subscribes to both engine configurations, both layouts, both cylinder-view
- * preferences, and the label preference, and memoizes the stage layout. This
- * is the single store subscriber for stage placement: recomputed only when a
- * configuration, layout, or view changes, comparison is toggled, or labels are
- * shown or hidden — never per frame.
+ * preferences, and the label and flat-upright preferences, and memoizes the
+ * stage layout. This is the single store subscriber for stage placement:
+ * recomputed only when a configuration, layout, or view changes, comparison is
+ * toggled, or one of those preferences is switched — never per frame.
  */
 export function useSceneLayout(): SceneLayout {
   const config = useEngineStore((s) => s.config);
@@ -1098,6 +1206,9 @@ export function useSceneLayout(): SceneLayout {
     (s) => s.comparisonSingleCylinderView,
   );
   const showLabels = useEngineStore((s) => s.preferences.showLabels);
+  const uprightFlatEngines = useEngineStore(
+    (s) => s.preferences.uprightFlatEngines,
+  );
   return useMemo(
     () =>
       deriveLayout(
@@ -1108,6 +1219,7 @@ export function useSceneLayout(): SceneLayout {
         comparisonLayoutId,
         singleCylinderView,
         comparisonSingleCylinderView,
+        uprightFlatEngines,
       ),
     [
       config,
@@ -1117,6 +1229,7 @@ export function useSceneLayout(): SceneLayout {
       comparisonLayoutId,
       singleCylinderView,
       comparisonSingleCylinderView,
+      uprightFlatEngines,
     ],
   );
 }

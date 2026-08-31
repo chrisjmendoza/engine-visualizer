@@ -14,9 +14,11 @@
  * purely geometric; unlinked, each runs at its own rpm and the angles diverge,
  * which is how two different redlines can be watched side by side.
  *
- * A cylinder whose layout gives it a non-zero bank offset is drawn rotated by
- * that angle about its own crankshaft center (§24a); only the drawing is
- * rotated, so the loop below keeps driving it at exactly its crank phase. On a
+ * A cylinder is drawn rotated about its own crankshaft center by whatever
+ * `drawnRotationRad` decided for it (§24a) — normally its layout's bank offset,
+ * but zero in the single-cylinder view and a further quarter turn when flat
+ * engines are stood upright. Only the drawing is rotated, whichever of those
+ * applies, so the loop below keeps driving it at exactly its crank phase. On a
  * V or flat engine the two cylinders of a throw share that crank center — same
  * `offsetXMm`, opposite tilts — so the row is a row of throws, and one of the
  * pair may omit its crank throw entirely (`drawsCrank`) when the other already
@@ -210,7 +212,7 @@ function EngineRow({ slot, registry, proportions, cylinders }: EngineRowProps) {
           offsetXMm={cylinder.offsetXMm}
           offsetYMm={cylinder.offsetYMm}
           offsetZMm={cylinder.offsetZMm}
-          bankOffsetRad={cylinder.bankOffsetRad}
+          drawnRotationRad={cylinder.drawnRotationRad}
           drawsCrank={cylinder.drawsCrank}
         />
       ))}
@@ -228,8 +230,13 @@ interface PlacedCylinderMechanismProps {
   offsetYMm: number;
   /** Depth (§24a); non-zero only for the second cylinder of a throw pair. */
   offsetZMm: number;
-  /** This cylinder's bank tilt (§24a); 0 for inline layouts. */
-  bankOffsetRad: number;
+  /**
+   * How far this cylinder's drawing is rotated about its own crankshaft
+   * center (`PlacedCylinder.drawnRotationRad`, §24a) — its real bank tilt
+   * unless the single-cylinder view or the "stand flat engines upright"
+   * preference overrode it. 0 for inline layouts either way.
+   */
+  drawnRotationRad: number;
   /** False for the bank-1 cylinder of a shared-pin V pair (§24a). */
   drawsCrank: boolean;
 }
@@ -251,7 +258,7 @@ function PlacedCylinderMechanism({
   offsetXMm,
   offsetYMm,
   offsetZMm,
-  bankOffsetRad,
+  drawnRotationRad,
   drawsCrank,
 }: PlacedCylinderMechanismProps) {
   const refs = useMechanismRefs();
@@ -280,7 +287,7 @@ function PlacedCylinderMechanism({
       positionX={offsetXMm}
       positionY={offsetYMm}
       positionZ={offsetZMm}
-      bankOffsetRad={bankOffsetRad}
+      drawnRotationRad={drawnRotationRad}
       crankRef={refs.crank}
       rodRef={refs.rod}
       pistonRef={refs.piston}

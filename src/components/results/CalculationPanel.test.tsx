@@ -24,7 +24,12 @@ function resetStore() {
     comparisonLayoutId: DEFAULT_LAYOUT_ID,
     singleCylinderView: true,
     comparisonSingleCylinderView: true,
-    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
+    preferences: {
+      displayUnit: "mm",
+      showLabels: true,
+      showCycle: false,
+      uprightFlatEngines: false,
+    },
     rpm: DEFAULT_ANIMATION.rpm,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
@@ -141,7 +146,12 @@ describe("CalculationPanel", () => {
 
   it("displays the clearance height in inches when the display unit is inches", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "in", showLabels: true, showCycle: false },
+      preferences: {
+        displayUnit: "in",
+        showLabels: true,
+        showCycle: false,
+        uprightFlatEngines: false,
+      },
     });
     render(<CalculationPanel />);
 
@@ -190,7 +200,12 @@ describe("CalculationPanel", () => {
 
   it("displays the static piston-to-head distance range in inches", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "in", showLabels: true, showCycle: false },
+      preferences: {
+        displayUnit: "in",
+        showLabels: true,
+        showCycle: false,
+        uprightFlatEngines: false,
+      },
     });
     render(<CalculationPanel />);
     // 9.0526.../25.4 = 0.3564... in; 95.0526.../25.4 = 3.7423... in.

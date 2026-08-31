@@ -8,7 +8,12 @@ import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
-    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
+    preferences: {
+      displayUnit: "mm",
+      showLabels: true,
+      showCycle: false,
+      uprightFlatEngines: false,
+    },
     rpm: DEFAULT_ANIMATION.rpm,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
@@ -33,7 +38,12 @@ describe("StrokeBadge", () => {
 
   it("shows intake at TDC (crank angle 0, parity 0)", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "mm", showLabels: true, showCycle: true },
+      preferences: {
+        displayUnit: "mm",
+        showLabels: true,
+        showCycle: true,
+        uprightFlatEngines: false,
+      },
       crankAngleRad: 0,
       crankRevolutionParity: 0,
     });
@@ -45,7 +55,12 @@ describe("StrokeBadge", () => {
 
   it("shows compression past 180 degrees, still in the first crank revolution", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "mm", showLabels: true, showCycle: true },
+      preferences: {
+        displayUnit: "mm",
+        showLabels: true,
+        showCycle: true,
+        uprightFlatEngines: false,
+      },
       crankAngleRad: Math.PI + 0.1, // just past BDC
       crankRevolutionParity: 0,
     });
@@ -56,7 +71,12 @@ describe("StrokeBadge", () => {
 
   it("shows power partway through the crank's second revolution", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "mm", showLabels: true, showCycle: true },
+      preferences: {
+        displayUnit: "mm",
+        showLabels: true,
+        showCycle: true,
+        uprightFlatEngines: false,
+      },
       crankAngleRad: Math.PI / 2, // 90 degrees
       crankRevolutionParity: 1, // + 360 degrees = 450 degrees of the cycle
     });
@@ -68,7 +88,12 @@ describe("StrokeBadge", () => {
 
   it("shows exhaust in the last quarter of the cycle", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "mm", showLabels: true, showCycle: true },
+      preferences: {
+        displayUnit: "mm",
+        showLabels: true,
+        showCycle: true,
+        uprightFlatEngines: false,
+      },
       crankAngleRad: Math.PI + Math.PI / 2, // 270 degrees
       crankRevolutionParity: 1, // + 360 = 630 degrees of the cycle
     });
@@ -80,14 +105,24 @@ describe("StrokeBadge", () => {
 
   it("hides again once the preference is turned back off", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "mm", showLabels: true, showCycle: true },
+      preferences: {
+        displayUnit: "mm",
+        showLabels: true,
+        showCycle: true,
+        uprightFlatEngines: false,
+      },
     });
     const { container } = render(<StrokeBadge />);
     expect(screen.getByText(/four-stroke cycle/i)).toBeInTheDocument();
 
     act(() => {
       useEngineStore.setState({
-        preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
+        preferences: {
+          displayUnit: "mm",
+          showLabels: true,
+          showCycle: false,
+          uprightFlatEngines: false,
+        },
       });
     });
 

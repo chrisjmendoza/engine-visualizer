@@ -13,7 +13,7 @@
  *
  * Two of these can share one crank center — the two cylinders of a V or flat
  * throw, drawn in one cutaway plane (§24a). They are still two independent
- * instances, differing only in bank tilt, depth (`positionZ`), and whether the
+ * instances, differing only in drawn rotation, depth (`positionZ`), and whether the
  * crank throw itself is drawn (`drawsCrank`); nothing here knows about pairing.
  */
 
@@ -41,15 +41,20 @@ interface CrankMechanismProps {
    */
   positionZ?: number;
   /**
-   * This cylinder's bank tilt (`CylinderDefinition.bankOffsetRad`, §24a):
-   * the whole mechanism — bore, piston, rod, crank, and reference marks
-   * alike — is rotated by it about the crankshaft center, which is what makes
-   * a V8 alternate its bores left and right and lays a flat engine's bores
-   * out horizontally. The mechanism's internal math is untouched: the crank
-   * still turns through the same angles, the piston still slides along its
-   * own bore axis. Defaults to 0 (upright) for inline layouts.
+   * How far to rotate this cylinder's whole drawing about its crankshaft
+   * center (`PlacedCylinder.drawnRotationRad`, §24a): bore, piston, rod,
+   * crank, and reference marks alike. That is what makes a V8 alternate its
+   * bores left and right and lays a flat engine's bores out horizontally.
+   *
+   * Normally the cylinder's real `bankOffsetRad`, but the scene decides it in
+   * one place (`drawnRotationRad` in `sceneGeometry`) and may deliberately
+   * override it — upright in the single-cylinder view, a further quarter turn
+   * for a flat engine stood upright. Nothing here needs to know which: the
+   * mechanism's internal math is untouched either way, the crank still turns
+   * through the same angles and the piston still slides along its own bore
+   * axis. Defaults to 0 (upright).
    */
-  bankOffsetRad?: number;
+  drawnRotationRad?: number;
   /** Stage-owned refs to this mechanism's moving groups. */
   crankRef: MechanismRefs["crank"];
   rodRef: MechanismRefs["rod"];
@@ -77,7 +82,7 @@ export function CrankMechanism({
   positionX,
   positionY = 0,
   positionZ = 0,
-  bankOffsetRad = 0,
+  drawnRotationRad = 0,
   crankRef,
   rodRef,
   pistonRef,
@@ -90,7 +95,7 @@ export function CrankMechanism({
   // group's own origin.
   return (
     <group position={[positionX, positionY, positionZ]}>
-      <group rotation={[0, 0, bankOffsetRad]}>
+      <group rotation={[0, 0, drawnRotationRad]}>
         <CylinderGuide p={p} isFrontCylinder={isFrontCylinder} />
         {drawsCrank && <CrankThrow p={p} ref={crankRef} />}
         <ConnectingRod p={p} ref={rodRef} />

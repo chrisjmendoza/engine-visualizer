@@ -8,6 +8,13 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### feat: upright single cylinders, and an option to stand flat engines up
+
+- **Single-cylinder view now draws every cylinder upright**, whatever engine it came from. Comparing an S2000's cylinder against a boxer's used to mean comparing one standing up against one lying on its side, which makes judging their relative size unnecessarily hard. Isolating a single cylinder is already an abstraction — what's on show there is its proportions, not its installed angle — so the view now says so consistently. Full-engine view is unchanged and still draws real orientations.
+- **"Stand flat engines upright"** (off by default) rotates a boxer 90° in full-engine view, putting one piston of each opposed pair above the crank and its partner below. The pair stays on the same crank and stays 180° opposed, so the boxer's defining motion still reads — but piston travel runs vertically, in the same orientation as every other engine, which makes it directly comparable.
+- Drawn orientation is now a **presentation concern only**, resolved by a single function from the layout kind and the two view settings. `engineLayout.ts` still describes real engines: a boxer's bank offsets remain ±90° there whatever the view is set to, so the model never disagrees with the engine it describes.
+- Guarded by test: whether a pair shares a crankpin, which cylinder draws the crank, the one-arrow-per-engine rule, and the stacked-versus-side-by-side comparison rule are all identical with the preference on or off — rotation changes nothing but what you see. Full suite: 1,139 tests.
+
 ### feat: an inline-five and a Golf GTI
 
 - **Audi RS3 (8V.2) / TT RS — 2.5 TFSI "evo"**, the roster's first inline-five, firing 1-2-4-5-3 at even 144° intervals. Its geometry and compression come from Audi's own Self-Study Programme 920273, whose spec table names the DAZA engine code outright — the best-sourced entry in the roster.
