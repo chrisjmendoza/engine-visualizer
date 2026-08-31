@@ -8,6 +8,13 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### feat: cylinders light up in their real firing order
+
+- **Red while firing, blue on the exhaust stroke**, per cylinder, under the existing "Four-stroke cycle" option. An inline-6 and a cross-plane V8 now visibly differ in something you could previously only read about: the firing sequence travelling down the engine, at that engine's real intervals.
+- This is only possible because each layout carries a published firing order. A cylinder's stroke genuinely cannot be derived from its crank phase — crank phase is modulo 360° while the cycle is 720°, so two cylinders whose pistons move identically can be a full revolution apart, one firing while the other is drawing in. Inline-4's cylinders 1 and 4 are exactly that case: same crank throw, always two strokes apart.
+- **How it's kept honest.** A wrong offset would produce a rhythm that looks entirely plausible while describing an engine that doesn't exist, so the test sweeps a full cycle at 0.05° resolution, records the order cylinders actually enter the power stroke, and asserts it matches the layout's firing order — for all thirteen layouts, reading only what the renderer reports rather than restating the table it came from. A second, independent check confirms every power stroke begins at that cylinder's own top dead center, and the odd-fire V6 reproduces its real 150°/90° alternation. Flipping the offset's sign fails 22 tests; collapsing the cycle to 360° fails 37.
+- Per-frame discipline holds: a material is written only when a cylinder's phase actually changes — a handful of writes per 720° cycle, not per frame — and with the option off no material is touched at all. Full suite: 1,207 tests.
+
 ### feat: upright single cylinders, and an option to stand flat engines up
 
 - **Single-cylinder view now draws every cylinder upright**, whatever engine it came from. Comparing an S2000's cylinder against a boxer's used to mean comparing one standing up against one lying on its side, which makes judging their relative size unnecessarily hard. Isolating a single cylinder is already an abstraction — what's on show there is its proportions, not its installed angle — so the view now says so consistently. Full-engine view is unchanged and still draws real orientations.

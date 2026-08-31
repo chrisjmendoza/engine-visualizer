@@ -14,9 +14,12 @@ const UNIT_OPTIONS: { value: DisplayUnit; label: string }[] = [
  * §24a). Switching units only changes how dimensions are presented elsewhere
  * in the interface — it never alters the millimeter values stored in `config`.
  *
- * "Four-stroke cycle" gates `StrokeBadge` (`src/engine/cycle.ts`'s
- * pedagogical overlay, rendered inside `AnimationControls` beside the
- * crank-angle readout).
+ * "Four-stroke cycle" gates both halves of `src/engine/cycle.ts`'s pedagogical
+ * overlay: `StrokeBadge` (rendered inside `AnimationControls` beside the
+ * crank-angle readout, naming cylinder 1's stroke) and the scene's per-cylinder
+ * firing tint (§24a), which colors every cylinder's combustion chamber red
+ * while it fires and blue while it exhausts. One preference for one idea —
+ * hence the label naming both, since the tint is the more visible of the two.
  *
  * "Stand flat engines upright" turns a flat/boxer layout a further 90° in the
  * full-engine view (§24a), so its pistons move vertically like every other
@@ -94,7 +97,7 @@ export function UnitSelector() {
           checked={showCycle}
           onChange={(event) => setShowCycle(event.target.checked)}
         />
-        Four-stroke cycle
+        Four-stroke cycle (badge and firing tint)
       </label>
 
       <label className={styles.checkboxRow} htmlFor={uprightFlatId}>

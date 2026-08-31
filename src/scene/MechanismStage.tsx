@@ -31,6 +31,16 @@
  * the arrangement the layout picks when either engine shows more than one
  * cylinder. Nothing about the animation changes with it.
  *
+ * While the "Four-stroke cycle" preference is on, the same loop also tints each
+ * cylinder's combustion chamber by the stroke it is in — red firing, blue
+ * exhausting, untouched through intake and compression — which is what makes a
+ * firing order visible as a wave travelling down an inline-6 or a cross-plane
+ * V8. Which stroke that is comes from the engine layer (`cylinderStrokePhaseAt`,
+ * which needs the layout's real firing order, not just a crank phase); what
+ * color it is drawn comes from `chamberTint.ts`, which writes a material only
+ * when a cylinder's phase actually changes, so this is a handful of writes per
+ * 720° cycle rather than one per cylinder per frame.
+ *
  * Because `useMechanismRefs` is a hook, a variable number of cylinders cannot
  * own their refs here. Each cylinder is therefore a child component that holds
  * its own refs and carrier and registers an apply function with the stage; the
@@ -43,9 +53,15 @@
 
 import { useCallback, useLayoutEffect, useRef } from "react";
 import type { RefObject } from "react";
+import type { Group } from "three";
+import { cycleAngleRad, cylinderStrokePhaseAt } from "../engine/cycle";
+import type { StrokePhase } from "../engine/cycle";
 import { cylinderCrankAngleRad } from "../engine/engineLayout";
+import type { EngineLayoutDefinition } from "../engine/engineLayout";
 import { calculateMechanismState } from "../engine/kinematics";
 import type { CrankMechanismConfig, MechanismState } from "../engine/types";
+import { applyChamberPhase, createChamberTintState } from "./chamberTint";
+import type { ChamberTintState } from "./chamberTint";
 import { CrankMechanism } from "./CrankMechanism";
 import { MechanismLabel } from "./MechanismLabel";
 import type { MechanismObjects } from "./mechanismTransforms";
@@ -61,8 +77,20 @@ import { useMechanismAnimation } from "./useMechanismAnimation";
 /** Which engine a cylinder belongs to. Matches the label slots. */
 type EngineSlot = "A" | "B";
 
-/** Applies one calculated state to one cylinder's Three.js groups. */
-type ApplyCylinderState = (state: MechanismState) => void;
+/**
+ * What the frame loop can do to one mounted cylinder: move its parts, and
+ * tint its combustion chamber for the stroke it is in.
+ *
+ * Two functions on one registry entry rather than two registries, so the loop
+ * does one map lookup per cylinder per frame rather than two. `applyPhase`
+ * takes `null` for "not tinting" — the preference is off — and is itself
+ * responsible for writing nothing when the phase has not changed
+ * (`chamberTint.ts`).
+ */
+interface CylinderDriver {
+  applyState: (state: MechanismState) => void;
+  applyPhase: (phase: StrokePhase | null) => void;
+}
 
 /**
  * The mounted cylinders of both engines, keyed by cylinder index within each
@@ -73,7 +101,7 @@ type ApplyCylinderState = (state: MechanismState) => void;
  * string per cylinder per frame would allocate in the one place that must not
  * (§11, §18).
  */
-type MechanismRegistry = Record<EngineSlot, Map<number, ApplyCylinderState>>;
+type MechanismRegistry = Record<EngineSlot, Map<number, CylinderDriver>>;
 
 interface MechanismStageProps {
   layout: SceneLayout;
@@ -100,11 +128,24 @@ export function MechanismStage({ layout }: MechanismStageProps) {
    */
   const applyFrame = useCallback(
     (angles: FrameAngles, store: EngineStoreState) => {
+      // The four-stroke tint reuses the "Four-stroke cycle" preference the
+      // stroke badge is already gated by (§24a): same pedagogy, one switch.
+      // Off, every cylinder is handed `null` and no material is ever written,
+      // so the scene is byte for byte what it was before the tint existed.
+      const showCycle = store.preferences.showCycle;
+
       applyEngineFrame(
         registry.current.A,
         store.config,
+        layout.primary.layout,
         layout.primary.cylinders,
         angles.crankAngleRad,
+        // The 720° position comes from the loop's own parity bit — the one
+        // notion of cycle position there is (`useMechanismAnimation`) — never
+        // from a second one invented here.
+        showCycle
+          ? cycleAngleRad(angles.crankAngleRad, angles.crankRevolutionParity)
+          : null,
       );
 
       const comparison = store.comparisonConfig;
@@ -112,8 +153,17 @@ export function MechanismStage({ layout }: MechanismStageProps) {
         applyEngineFrame(
           registry.current.B,
           comparison,
+          layout.secondary.layout,
           layout.secondary.cylinders,
           angles.comparisonCrankAngleRad,
+          // Engine B works the same way from its own angle and its own parity,
+          // which diverge from engine A's the moment the speeds are unlinked.
+          showCycle
+            ? cycleAngleRad(
+                angles.comparisonCrankAngleRad,
+                angles.comparisonCrankRevolutionParity,
+              )
+            : null,
         );
       }
     },
@@ -159,30 +209,51 @@ export function MechanismStage({ layout }: MechanismStageProps) {
 }
 
 /**
- * Drives every mounted cylinder of one engine.
+ * Drives every mounted cylinder of one engine: its transforms from the crank
+ * angle, and its chamber tint from the engine's 720° cycle angle.
  *
  * Indexed loop and a numeric map lookup, so the only per-frame allocation is
  * the `MechanismState` each `calculateMechanismState` call returns — exactly
- * what the single-mechanism loop already did, once per cylinder (§18).
+ * what the single-mechanism loop already did, once per cylinder (§18). The
+ * tint adds none: `cylinderStrokePhaseAt` reads a frozen per-layout lookup and
+ * returns a string literal, and the write it leads to is skipped unless the
+ * phase actually changed.
+ *
+ * `engineLayout` is the whole architecture (`PlacedEngine.layout`), not the
+ * placed cylinders, because a cylinder's place in the four-stroke cycle
+ * depends on the engine's firing order and cannot be read off the cylinder
+ * alone (see `cylinderCycleAngleRad`). `cycleAngleRadValue` is null exactly
+ * when the cycle preference is off, and then no material is touched.
  */
 function applyEngineFrame(
-  mounted: Map<number, ApplyCylinderState>,
+  mounted: Map<number, CylinderDriver>,
   config: CrankMechanismConfig,
+  engineLayout: EngineLayoutDefinition,
   cylinders: readonly PlacedCylinder[],
   crankAngleRad: number,
+  cycleAngleRadValue: number | null,
 ): void {
   for (let i = 0; i < cylinders.length; i += 1) {
     const cylinder = cylinders[i];
-    const apply = mounted.get(cylinder.index);
-    if (!apply) {
+    const driver = mounted.get(cylinder.index);
+    if (!driver) {
       // Not mounted yet, or already unmounted: nothing to transform.
       continue;
     }
-    apply(
+    driver.applyState(
       calculateMechanismState(
         config,
         cylinderCrankAngleRad(crankAngleRad, cylinder),
       ),
+    );
+    driver.applyPhase(
+      cycleAngleRadValue === null
+        ? null
+        : cylinderStrokePhaseAt(
+            engineLayout,
+            cylinder.index,
+            cycleAngleRadValue,
+          ),
     );
   }
 }
@@ -271,10 +342,21 @@ function PlacedCylinderMechanism({
     piston: null,
   });
 
+  // The chamber this cylinder tints, and the last phase written to it. Refs,
+  // not state: the phase changes several times per revolution and a rerender
+  // per stroke would be exactly the per-frame React work §11 rules out.
+  const chamberRef = useRef<Group>(null);
+  const tint = useRef<ChamberTintState>(createChamberTintState());
+
   useLayoutEffect(() => {
     const mounted = registry.current[slot];
-    mounted.set(index, (state: MechanismState) => {
-      applyMechanismState(objects.current, refs, state);
+    mounted.set(index, {
+      applyState: (state: MechanismState) => {
+        applyMechanismState(objects.current, refs, state);
+      },
+      applyPhase: (phase) => {
+        applyChamberPhase(chamberRef.current, tint.current, phase);
+      },
     });
     return () => {
       mounted.delete(index);
@@ -295,6 +377,7 @@ function PlacedCylinderMechanism({
       // crank-direction ring is still drawn exactly once per engine even now
       // that two cylinders can share a plane.
       isFrontCylinder={index === 0}
+      chamberRef={chamberRef}
       drawsCrank={drawsCrank}
     />
   );

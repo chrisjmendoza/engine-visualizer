@@ -2027,3 +2027,41 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
     }
   });
 });
+
+describe("deriveLayout — the architecture rides out with the row (§24a)", () => {
+  it("carries the shared frozen layout instance, not a rebuilt copy", () => {
+    // The frame loop needs the architecture to ask the engine layer each
+    // cylinder's four-stroke phase (`cylinderStrokePhaseAt`), which depends on
+    // the layout's firing order. It must be the cached instance
+    // `createEngineLayout` returns: the loop holds it across frames and must
+    // never cause a layout to be rebuilt per frame (§18).
+    const layout = deriveLayout(
+      DEFAULT_CONFIG,
+      B6_1_6,
+      false,
+      "v8-cross",
+      "inline-6",
+    );
+
+    expect(layout.primary.layout).toBe(createEngineLayout("v8-cross"));
+    expect(layout.secondary?.layout).toBe(createEngineLayout("inline-6"));
+  });
+
+  it("keeps the whole architecture even when only cylinder 0 is drawn", () => {
+    // The single-cylinder view isolates one cylinder of a real engine; that
+    // cylinder still fires on the engine's own schedule, and its firing angle
+    // (cylinder 0's, always 0) comes from the full layout.
+    const layout = deriveLayout(
+      DEFAULT_CONFIG,
+      null,
+      false,
+      "v6-90-odd",
+      "single",
+      true,
+    );
+
+    expect(layout.primary.cylinders).toHaveLength(1);
+    expect(layout.primary.layout).toBe(createEngineLayout("v6-90-odd"));
+    expect(layout.primary.layout.cylinders).toHaveLength(6);
+  });
+});

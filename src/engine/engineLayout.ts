@@ -711,3 +711,55 @@ export function firingIntervalsRad(
       : FOUR_STROKE_CYCLE_RAD - event.crankAngleRad,
   );
 }
+
+/**
+ * `firingSequenceRad` re-indexed **by cylinder index** instead of by position
+ * in the firing order, built once per layout and frozen.
+ *
+ * The sequence answers "who fires next"; per-cylinder consumers ask the
+ * transposed question — "how far into the 720° cycle does *this* cylinder
+ * fire" — and one of them (`cylinderStrokePhaseAt`, driving the scene's tint)
+ * asks it for every cylinder on every frame. Walking the firing order to find
+ * out would allocate an events array per frame, which §18 forbids, so the walk
+ * happens once at module load and the answer is a shared frozen lookup, exactly
+ * like `LAYOUT_CACHE` itself.
+ *
+ * Cylinder 0's entry is always 0: it is the cylinder the firing order starts
+ * from, by construction.
+ */
+const FIRING_ANGLE_CACHE: Record<EngineLayoutId, readonly number[]> =
+  Object.fromEntries(
+    ENGINE_LAYOUT_IDS.map((id) => {
+      const layout = LAYOUT_CACHE[id];
+      const angles = new Array<number>(layout.cylinders.length).fill(0);
+      for (const event of firingSequenceRad(layout)) {
+        angles[event.index] = event.crankAngleRad;
+      }
+      return [id, Object.freeze(angles)];
+    }),
+  ) as Record<EngineLayoutId, readonly number[]>;
+
+/**
+ * The crank angle, in [0, 4π), at which one cylinder fires within the engine's
+ * 720° cycle — measured from cylinder 0's own firing, which is 0.
+ *
+ * This is real engine data, not a rendering convenience: it comes from the
+ * layout's published `firingOrder` walked against its crank table (see
+ * `firingSequenceRad`), and it is the *only* thing that can say which of a
+ * cylinder's two TDCs per cycle is the firing one. Two cylinders can share a
+ * crank phase and still be a full revolution apart in the cycle, so no amount
+ * of `crankPhaseRad` arithmetic substitutes for it.
+ *
+ * An index outside the layout falls back to 0 — cylinder 0's own firing angle
+ * — rather than returning `undefined` into arithmetic; callers index by a
+ * cylinder that came from the layout, so this is a floor, not a feature.
+ */
+export function cylinderFiringAngleRad(
+  layout: EngineLayoutDefinition,
+  cylinderIndex: number,
+): number {
+  const angles = FIRING_ANGLE_CACHE[layout.id];
+  return cylinderIndex >= 0 && cylinderIndex < angles.length
+    ? (angles[cylinderIndex] as number)
+    : 0;
+}

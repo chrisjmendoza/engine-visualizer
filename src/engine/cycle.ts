@@ -15,6 +15,11 @@
  * (`advanceRevolutionParity`), not here; this module only ever consumes the
  * bit, never mutates it.
  *
+ * `strokePhaseAt` answers for cylinder 0, whose cycle angle *is* the engine's.
+ * `cylinderStrokePhaseAt` (below) answers for any cylinder of a layout, which
+ * takes one more input the crank angle cannot supply — the engine's firing
+ * order — and whose convention is spelled out on `cylinderCycleAngleRad`.
+ *
  * This is a textbook idealization, not a claim about any real engine's valve
  * timing: `strokePhaseAt` divides the 720° cycle into four exact quarters,
  * while a real camshaft opens and closes valves well before and after those
@@ -25,6 +30,8 @@
  */
 
 import { TWO_PI } from "./constants";
+import { cylinderFiringAngleRad } from "./engineLayout";
+import type { EngineLayoutDefinition } from "./engineLayout";
 
 /** One quarter of the 720° four-stroke cycle. */
 export type StrokePhase = "intake" | "compression" | "power" | "exhaust";
@@ -74,4 +81,67 @@ export function strokePhaseAt(cycleAngleRadValue: number): StrokePhase {
   if (wrapped < TWO_PI) return "compression";
   if (wrapped < TWO_PI + Math.PI) return "power";
   return "exhaust";
+}
+
+/**
+ * ## Per-cylinder cycle phase, and the convention it rests on
+ *
+ * Everything above answers the four-stroke question for **cylinder 0** only,
+ * because the engine's cycle angle *is* cylinder 0's: `strokePhaseAt` reads
+ * crank angle 0 at parity 0 as the start of cylinder 0's intake stroke, which
+ * puts cylinder 0's power stroke at [2π, 3π) and therefore its **firing event
+ * at cycle angle 2π**. That is the fixed point every other cylinder is placed
+ * against, and it is the piece a future reader cannot re-derive from the code.
+ *
+ * A cylinder's own cycle angle is the engine's, shifted back by that
+ * cylinder's firing angle:
+ *
+ *     cylinderCycleAngleRad(cyl)
+ *         = engineCycleAngle − cylinderFiringAngleRad(cyl)   (mod 4π)
+ *
+ * Check it against the fixed point: `cylinderFiringAngleRad` measures firings
+ * from cylinder 0's, whose value is 0, so cylinder 0 comes out unshifted and
+ * agrees with `strokePhaseAt` exactly — the badge and the scene can never
+ * disagree. Cylinder *k* fires when its own cycle angle reaches 2π, i.e. at
+ * engine cycle angle `firingAngle_k + 2π`; reduced mod 2π that is
+ * `firingAngle_k`, which `firingSequenceRad` built as an occurrence of that
+ * cylinder's own TDC angle. So every cylinder starts its power stroke at its
+ * own TDC, as a real one does — the derivation answers to crank geometry, not
+ * only to the firing order it came from, and the tests check both.
+ *
+ * **The shift cannot come from `crankPhaseRad`.** Crank phase is modulo 360°
+ * while the cycle is 720°, so two cylinders whose pistons move identically —
+ * an inline-4's cylinders 1 and 4, say — can be a full revolution apart in the
+ * cycle. Only the layout's published `firingOrder`, walked into
+ * `cylinderFiringAngleRad`, says which of a cylinder's two TDCs per cycle is
+ * the firing one. That is engine-layer truth; how (or whether) it is *drawn*
+ * is a separate, presentation-layer decision, made in `src/scene/`.
+ *
+ * Allocation-free and safe to call per cylinder per frame (§18): the firing
+ * angles are a frozen lookup built once per layout.
+ */
+export function cylinderCycleAngleRad(
+  layout: EngineLayoutDefinition,
+  cylinderIndex: number,
+  engineCycleAngleRadValue: number,
+): number {
+  const shifted =
+    engineCycleAngleRadValue - cylinderFiringAngleRad(layout, cylinderIndex);
+  return ((shifted % CYCLE_SPAN_RAD) + CYCLE_SPAN_RAD) % CYCLE_SPAN_RAD;
+}
+
+/**
+ * Which stroke one cylinder of an engine is in, at an engine cycle angle (as
+ * returned by `cycleAngleRad`). See `cylinderCycleAngleRad` for the convention
+ * and its derivation; this is that shift followed by the same quarter split
+ * `strokePhaseAt` applies, so cylinder 0 reduces to `strokePhaseAt` exactly.
+ */
+export function cylinderStrokePhaseAt(
+  layout: EngineLayoutDefinition,
+  cylinderIndex: number,
+  engineCycleAngleRadValue: number,
+): StrokePhase {
+  return strokePhaseAt(
+    cylinderCycleAngleRad(layout, cylinderIndex, engineCycleAngleRadValue),
+  );
 }

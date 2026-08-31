@@ -11,6 +11,8 @@
  * a distinct volume that grows and shrinks with the compression ratio.
  */
 
+import type { RefObject } from "react";
+import type { Group } from "three";
 import {
   CRANK_ARROW_HEAD_ANGLE_RAD,
   CRANK_ARROW_HEAD_ROTATION_Z_RAD,
@@ -30,11 +32,20 @@ interface CylinderGuideProps {
    * label (`MechanismLabel`).
    */
   isFrontCylinder?: boolean;
+  /**
+   * Stage-owned ref to the combustion chamber's surfaces, so the frame loop
+   * can tint them for the four-stroke phase without rerendering this component
+   * (`chamberTint.ts`, §24a). Left unattached when nobody is tinting; the
+   * chamber then simply keeps the `SCENE_COLORS.clearance` it is declared
+   * with, which is exactly how it has always been drawn.
+   */
+  chamberRef?: RefObject<Group | null>;
 }
 
 export function CylinderGuide({
   p,
   isFrontCylinder = false,
+  chamberRef,
 }: CylinderGuideProps) {
   const wallCenterX = p.boreMm / 2 + p.cylinderWallThicknessMm / 2;
 
@@ -86,38 +97,45 @@ export function CylinderGuide({
         </mesh>
       ))}
 
-      {/* Bore walls beside the clearance volume, up to the deck face. */}
-      {[-1, 1].map((side) => (
-        <mesh
-          key={`clearance${side}`}
-          position={[side * wallCenterX, clearanceCenterY, 0]}
-        >
+      {/* The combustion chamber's own surfaces: the two bore walls beside the
+          clearance volume and the head face closing its top. Grouped, and only
+          these three, because the four-stroke tint repaints exactly this group
+          (`chamberTint.ts`) — the space above the piston is what is burning, so
+          the walls of the swept travel below and the deck above stay structural
+          whatever the cylinder is doing. The group is otherwise inert: an
+          identity transform, so the drawing is unchanged when nothing tints it. */}
+      <group ref={chamberRef}>
+        {[-1, 1].map((side) => (
+          <mesh
+            key={`clearance${side}`}
+            position={[side * wallCenterX, clearanceCenterY, 0]}
+          >
+            <boxGeometry
+              args={[
+                p.cylinderWallThicknessMm,
+                p.clearanceHeightMm,
+                p.cylinderDepthMm,
+              ]}
+            />
+            <meshStandardMaterial
+              color={SCENE_COLORS.clearance}
+              metalness={0.5}
+              roughness={0.5}
+            />
+          </mesh>
+        ))}
+
+        <mesh position={[0, headFaceCenterY, 0]}>
           <boxGeometry
-            args={[
-              p.cylinderWallThicknessMm,
-              p.clearanceHeightMm,
-              p.cylinderDepthMm,
-            ]}
+            args={[p.boreMm, p.headFaceThicknessMm, p.cylinderDepthMm * 0.98]}
           />
           <meshStandardMaterial
             color={SCENE_COLORS.clearance}
-            metalness={0.5}
-            roughness={0.5}
+            metalness={0.45}
+            roughness={0.55}
           />
         </mesh>
-      ))}
-
-      {/* Head face closing the top of the clearance volume. */}
-      <mesh position={[0, headFaceCenterY, 0]}>
-        <boxGeometry
-          args={[p.boreMm, p.headFaceThicknessMm, p.cylinderDepthMm * 0.98]}
-        />
-        <meshStandardMaterial
-          color={SCENE_COLORS.clearance}
-          metalness={0.45}
-          roughness={0.55}
-        />
-      </mesh>
+      </group>
 
       {/* Deck / cylinder head above the clearance volume. */}
       <mesh position={[0, deckCenterY, 0]}>

@@ -33,10 +33,17 @@ const PHASE_LABEL: Record<StrokePhase, string> = {
  * entirely from this shared control) or duplicating `AnimationControls`
  * itself; both are larger changes than this overlay earns tonight.
  *
- * Multi-cylinder note: reflects cylinder 1 only. Cylinder 1's crank-throw
- * offset is always 0 (`engineLayout.ts`'s phase tables), so engine A's own
- * crank angle already *is* cylinder 1's; other cylinders fire out of phase
- * with it and will get a per-cylinder display once firing order lands.
+ * Multi-cylinder note: this badge reflects **cylinder 1 only**, and that is now
+ * a deliberate division of labor rather than a limitation. Cylinder 1's
+ * crank-throw offset is always 0 (`engineLayout.ts`'s phase tables) and its
+ * firing angle is 0 by construction (`cylinderFiringAngleRad`), so engine A's
+ * own crank angle already *is* cylinder 1's and `strokePhaseAt` needs no
+ * layout here. The per-cylinder story is told by the scene instead: the same
+ * preference that shows this badge tints every cylinder's combustion chamber
+ * by its own stroke (`src/scene/chamberTint.ts`), which is where a firing order
+ * can actually be *seen*. The two can never disagree — the tint routes cylinder
+ * 0 through `cylinderStrokePhaseAt`, which reduces to exactly this
+ * `strokePhaseAt` call for that cylinder.
  */
 export function StrokeBadge() {
   const showCycle = useEngineStore((state) => state.preferences.showCycle);

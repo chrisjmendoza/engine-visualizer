@@ -40,9 +40,12 @@ export interface UserPreferences {
   displayUnit: DisplayUnit;
   showLabels: boolean;
   /**
-   * Gates the four-stroke stroke badge (`src/engine/cycle.ts`'s pedagogical
-   * overlay). Session-local, like every other preference here: not carried
-   * by share links tonight (see the store's `setShowCycle` doc comment).
+   * Gates `src/engine/cycle.ts`'s pedagogical overlay, both halves of it: the
+   * stroke badge beside the crank-angle readout (cylinder 1) and the scene's
+   * per-cylinder firing tint (§24a), which colors each combustion chamber by
+   * the stroke that cylinder is in. Session-local, like every other preference
+   * here: not carried by share links tonight (see the store's `setShowCycle`
+   * doc comment).
    */
   showCycle: boolean;
   /**

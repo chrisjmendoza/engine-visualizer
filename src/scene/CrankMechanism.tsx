@@ -62,6 +62,12 @@ interface CrankMechanismProps {
   /** Forwarded to `CylinderGuide`: only cylinder 0 draws the crank-direction arrow. */
   isFrontCylinder?: boolean;
   /**
+   * Forwarded to `CylinderGuide`: the combustion chamber's surfaces, which the
+   * stage's frame loop tints for the four-stroke phase (§24a). Like the three
+   * refs above it is stage-owned and this component only passes it through.
+   */
+  chamberRef?: MechanismRefs["crank"];
+  /**
    * Whether to draw the crank throw at all (`PlacedCylinder.drawsCrank`, §24a).
    *
    * False for the bank-1 cylinder of a shared-pin V pair, whose crank drawing
@@ -87,6 +93,7 @@ export function CrankMechanism({
   rodRef,
   pistonRef,
   isFrontCylinder = false,
+  chamberRef,
   drawsCrank = true,
 }: CrankMechanismProps) {
   // Two nested groups, not one: the outer one puts this cylinder's crankshaft
@@ -96,7 +103,11 @@ export function CrankMechanism({
   return (
     <group position={[positionX, positionY, positionZ]}>
       <group rotation={[0, 0, drawnRotationRad]}>
-        <CylinderGuide p={p} isFrontCylinder={isFrontCylinder} />
+        <CylinderGuide
+          p={p}
+          isFrontCylinder={isFrontCylinder}
+          chamberRef={chamberRef}
+        />
         {drawsCrank && <CrankThrow p={p} ref={crankRef} />}
         <ConnectingRod p={p} ref={rodRef} />
         <Piston p={p} ref={pistonRef} />

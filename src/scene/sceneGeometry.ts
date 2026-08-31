@@ -24,6 +24,7 @@ import {
 } from "../engine/engineLayout";
 import type {
   CylinderDefinition,
+  EngineLayoutDefinition,
   EngineLayoutId,
   EngineLayoutKind,
 } from "../engine/engineLayout";
@@ -47,6 +48,20 @@ export const SCENE_COLORS = {
   structureDark: "#2a313b",
   /** Bore wall alongside the clearance volume, lifted so the space reads. */
   clearance: "#4d5766",
+  /**
+   * Combustion chamber during the **power** stroke — the four-stroke tint
+   * (§24a), applied to the chamber surfaces `clearance` otherwise paints.
+   *
+   * A deep, desaturated red rather than a hot one: it has to read as
+   * combustion at a glance while staying clearly distinct from `accent`, the
+   * bright orange the moving joints are marked with, so a tinted chamber can
+   * never be mistaken for a highlighted pin. Both tints sit at roughly the
+   * same lightness as `clearance` itself, so a cylinder changes hue through
+   * the cycle without flashing brighter or darker.
+   */
+  chamberFiring: "#a4402f",
+  /** Combustion chamber during the **exhaust** stroke: cooling, spent gas. */
+  chamberExhaust: "#3a6f96",
   piston: "#c3ccd8",
   rod: "#98a3b2",
   crank: "#7c8797",
@@ -502,6 +517,18 @@ export interface PlacedCylinder extends CylinderDefinition {
 export interface PlacedEngine {
   config: CrankMechanismConfig;
   /**
+   * The architecture this row was built from — the shared frozen instance
+   * `createEngineLayout` returns, carried through unchanged rather than rebuilt
+   * (§24). The frame loop needs it to ask the engine layer each cylinder's
+   * four-stroke phase (`cylinderStrokePhaseAt`), which depends on the layout's
+   * firing order and so cannot be answered from a `PlacedCylinder` alone.
+   *
+   * Note that this is the whole architecture even when only cylinder 0 is
+   * drawn: `cylinders` below has already applied `visibleCylinders`, and a V8
+   * viewed as one cylinder is still a V8.
+   */
+  layout: EngineLayoutDefinition;
+  /**
    * One shared proportions object: every cylinder of an engine has the same
    * bore, stroke, rod, and compression ratio, so they are drawn identically
    * and differ only in crank phase and X offset.
@@ -679,6 +706,8 @@ interface MeasuredThrow {
 /** An engine's row, measured but not yet positioned on the stage. */
 interface MeasuredRow {
   config: CrankMechanismConfig;
+  /** The architecture measured, carried through to `PlacedEngine.layout`. */
+  layout: EngineLayoutDefinition;
   proportions: MechanismProportions;
   throws: readonly MeasuredThrow[];
   /** How many cylinders are on stage, across every slot. */
@@ -841,6 +870,7 @@ function measureRow(
 
   return {
     config,
+    layout,
     proportions,
     throws,
     cylinderCount: definitions.length,
@@ -1183,6 +1213,7 @@ function rowAsEngine(
 ): Omit<PlacedEngine, "label"> {
   return {
     config: row.config,
+    layout: row.layout,
     proportions: row.proportions,
     cylinders: placed.cylinders,
     bounds: placed.bounds,
