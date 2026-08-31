@@ -8,6 +8,17 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### feat: three Subaru boxers, and a clearer cylinder-view switch
+
+- **Subaru Impreza WRX STI (GD), Impreza WRX (GD), and BRZ / Toyota 86** — the first flat-4s in the roster, all two-source verified. The two Imprezas share the same 130.5 mm EJ-family rod, so the difference between the STI's 99.5 × 79 mm and the WRX's 92 × 75 mm is purely the crank — a clean rod-to-stroke comparison. The BRZ's FA20 is exactly square at 86 × 86 mm, the same bore and stroke as the app's default configuration but on a much shorter rod at 12.5:1, which makes the point that bore and stroke alone don't determine how a mechanism moves.
+- **Not added, deliberately**: the FA24 (WRX 2022+) still fails the rod-length bar — every aftermarket listing quoting a length is for the FA20, and every FA24-specific rod is sold as a "+2 mm" stroker upgrade with no stated baseline, so the obvious ~131 mm inference has no source behind it. The VW VR5 and VR6 3.2 also missed: the VR6's geometry and output verify cleanly but its redline is forum-sourced only, and the VR5's compression, redline, and output all rest on a single source.
+- **The cylinder-view switch now shows both states at once** — "Single cylinder" on the left, "Full engine" on the right, with the inactive side dimmed. Previously one label swapped text on click, so you couldn't tell whether it described what you were seeing or what clicking would do. Screen readers had the same problem for a subtler reason: the accessible name was built from that changing text, so the control announced as a different name in each state. It now has a fixed name with `aria-checked` carrying the state.
+
+### fix: a 60° V6 does not have a split-pin crank
+
+- Comments and design notes described the 60° V6 (`v6-60`) as a "split-pin (flying arm)" crank, conflating two different mechanisms. A true split pin is the **90°** V6's trick: one journal machined as two overlapping halves staggered 30°. At 60° the two pin surfaces would overlap too little to be strong enough, so a 60° V6 instead gives **each cylinder its own crankpin**, joined to its bank partner's by a flying-arm web 60° away. The rendering was already correct — it decides from pin geometry rather than from the label — but the prose was wrong. Split-pin references are kept where they are accurate, as the contrast that explains why the 60° V6 can't use one.
+- The GT-R preset's note now states the general geometric requirement rather than asserting a Nissan-specific construction detail no source could back. Full suite: 1,099 tests.
+
 ### feat: the full layout roster — V, flat, inline-5, and odd-fire
 
 - **Thirteen layouts**: inline-3/4/5/6, V6 at 60° and the odd-fire 90°, V8 in both cross-plane and flat-plane, V10, V12, and boxer flat-4/flat-6. All 16 presets now render their real architecture — the LS3 and LS7 as cross-plane V8s, the 458 as a flat-plane V8, the VR38DETT as a 60° V6.
@@ -18,7 +29,7 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 ### feat: V and flat engines draw one cutaway plane per throw
 
 - A V8 previously drew as eight separate upright mechanisms in a row: very wide, very short, and shrunk to almost nothing once the camera fitted it. The two cylinders of a throw now share one plane, so a V8 reads as four V units — the row narrows by 47% and the fitted zoom grows 1.88×.
-- The two cases are physically different and are drawn differently. Plain-pin V engines genuinely **share** a crankpin, so one crank is drawn with both rods hanging off the single shared pin. A **boxer is not a 180° V**: its paired cylinders run on separate throws 180° apart, which is exactly why the pistons move outward together, so both throws are drawn. The 60° V6 is a third case — its flying-arm **split-pin** crank puts the pair's journals 60° apart, which is what makes it even-fire. The renderer decides from the pin geometry itself rather than from the layout kind, so all three come out right.
+- The two cases are physically different and are drawn differently. Plain-pin V engines genuinely **share** a crankpin, so one crank is drawn with both rods hanging off the single shared pin. A **boxer is not a 180° V**: its paired cylinders run on separate throws 180° apart, which is exactly why the pistons move outward together, so both throws are drawn. The 60° V6 is a third case — each cylinder gets its own crankpin, joined to its bank partner's by a **flying arm** 60° apart (too little pin overlap for a split pin), which is what makes it even-fire. The renderer decides from the pin geometry itself rather than from the layout kind, so all three come out right.
 
 ### feat: single-cylinder / full-engine toggle
 

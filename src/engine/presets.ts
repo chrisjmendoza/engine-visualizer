@@ -532,10 +532,10 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "VR38DETT",
     layoutLabel: "3.8 L twin-turbo V6",
-    // Layout: 60° V6 (§24a's `v6-60`). Even-fire at 120°, which a 60° vee can
-    // only manage on a split-pin ("flying arm") crank — the journals are
-    // offset a further 60° so the effective throw separation between the
-    // banks is 120°. Nissan's VR/VQ 60° V6 family is built exactly that way.
+    // Layout: 60° V6 (§24a's `v6-60`). Even-fire at 120° requires the pair's
+    // crankpins offset a further 60° apart from the bank angle — too little
+    // pin overlap for a true split pin, so any even-fire 60° V6 needs
+    // separate crankpins joined by a flying arm, not a split journal.
     layoutId: "v6-60",
     // bore/stroke 95.5/88.4 mm, CR 9.0:1 — confirmed by a MAHLE Motorsports
     // spec sheet (mahle.com) and Wikipedia ("Nissan VR engine").
@@ -630,5 +630,109 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     // the 8000 rpm redline — a tight margin worth flagging, but not an
     // ordering violation.
     output: { powerHp: 333, powerRpm: 7900, torqueLbFt: 262, torqueRpm: 4900 },
+  },
+  {
+    id: "wrx-sti-ej257",
+    name: "Subaru Impreza WRX STI (GD)",
+    brand: "Subaru",
+    engineCode: "EJ257",
+    layoutLabel: "2.5 L turbo flat-4",
+    // Layout: horizontally-opposed boxer (§24a's `flat-4`), firing order
+    // 1-3-2-4. A boxer gives each cylinder its own crankpin, an opposed
+    // pair's pins 180° apart — which is what makes the opposed pistons move
+    // outward together, and what distinguishes it from a 180° V.
+    layoutId: "flat-4",
+    // 2004-2006 USDM STI. The most undersquare engine in this roster after
+    // the KA24DE: a 99.5 mm bore on a 79 mm stroke.
+    // rod 130.5 mm — the shared EJ20/EJ25 short-deck rod, listed as 5.137 in
+    // (130.48 mm) by Manley Performance (manleyperformance.com) and as
+    // 130.50 mm by FCP Engineering (fcp-engineering.com); Eagle and Carrillo
+    // publish the same length for the family.
+    // CR 8.2:1 — the low compression that makes room for boost. Confirmed by
+    // Wikipedia ("Subaru EJ engine") and cars101.com's 2004 WRX/STI spec
+    // page. European STI variants ran ~8.71:1: a different market, not a
+    // source conflict.
+    // Redline 7000 rpm — autoevolution.com's 2005-2007 Impreza WRX STi spec
+    // page and auto123.com's 2005 technical specifications; fuel cut lands
+    // slightly later, around 7100-7200 rpm.
+    config: {
+      boreMm: 99.5,
+      strokeMm: 79.0,
+      rodLengthMm: 130.5,
+      compressionRatio: 8.2,
+      redlineRpm: 7000,
+    },
+    // Output 300 hp @ 6000 rpm, 300 lb-ft @ 4000 rpm — native SAE-net
+    // figures for the 2004-2006 USDM car (no PS conversion involved).
+    // Confirmed by automobile-catalog.com and cars101.com.
+    output: { powerHp: 300, powerRpm: 6000, torqueLbFt: 300, torqueRpm: 4000 },
+  },
+  {
+    id: "wrx-ej205",
+    name: "Subaru Impreza WRX (GD)",
+    brand: "Subaru",
+    engineCode: "EJ205",
+    layoutLabel: "2.0 L turbo flat-4",
+    layoutId: "flat-4",
+    // 2002-2005 USDM WRX — the non-STI car, and a direct bore/stroke
+    // contrast with the EJ257 above on an identical 130.5 mm rod, so the
+    // rod-to-stroke difference between the two is purely the crank.
+    // rod 130.5 mm — the same shared EJ-family rod: Eagle's listing covers
+    // "EJ205 EJ207 EJ255 EJ257" (via realstreetperformance.com) and FCP
+    // Engineering (fcp-engineering.com) gives 130.50 mm with explicit EJ205
+    // fitment.
+    // CR 8.0:1 — cars101.com's 2002-2005 WRX spec pages, 8020automotive.com's
+    // EJ205 guide, and OAKOS Automotive's 2002-2005 WRX piston listing all
+    // tie 8.0:1 to this market and model-year range. Aggregate sources
+    // quoting 9.0:1 (or a "8:1-9:1" range) describe other-market tunes.
+    // Redline 7000 rpm — 8020automotive.com's EJ205 guide, corroborated by
+    // cars101.com's spec pages.
+    config: {
+      boreMm: 92.0,
+      strokeMm: 75.0,
+      rodLengthMm: 130.5,
+      compressionRatio: 8.0,
+      redlineRpm: 7000,
+    },
+    // Output 227 hp @ 6000 rpm, 217 lb-ft @ 4000 rpm — native SAE-net
+    // figures for the 2002-2005 USDM WRX. Confirmed by
+    // automobile-catalog.com and auto123.com.
+    output: { powerHp: 227, powerRpm: 6000, torqueLbFt: 217, torqueRpm: 4000 },
+  },
+  {
+    id: "brz-fa20",
+    name: "Subaru BRZ / Toyota 86",
+    brand: "Subaru",
+    engineCode: "FA20",
+    layoutLabel: "2.0 L flat-4",
+    layoutId: "flat-4",
+    // 2013-2016 USDM BRZ. The same engine Toyota calls the 4U-GSE in the
+    // FR-S/86, so one entry covers both cars. Naturally aspirated and
+    // exactly square at 86 x 86 mm — the same bore and stroke as this app's
+    // default configuration, but on a much shorter rod and far higher
+    // compression, which makes it a useful demonstration that bore and
+    // stroke alone do not determine how a mechanism moves.
+    // rod 129.30 mm — K1 Technologies (k1technologies.com) and Manley
+    // Performance (manleyperformance.com, 5.090 in = 129.29 mm).
+    // CR 12.5:1 — unusually high for a naturally aspirated production
+    // engine, enabled by its direct injection. Confirmed by Wikipedia
+    // ("Subaru FA engine") and Crawford Performance
+    // (crawfordperformance.com).
+    // Redline 7400 rpm — Subaru's own 2013 BRZ press kit
+    // (media.subaru.com) and xcceleration.com's FA20 spec page; fuel cut
+    // follows at about 7450 rpm.
+    config: {
+      boreMm: 86.0,
+      strokeMm: 86.0,
+      rodLengthMm: 129.3,
+      compressionRatio: 12.5,
+      redlineRpm: 7400,
+    },
+    // Output 200 hp @ 7000 rpm, 151 lb-ft @ 6400 rpm — Subaru's own figure
+    // for the 2013 USDM BRZ, from its press kit (media.subaru.com) and
+    // xcceleration.com. Some references quote 197 hp instead; that is the
+    // automatic-transmission car's rating, not the manual's, and the torque
+    // figure is unchanged between them.
+    output: { powerHp: 200, powerRpm: 7000, torqueLbFt: 151, torqueRpm: 6400 },
   },
 ];

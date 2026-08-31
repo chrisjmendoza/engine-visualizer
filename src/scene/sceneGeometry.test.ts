@@ -1470,11 +1470,11 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
     }
   });
 
-  it("draws one crank per throw on a shared-pin V, two on a split-pin V or a boxer", () => {
-    // Not a fact about the layout *kind*: a 60° V6's flying-arm journal and a
-    // boxer's antipodal throws are two real pins per pair, and both must be
-    // drawn, while a plain-pin V pair's two crank drawings would coincide
-    // exactly and one of them is dropped.
+  it("draws one crank per throw on a shared-pin V, two on a flying-arm V or a boxer", () => {
+    // Not a fact about the layout *kind*: a 60° V6's separate, flying-arm-
+    // joined crankpins and a boxer's antipodal throws are two real pins per
+    // pair, and both must be drawn, while a plain-pin V pair's two crank
+    // drawings would coincide exactly and one of them is dropped.
     const expected: Record<string, number> = {
       "v8-cross": 1,
       "v8-flat": 1,

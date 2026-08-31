@@ -54,9 +54,12 @@
  *
  *     φ_bank1 = φ_bank0 + bankAngle                      (shared crankpin)
  *
- * A **split-pin** ("flying arm") crank offsets the two halves of a journal by
- * a further angle s, giving `φ_bank1 = φ_bank0 + bankAngle + s`; that is how a
- * narrow-angle V achieves even firing (see `v6-60`). A **boxer** does not
+ * A **narrow-angle V** achieves even firing by staggering the pair's pins a
+ * further angle s apart, giving `φ_bank1 = φ_bank0 + bankAngle + s`. A small
+ * stagger (30°, on a 90° V6) leaves enough pin overlap to cut as a true
+ * **split pin** — one journal machined as two overlapping halves — but a 60°
+ * stagger (`v6-60`) does not, so those pins are cast as two separate
+ * crankpins joined by a **flying arm** instead. A **boxer** does not
  * share pins at all: opposed cylinders sit on separate throws 180° apart,
  * which — with bores 180° apart — works out as `φ_bank1 = φ_bank0`, i.e. the
  * two pistons reach their outer dead centers together (see `flat-4`).
@@ -272,8 +275,11 @@ const LAYOUT_SPECS: Record<EngineLayoutId, LayoutSpec> = {
    * A 60° V6 on plain shared pins is *not* even-fire: three throws 120° apart
    * put the bank-0 TDCs at 0°/120°/240° and each bank-1 partner 60° earlier,
    * i.e. at six distinct angles 60° apart, which cannot be spread evenly over
-   * 720°. The fix is a **split-pin (flying-arm) crank**: each journal's two
-   * halves are offset by a further 60°, making the effective bank-to-bank
+   * 720°. The fix is **separate crankpins joined by a flying arm**: each
+   * cylinder gets its own pin rather than sharing one with its bank partner,
+   * and the pair's pins are offset a further 60° apart (too little overlap
+   * for a true split pin, which is why a flying-arm web — not a split
+   * journal — carries the load here), making the effective bank-to-bank
    * throw separation 60° + 60° = 120° (`tdc_bank1 = tdc_bank0 − 120°`). Then
    * every TDC angle is one of 0°/120°/240°, each shared by exactly two
    * cylinders, and the engine fires evenly every 120° = 720/6.
@@ -618,9 +624,11 @@ const CRANKPIN_TOLERANCE_RAD = 1e-9;
  * - **Plain-pin V** (`v6-90-odd`, both V8s, `v10-72`, `v12-60`): the bank-1
  *   partner's phase leads by exactly the bank angle, which cancels the bank
  *   offset — the pair shares one pin, as a real V does.
- * - **Split-pin V** (`v6-60`): the flying-arm journal adds a further 60°, so
- *   the pair's pins are 60° apart and both are real. A renderer that assumed
- *   every V shares pins would draw this engine wrong.
+ * - **Flying-arm V** (`v6-60`): each cylinder has its own crankpin rather
+ *   than sharing one with its bank partner; the pair's pins are offset a
+ *   further 60° apart (too little overlap for a true split pin, hence the
+ *   flying-arm web) and both are real. A renderer that assumed every V
+ *   shares pins would draw this engine wrong.
  * - **Boxer** (`flat-4`, `flat-6`): equal phases with bores 180° apart put the
  *   pins antipodal — separate throws, which is exactly why opposed pistons
  *   move outward together.

@@ -29,6 +29,9 @@ const ADVERTISED: Record<string, { cylinders: number; totalCc: number }> = {
   "skyline-gtr-rb26dett": { cylinders: 6, totalCc: 2568 },
   "gtr-r35-vr38dett": { cylinders: 6, totalCc: 3799 },
   "bmw-e46-m3-s54": { cylinders: 6, totalCc: 3246 },
+  "wrx-sti-ej257": { cylinders: 4, totalCc: 2457 },
+  "wrx-ej205": { cylinders: 4, totalCc: 1994 },
+  "brz-fa20": { cylinders: 4, totalCc: 1998 },
   "240sx-ka24de": { cylinders: 4, totalCc: 2389 },
   "tsx-k24a2": { cylinders: 4, totalCc: 2354 },
 };
@@ -54,6 +57,9 @@ const ADVERTISED_COMPRESSION_RATIO: Record<string, number> = {
   "skyline-gtr-rb26dett": 8.5,
   "gtr-r35-vr38dett": 9.0,
   "bmw-e46-m3-s54": 11.5,
+  "wrx-sti-ej257": 8.2,
+  "wrx-ej205": 8.0,
+  "brz-fa20": 12.5,
   "240sx-ka24de": 9.5,
   "tsx-k24a2": 10.5,
 };
@@ -78,6 +84,9 @@ const ADVERTISED_REDLINE_RPM: Record<string, number> = {
   "skyline-gtr-rb26dett": 8000,
   "gtr-r35-vr38dett": 7100,
   "bmw-e46-m3-s54": 8000,
+  "wrx-sti-ej257": 7000,
+  "wrx-ej205": 7000,
+  "brz-fa20": 7400,
   "240sx-ka24de": 6900,
   "tsx-k24a2": 7100,
 };
@@ -98,6 +107,9 @@ const ADVERTISED_BRAND: Record<string, string> = {
   "skyline-gtr-rb26dett": "Nissan",
   "gtr-r35-vr38dett": "Nissan",
   "bmw-e46-m3-s54": "BMW",
+  "wrx-sti-ej257": "Subaru",
+  "wrx-ej205": "Subaru",
+  "brz-fa20": "Subaru",
   "240sx-ka24de": "Nissan",
   "tsx-k24a2": "Honda",
 };
@@ -209,6 +221,24 @@ const ADVERTISED_OUTPUT: Record<
     powerRpm: 7900,
     torqueLbFt: 262,
     torqueRpm: 4900,
+  },
+  "wrx-sti-ej257": {
+    powerHp: 300,
+    powerRpm: 6000,
+    torqueLbFt: 300,
+    torqueRpm: 4000,
+  },
+  "wrx-ej205": {
+    powerHp: 227,
+    powerRpm: 6000,
+    torqueLbFt: 217,
+    torqueRpm: 4000,
+  },
+  "brz-fa20": {
+    powerHp: 200,
+    powerRpm: 7000,
+    torqueLbFt: 151,
+    torqueRpm: 6400,
   },
 };
 

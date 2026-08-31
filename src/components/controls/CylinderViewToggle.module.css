@@ -12,14 +12,49 @@
   color: var(--color-text);
 }
 
+/* Flanking labels + switch, in a row: "Single cylinder" [track] "Full
+   engine". Each label shrinks (and, if truly out of room, truncates with an
+   ellipsis — the same safety net ApplicationShell's header subtitle uses)
+   before the row would wrap or overflow at the panel's narrower widths; the
+   switch itself never shrinks. */
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.optionActive,
+.optionInactive {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: color 120ms ease-out;
+}
+
+.optionActive {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.optionInactive {
+  color: var(--color-text-muted);
+}
+
+.optionActive:last-child,
+.optionInactive:last-child {
+  text-align: right;
+}
+
 .switch {
   display: inline-flex;
+  flex: none;
   align-items: center;
-  gap: 0.55rem;
   min-height: 44px;
   padding: 0.3rem 0.6rem;
   font: inherit;
-  font-size: 0.95rem;
   color: var(--color-text);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
@@ -32,8 +67,8 @@
   outline-offset: 1px;
 }
 
-/* The track and thumb are the only purely decorative parts: the state is
-   carried by aria-checked and by the text beside them. */
+/* The track/thumb and the two flanking labels are all purely decorative
+   (aria-hidden): aria-checked alone carries the state. */
 .track {
   position: relative;
   flex: none;
@@ -74,13 +109,6 @@
   .thumb {
     transition: none;
   }
-}
-
-/* Both state names are about the same length, so the control does not visibly
-   resize as it is toggled; the minimum keeps it steady at either. */
-.state {
-  min-width: 7.5rem;
-  text-align: left;
 }
 
 @media (min-width: 600px) {

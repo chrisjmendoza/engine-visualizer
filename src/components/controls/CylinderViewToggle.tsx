@@ -17,6 +17,14 @@ const SINGLE_LABEL = "Single cylinder";
 const FULL_LABEL = "Full engine";
 
 /**
+ * The switch's one, unchanging accessible name. `aria-checked` carries the
+ * state, exactly like any other switch — the name must not describe *which*
+ * state is current, only *what the control does*, or a screen reader
+ * announces what sounds like a different control each time it flips.
+ */
+const ACCESSIBLE_NAME = "Show all cylinders";
+
+/**
  * "Single cylinder / Full engine" switch for one engine
  * (TECHNICAL_DESIGN.md §24a).
  *
@@ -26,12 +34,16 @@ const FULL_LABEL = "Full engine";
  * knowledge that it is a V8's cylinder — and picking an LS7 preset while
  * zoomed in on one cylinder keeps you on one cylinder, now labelled as a V8's.
  *
- * A real switch rather than a checkbox: both states are named ("Single
- * cylinder" / "Full engine"), so neither reads as "the unchecked one". It is a
- * `<button role="switch">` with `aria-checked`, which gets Space/Enter
- * activation and focus order from the underlying button for free — checked
- * meaning the whole engine, since that is the affirmative state the visible
- * track slides toward.
+ * A real switch rather than a checkbox: both named states ("Single cylinder"
+ * / "Full engine") are shown at once, flanking the track, with the inactive
+ * side dimmed — so the control reads as a position between two labelled
+ * states rather than as one label that mutates on click. Those two labels
+ * are decorative (`aria-hidden`); the switch itself carries a constant
+ * `aria-label` (`ACCESSIBLE_NAME`) so its accessible name never changes, and
+ * `aria-checked` — true meaning the whole engine, since that is the
+ * affirmative state the track slides toward — carries the state instead.
+ * It is a `<button role="switch">`, which gets Space/Enter activation and
+ * focus order from the underlying button for free.
  *
  * Switching the view is not a geometry change but is governed by the same
  * rule (§11.1): it never touches the crank angle or playback.
@@ -60,31 +72,38 @@ export function CylinderViewToggle({
       : setSingleCylinderView;
 
   const labelId = useId();
-  const stateId = useId();
 
   return (
     <div className={styles.field}>
       <span className={styles.label} id={labelId}>
         Cylinders shown
       </span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={!isSingle}
-        // Named by the field and by whichever state is current, so the
-        // control announces as "Cylinders shown Full engine", never as a
-        // bare on/off whose "off" the listener has to guess.
-        aria-labelledby={`${labelId} ${stateId}`}
-        className={styles.switch}
-        onClick={() => commit(!isSingle)}
-      >
-        <span className={styles.track} aria-hidden="true">
-          <span className={styles.thumb} />
+      <div className={styles.switchRow}>
+        <span
+          className={isSingle ? styles.optionActive : styles.optionInactive}
+          aria-hidden="true"
+        >
+          {SINGLE_LABEL}
         </span>
-        <span className={styles.state} id={stateId}>
-          {isSingle ? SINGLE_LABEL : FULL_LABEL}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!isSingle}
+          aria-label={ACCESSIBLE_NAME}
+          className={styles.switch}
+          onClick={() => commit(!isSingle)}
+        >
+          <span className={styles.track} aria-hidden="true">
+            <span className={styles.thumb} />
+          </span>
+        </button>
+        <span
+          className={!isSingle ? styles.optionActive : styles.optionInactive}
+          aria-hidden="true"
+        >
+          {FULL_LABEL}
         </span>
-      </button>
+      </div>
     </div>
   );
 }

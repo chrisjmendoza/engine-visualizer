@@ -423,10 +423,11 @@ describe("sharesCrankpin — the predicate the renderer draws from (§24a)", () 
     }
   });
 
-  it("fails for the split-pin V6 and for both boxers, whose pairs have two real pins", () => {
-    // The 60° V6's flying-arm journal and the boxers' antipodal throws are
-    // genuinely two pins each; a renderer that skipped the second cylinder's
-    // crank here would leave its rod hanging off nothing.
+  it("fails for the flying-arm V6 and for both boxers, whose pairs have two real pins", () => {
+    // The 60° V6's separate, flying-arm-joined crankpins and the boxers'
+    // antipodal throws are genuinely two pins each; a renderer that skipped
+    // the second cylinder's crank here would leave its rod hanging off
+    // nothing.
     for (const id of ["v6-60", "flat-4", "flat-6"] as const) {
       const layout = createEngineLayout(id);
       for (const [a, b] of bankPairs(layout)) {

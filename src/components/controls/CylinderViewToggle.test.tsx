@@ -42,17 +42,32 @@ describe("CylinderViewToggle", () => {
 
     const control = getSwitch();
     expect(control).toHaveAttribute("aria-checked", "false");
-    // Both states are named, so neither reads as "the unchecked one".
-    expect(control).toHaveAccessibleName(/single cylinder/i);
+    expect(control).toHaveAccessibleName("Show all cylinders");
   });
 
-  it("reads as checked, and names the other state, once the whole engine is shown", () => {
+  it("reads as checked once the whole engine is shown", () => {
     useEngineStore.setState({ singleCylinderView: false });
     render(<CylinderViewToggle />);
 
     const control = getSwitch();
     expect(control).toHaveAttribute("aria-checked", "true");
-    expect(control).toHaveAccessibleName(/full engine/i);
+    expect(control).toHaveAccessibleName("Show all cylinders");
+  });
+
+  it("keeps the same accessible name in both states, so it never announces as a different control", () => {
+    const { rerender } = render(<CylinderViewToggle />);
+    expect(getSwitch()).toHaveAccessibleName("Show all cylinders");
+
+    useEngineStore.setState({ singleCylinderView: false });
+    rerender(<CylinderViewToggle />);
+    expect(getSwitch()).toHaveAccessibleName("Show all cylinders");
+  });
+
+  it("shows both option labels regardless of state, for sighted users who never toggle it", () => {
+    render(<CylinderViewToggle />);
+
+    expect(screen.getByText("Single cylinder")).toBeInTheDocument();
+    expect(screen.getByText("Full engine")).toBeInTheDocument();
   });
 
   it("toggles the view on click, without touching the layout, crank angle, or playback", async () => {

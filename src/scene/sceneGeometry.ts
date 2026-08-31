@@ -465,7 +465,7 @@ export interface PlacedCylinder extends CylinderDefinition {
    * crank this one would land on top of — i.e. when `sharesCrankpin` holds, as
    * it does for a plain-pin V pair, whose crank drawings coincide at every
    * crank angle. The single drawn crankpin is then genuinely shared by both
-   * rods, which is what a real V engine does. A split-pin V (`v6-60`) and a
+   * rods, which is what a real V engine does. A flying-arm V (`v6-60`) and a
    * boxer both have two real, distinct pins in the pair, so both cylinders draw
    * their own.
    */
@@ -672,7 +672,7 @@ function groupIntoThrows(
       // A cylinder draws its own crank unless one already drawn in this slot
       // would coincide with it at every crank angle. That is a question about
       // the pins, not about the layout kind: a plain-pin V pair shares one, a
-      // split-pin V and a boxer each have two real ones.
+      // flying-arm V and a boxer each have two real ones.
       drawsCrank: !group.some(
         (earlier, j) => j < position && sharesCrankpin(earlier, definition),
       ),
