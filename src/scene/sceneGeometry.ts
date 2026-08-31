@@ -96,64 +96,6 @@ export const COMPARISON_GAP_FRACTION = 0.18;
 export const COMPARISON_VERTICAL_GAP_FRACTION = 0.1;
 
 /**
- * Crank-direction indicator (§19, front cylinder only): a static reference
- * ring around the crank center, drawn as a partial torus with a cone
- * arrowhead, showing which way the crank actually turns. It never animates
- * — it lives in the same fixed reference Z plane as the TDC/BDC ticks, and
- * like them is drawn on every render regardless of `showLabels` (that
- * preference gates only the name label; see `CylinderGuide`).
- *
- * The gap is centered at the bottom of the circle (standard angle -90°, "6
- * o'clock") purely for tidy placement, clear of the piston/rod above. All
- * of these angles are fixed layout constants — only the ring's radius
- * varies with engine geometry (`MechanismProportions.crankArrowRadiusMm`).
- *
- * Direction check (do not "eyeball" this — verify it against the math):
- * `calculateMechanismState` places the crankpin at
- * (r·sinθ, r·cosθ) — (0, r), straight up, at θ = 0 (TDC) — and
- * `CrankThrow` rotates the drawn crank by -θ about Z to match. As θ
- * increases from 0, standard angle (measured CCW from +X, matching the
- * torus/cone parametrization below) goes 90° → 0° → -90° → ... i.e. it
- * *decreases*: top, to right, to bottom, to left. That is clockwise as
- * drawn (+Y up, +X right, camera looking down -Z at the front of the
- * scene) — never counter-clockwise. `CRANK_ARROW_HEAD_ANGLE_RAD` and
- * `CRANK_ARROW_HEAD_ROTATION_Z_RAD` below encode exactly that clockwise
- * sense; if the crank's rotation sign in `CrankThrow`/`kinematics` ever
- * changes, this arrow's head must be re-derived, not just re-aimed.
- */
-export const CRANK_ARROW_GAP_RAD = Math.PI / 3;
-const CRANK_ARROW_GAP_CENTER_RAD = -Math.PI / 2;
-/** Standard angle where the drawn arc begins (CCW, torus `arc` parameter). */
-export const CRANK_ARROW_MESH_START_RAD =
-  CRANK_ARROW_GAP_CENTER_RAD + CRANK_ARROW_GAP_RAD / 2;
-/** How far the torus arc sweeps (CCW) from `CRANK_ARROW_MESH_START_RAD`. */
-export const CRANK_ARROW_SWEEP_RAD = 2 * Math.PI - CRANK_ARROW_GAP_RAD;
-/**
- * Standard angle of the arrowhead tip: the edge of the gap a point moving
- * *clockwise* (decreasing standard angle) reaches first — i.e. the leading
- * edge in the crank's true rotation direction, not the trailing one.
- */
-export const CRANK_ARROW_HEAD_ANGLE_RAD = CRANK_ARROW_MESH_START_RAD;
-
-/**
- * Rotation about Z, in radians, that aims a +Y-pointing cone along the
- * clockwise tangent at `standardAngleRad` on the unit circle: for clockwise
- * motion (θ decreasing), velocity direction is (sinθ, -cosθ), and a cone's
- * default apex (+Y, standard angle 90°) reaches that heading after rotating
- * by `atan2(tangentY, tangentX) - π/2`.
- */
-export function clockwiseTangentRotationZRad(standardAngleRad: number): number {
-  const tangentX = Math.sin(standardAngleRad);
-  const tangentY = -Math.cos(standardAngleRad);
-  return Math.atan2(tangentY, tangentX) - Math.PI / 2;
-}
-
-/** Fixed rotation for the arrowhead cone, since its angle never varies. */
-export const CRANK_ARROW_HEAD_ROTATION_Z_RAD = clockwiseTangentRotationZRad(
-  CRANK_ARROW_HEAD_ANGLE_RAD,
-);
-
-/**
  * Gap between adjacent slots of one engine's row, as a fraction of the widest
  * reach one of its slots has across its own crank center (§24) — the
  * cylinder's plain bounds width for an upright layout, and the combined
@@ -243,17 +185,6 @@ export interface MechanismProportions {
   referenceZMm: number;
 
   /**
-   * Crank-direction indicator (front cylinder only; see the constants
-   * above). Radius sits just outside the crankpin's own drawn disc so the
-   * static ring never merges with the moving crankpin when it swings past
-   * the ring's position.
-   */
-  crankArrowRadiusMm: number;
-  crankArrowTubeRadiusMm: number;
-  crankArrowHeadRadiusMm: number;
-  crankArrowHeadLengthMm: number;
-
-  /**
    * Static extents of this mechanism, relative to its own crankshaft center.
    * Used to place it on the stage and to auto-frame the camera (§12.2).
    */
@@ -314,18 +245,6 @@ export function deriveProportions(
     journalRadius,
   );
 
-  // Crank-direction reference ring: sized to clear the crankpin's own drawn
-  // disc (radius r, thickness crankPinRadius) by a comfortable margin, so
-  // the static ring never merges with the pin as it swings past.
-  const crankArrowTubeRadius = Math.max(0.7, 0.012 * bore);
-  const crankArrowRadius = r + crankPinRadius * 1.5;
-  const crankArrowHeadRadius = crankArrowTubeRadius * 2.5;
-  const crankArrowHeadLength = crankArrowTubeRadius * 5;
-  // The largest radial reach the ring + arrowhead can have from the crank
-  // center, in any direction — folded into the bounds below exactly like
-  // the TDC/BDC ticks, so auto-framing never clips it.
-  const crankArrowExtent = crankArrowRadius + crankArrowHeadLength;
-
   return {
     boreMm: bore,
     crankRadiusMm: r,
@@ -378,28 +297,21 @@ export function deriveProportions(
     centerlineWidthMm: Math.max(0.5, 0.008 * bore),
     referenceZMm: 0.45 * bore,
 
-    crankArrowRadiusMm: crankArrowRadius,
-    crankArrowTubeRadiusMm: crankArrowTubeRadius,
-    crankArrowHeadRadiusMm: crankArrowHeadRadius,
-    crankArrowHeadLengthMm: crankArrowHeadLength,
-
     bounds: {
       maxX: Math.max(
         markerInnerX + markerLength,
         r + crankWebWidth / 2,
         counterweightWidth / 2,
-        crankArrowExtent,
       ),
       minX: -Math.max(
         markerInnerX + markerLength,
         r + crankWebWidth / 2,
         counterweightWidth / 2,
-        crankArrowExtent,
       ),
       // The top of the deck, which now rides on the clearance height: a low
       // compression ratio pushes the head up and the camera frames wider.
       maxY: wallTop + deckThickness,
-      minY: -Math.max(crankExtentY + 0.06 * bore, crankArrowExtent),
+      minY: -(crankExtentY + 0.06 * bore),
     },
   };
 }

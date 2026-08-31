@@ -531,7 +531,6 @@ May include:
 - Cylinder centerline
 - Top dead center marker
 - Bottom dead center marker
-- Crank rotation direction
 
 ### 12.2 Geometry scaling
 
@@ -1013,7 +1012,7 @@ The row's slots are therefore throws. `sceneGeometry` groups the visible cylinde
 
 **Depth.** Two mechanisms in one plane would otherwise put coincident faces at identical depths: a boxer pair's main journals sit on the same axis and its bore centerlines are outright collinear. A slot's second cylinder is therefore stepped back by **half a rod thickness** (`PlacedCylinder.offsetZMm`) — physically honest, since the two cylinders of a real throw pair _are_ at different axial positions, the one dimension this cutaway cannot show. The magnitude is bounded at both ends and tested: large enough that nothing is coplanar, small enough that the stepped cylinder's reference plane stays in front of its partner's bore walls and its rod's big end stays inside the drawn crankpin's axial span, so a shared-pin V reads as two rods side by side on one pin.
 
-`CrankMechanism` gains `positionZ` and `drawsCrank` rather than forking into two components; when the crank is omitted its `crankRef` is simply never attached, and the frame loop skips a null group by the same check that already covered an unmounted cylinder. Nothing in `src/engine/`'s kinematics changes: every cylinder is still driven at `cylinderCrankAngleRad(θ, cylinder)`. The crank-direction ring is still drawn once per engine, on cylinder 0 — the first cylinder of the first throw.
+`CrankMechanism` gains `positionZ` and `drawsCrank` rather than forking into two components; when the crank is omitted its `crankRef` is simply never attached, and the frame loop skips a null group by the same check that already covered an unmounted cylinder. Nothing in `src/engine/`'s kinematics changes: every cylinder is still driven at `cylinderCrankAngleRad(θ, cylinder)`.
 
 ### Amendment — drawn orientation is a presentation concern
 
@@ -1030,7 +1029,7 @@ Two deliberate departures from the real bank offset:
 - **The single-cylinder view draws its cylinder upright, whatever the layout** — bank offset ignored, bore pointing +Y, for flat, V, and inline alike. This is an abstraction, not a bug: that view already isolates one cylinder from its engine, so the cylinder's _installed orientation_ is not the subject, its _proportions_ are. Drawing a boxer's cylinder 0 on its side and a V8's tilted made comparing cylinder size between two engines needlessly hard, most of all in comparison mode where the two sit next to each other. One cylinder of any architecture is now framed exactly as one cylinder of an inline-4, which is what makes the sizes directly comparable. The full-engine view keeps every real orientation.
 - **`uprightFlatEngines` stands flat/boxer layouts upright in the full-engine view.** A user preference (`UserPreferences.uprightFlatEngines`, default **false**, a checkbox in `UnitSelector` beside "Show component labels" and "Four-stroke cycle") that adds a quarter turn to _every_ cylinder of a `kind: "flat"` layout, so bank 0 (`−π/2`) points +Y and bank 1 (`+π/2`) points −Y: an opposed pair has one piston above the crank and its partner below, still on the same crank and still 180° opposed, with piston motion in the same vertical orientation as every other engine's. V and inline layouts ignore it entirely. Like `showLabels` and `showCycle` it is session-local and deliberately **not** a share-link parameter (`displayUnit` is shared; those are not).
 
-**What the override cannot change, and why.** Both cylinders of a throw pair are rotated by the same angle, so the pair's relative geometry is untouched: whether they share a crankpin or sit on antipodal ones is a fact about the engine, `sharesCrankpin` reads the real `bankOffsetRad`, and the one-crank-per-throw drawing decision comes out identical with the preference on or off. So does the grouping into throws, so does `throwIndex`, and so does the crank-direction ring's "cylinder 0 only" gate. The comparison arrangement rule is likewise untouched: it keys off how many cylinders are on stage (`visibleCylinders`), never off how they are turned, so drawing lone cylinders upright cannot flip a side-by-side pair into a stacked one. Every one of those is asserted directly in `sceneGeometry.test.ts`.
+**What the override cannot change, and why.** Both cylinders of a throw pair are rotated by the same angle, so the pair's relative geometry is untouched: whether they share a crankpin or sit on antipodal ones is a fact about the engine, `sharesCrankpin` reads the real `bankOffsetRad`, and the one-crank-per-throw drawing decision comes out identical with the preference on or off. So does the grouping into throws, so does `throwIndex`. The comparison arrangement rule is likewise untouched: it keys off how many cylinders are on stage (`visibleCylinders`), never off how they are turned, so drawing lone cylinders upright cannot flip a side-by-side pair into a stacked one. Every one of those is asserted directly in `sceneGeometry.test.ts`.
 
 ### Amendment — per-cylinder four-stroke phase, and the firing tint
 

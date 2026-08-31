@@ -10,8 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { calculateClearanceHeightMm } from "../engine/calculations";
-import { DEFAULT_CONFIG, INPUT_RANGES, TWO_PI } from "../engine/constants";
-import { calculateMechanismState } from "../engine/kinematics";
+import { DEFAULT_CONFIG, INPUT_RANGES } from "../engine/constants";
 import type { CrankMechanismConfig } from "../engine/types";
 import { ENGINE_PRESETS } from "../engine/presets";
 import { CUSTOM_ENGINE_LABEL } from "./mechanismLabels";
@@ -25,16 +24,10 @@ import {
   COMPARISON_GAP_FRACTION,
   FRAME_PADDING,
   COMPARISON_VERTICAL_GAP_FRACTION,
-  CRANK_ARROW_GAP_RAD,
-  CRANK_ARROW_HEAD_ANGLE_RAD,
-  CRANK_ARROW_HEAD_ROTATION_Z_RAD,
-  CRANK_ARROW_MESH_START_RAD,
-  CRANK_ARROW_SWEEP_RAD,
   INLINE_GAP_FRACTION,
   LABEL_BAND_FRACTION,
   LABEL_GAP_FRACTION,
   UPRIGHT_FLAT_ROTATION_RAD,
-  clockwiseTangentRotationZRad,
   deriveLayout,
   deriveProportions,
   drawnRotationRad,
@@ -1695,128 +1688,6 @@ describe("deriveLayout — the single-cylinder view (§24a)", () => {
     expect(viewed.primary.cylinders).toEqual(legacy.primary.cylinders);
     expect(viewed.primary.label).toEqual(legacy.primary.label);
   });
-});
-
-describe("crank-direction arrow — rotation sense matches calculateMechanismState", () => {
-  /**
-   * The arrow's whole reason to exist is to draw the crank's *actual*
-   * rotation direction, not an assumed one. Rather than trusting the
-   * hand-derived comment in sceneGeometry.ts, this samples the real
-   * kinematics: the drawn crankpin position at angle theta is exactly
-   * (crankPinXmm, crankPinYmm) — CrankThrow rotates the crank assembly by
-   * -theta about Z, which puts the local TDC point (0, r) at
-   * (r*sin(theta), r*cos(theta)), matching calculateMechanismState's own
-   * output. Differencing that position across a small step in theta gives
-   * the true, empirical direction of travel in scene XY, at every point
-   * around the circle.
-   */
-  function drawnCrankpinXY(crankAngleRad: number): [number, number] {
-    const state = calculateMechanismState(DEFAULT_CONFIG, crankAngleRad);
-    return [state.crankPinXmm, state.crankPinYmm];
-  }
-
-  it("moves clockwise (top -> +X -> bottom -> -X) as the crank angle increases", () => {
-    const [topX, topY] = drawnCrankpinXY(0);
-    const [rightX, rightY] = drawnCrankpinXY(Math.PI / 2);
-    const [bottomX, bottomY] = drawnCrankpinXY(Math.PI);
-    const [leftX, leftY] = drawnCrankpinXY((3 * Math.PI) / 2);
-
-    expect(topX).toBeCloseTo(0, 10);
-    expect(topY).toBeGreaterThan(0);
-    expect(rightX).toBeGreaterThan(0);
-    expect(rightY).toBeCloseTo(0, 10);
-    expect(bottomX).toBeCloseTo(0, 10);
-    expect(bottomY).toBeLessThan(0);
-    expect(leftX).toBeLessThan(0);
-    expect(leftY).toBeCloseTo(0, 10);
-  });
-
-  it("has a finite-difference velocity that matches clockwiseTangentRotationZRad's tangent at every sampled angle", () => {
-    const dTheta = 1e-4;
-
-    for (const theta of [
-      0,
-      Math.PI / 6,
-      Math.PI / 2,
-      (5 * Math.PI) / 6,
-      Math.PI,
-      (7 * Math.PI) / 6,
-      (3 * Math.PI) / 2,
-      (11 * Math.PI) / 6,
-      CRANK_ARROW_HEAD_ANGLE_RAD,
-    ]) {
-      const [x0, y0] = drawnCrankpinXY(theta);
-      const [x1, y1] = drawnCrankpinXY(theta + dTheta);
-      const velocity = [(x1 - x0) / dTheta, (y1 - y0) / dTheta];
-
-      // The standard angle of the drawn point, independent of the crank's
-      // own theta parametrization — this is what the arrow's math (defined
-      // purely in terms of a standard angle around the circle) must agree
-      // with.
-      const standardAngle = Math.atan2(y0, x0);
-      const rotationZ = clockwiseTangentRotationZRad(standardAngle);
-      // A +Y-pointing vector rotated by rotationZ about Z:
-      const predictedDirection = [-Math.sin(rotationZ), Math.cos(rotationZ)];
-
-      const velocityMagnitude = Math.hypot(velocity[0], velocity[1]);
-      const normalizedVelocity = [
-        velocity[0] / velocityMagnitude,
-        velocity[1] / velocityMagnitude,
-      ];
-
-      expect(normalizedVelocity[0]).toBeCloseTo(predictedDirection[0], 3);
-      expect(normalizedVelocity[1]).toBeCloseTo(predictedDirection[1], 3);
-    }
-  });
-
-  it("places the arrowhead at the gap edge a clockwise-moving point reaches first", () => {
-    // The gap spans [-120°, -60°] (centered at -90°, the bottom). A point
-    // moving clockwise (decreasing standard angle) traveling from the top
-    // reaches -60° (CRANK_ARROW_HEAD_ANGLE_RAD) before it would reach
-    // -120°, so the arrowhead belongs at -60°, not -120°.
-    expect(CRANK_ARROW_HEAD_ANGLE_RAD).toBeCloseTo(-Math.PI / 3, 10);
-    expect(CRANK_ARROW_MESH_START_RAD).toBeCloseTo(-Math.PI / 3, 10);
-  });
-
-  it("sweeps the drawn arc across everything except one fixed gap", () => {
-    expect(CRANK_ARROW_SWEEP_RAD + CRANK_ARROW_GAP_RAD).toBeCloseTo(TWO_PI, 10);
-    expect(CRANK_ARROW_GAP_RAD).toBeGreaterThan(0);
-    expect(CRANK_ARROW_SWEEP_RAD).toBeGreaterThan(0);
-    expect(CRANK_ARROW_SWEEP_RAD).toBeLessThan(TWO_PI);
-  });
-
-  it("gives the arrowhead cone a fixed, precomputed rotation", () => {
-    expect(CRANK_ARROW_HEAD_ROTATION_Z_RAD).toBeCloseTo(
-      clockwiseTangentRotationZRad(CRANK_ARROW_HEAD_ANGLE_RAD),
-      10,
-    );
-    expect(Number.isFinite(CRANK_ARROW_HEAD_ROTATION_Z_RAD)).toBe(true);
-  });
-});
-
-describe("deriveProportions — crank-direction arrow sizing", () => {
-  for (const [geometryName, geometry] of GEOMETRIES) {
-    for (const compressionRatio of COMPRESSION_RATIOS) {
-      it(`clears the crankpin's own disc and stays framed (${geometryName}, ${compressionRatio}:1)`, () => {
-        const config = configFor(geometry, compressionRatio);
-        const p = deriveProportions(config);
-
-        expect(p.crankArrowRadiusMm).toBeGreaterThan(
-          p.crankRadiusMm + p.crankPinRadiusMm,
-        );
-        expect(p.crankArrowTubeRadiusMm).toBeGreaterThan(0);
-        expect(p.crankArrowHeadRadiusMm).toBeGreaterThan(0);
-        expect(p.crankArrowHeadLengthMm).toBeGreaterThan(0);
-
-        // Auto-framing must never clip the ring or its arrowhead, in any
-        // direction from the crank center.
-        const reach = p.crankArrowRadiusMm + p.crankArrowHeadLengthMm;
-        expect(p.bounds.maxX).toBeGreaterThanOrEqual(reach);
-        expect(p.bounds.minX).toBeLessThanOrEqual(-reach);
-        expect(-p.bounds.minY).toBeGreaterThanOrEqual(reach);
-      });
-    }
-  }
 });
 
 describe("rotateBounds — a tilted cylinder's real footprint", () => {

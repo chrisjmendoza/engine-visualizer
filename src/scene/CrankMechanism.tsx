@@ -59,8 +59,6 @@ interface CrankMechanismProps {
   crankRef: MechanismRefs["crank"];
   rodRef: MechanismRefs["rod"];
   pistonRef: MechanismRefs["piston"];
-  /** Forwarded to `CylinderGuide`: only cylinder 0 draws the crank-direction arrow. */
-  isFrontCylinder?: boolean;
   /**
    * Forwarded to `CylinderGuide`: the combustion chamber's surfaces, which the
    * stage's frame loop tints for the four-stroke phase (§24a). Like the three
@@ -92,7 +90,6 @@ export function CrankMechanism({
   crankRef,
   rodRef,
   pistonRef,
-  isFrontCylinder = false,
   chamberRef,
   drawsCrank = true,
 }: CrankMechanismProps) {
@@ -103,11 +100,7 @@ export function CrankMechanism({
   return (
     <group position={[positionX, positionY, positionZ]}>
       <group rotation={[0, 0, drawnRotationRad]}>
-        <CylinderGuide
-          p={p}
-          isFrontCylinder={isFrontCylinder}
-          chamberRef={chamberRef}
-        />
+        <CylinderGuide p={p} chamberRef={chamberRef} />
         {drawsCrank && <CrankThrow p={p} ref={crankRef} />}
         <ConnectingRod p={p} ref={rodRef} />
         <Piston p={p} ref={pistonRef} />

@@ -373,10 +373,6 @@ function PlacedCylinderMechanism({
       crankRef={refs.crank}
       rodRef={refs.rod}
       pistonRef={refs.piston}
-      // Cylinder 0 is the first cylinder of the first throw, so the
-      // crank-direction ring is still drawn exactly once per engine even now
-      // that two cylinders can share a plane.
-      isFrontCylinder={index === 0}
       chamberRef={chamberRef}
       drawsCrank={drawsCrank}
     />

@@ -8,6 +8,14 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### fix: stacked rows centered on their crank span; crank-direction arrow removed
+
+- **Each stacked row is now centered on the midpoint between its first and last crank centers.** Anchoring both rows at their first throw left the shorter engine short of the far edge, which read as lopsided. Centering is measured from crank centers rather than drawn bounds on purpose: bounds swell with bank tilt and with the upright-flat rotation, so a V's wide tilted throws would otherwise drag the row off-center relative to the crankshaft it's built on.
+- On the GT-R pairing (RB26DETT inline-6 over VR38DETT V6) the inline-6's crank-span center moves from −53.1 mm to 0.0 with the framed union unchanged, so the balance costs no zoom. Worth noting the inline-6 is the _shorter_ row there — six narrow cylinder planes span less than three wide V6 throw planes, which is much of why the R35 uses a V6.
+- This gives up the cylinder-1-over-cylinder-1 datum between the two rows, a deliberate trade for symmetry.
+- **The crank-direction arrow is gone.** The mechanism's motion already makes rotation direction obvious, so the ring was decoration. Removing it also removed the finite-difference test that pinned its handedness against the kinematics — which was only ever guarding the arrow itself.
+- Honest note on that removal: it was expected to tighten the camera slightly, since the arrow's reach fed into the framing bounds. Measured across every preset and the default configuration, framing is **byte-identical** — the arrow was never the binding term, always dominated by the TDC/BDC marker reach on X and the crank web on Y. It only bound at all on synthetic test geometries no real engine reaches. Full suite: 1,187 tests.
+
 ### fix: a stacked row is never re-spaced to suit the other engine
 
 - Comparing an inline-6 against a V engine stretched the inline-6 badly: both rows were forced to one shared slot spacing, the wider of the two, and a V's throw plane is wide because it holds two tilted cylinders. Measured on an inline-6 against a cross-plane V8, the six cylinders were being driven at **3.01×** their natural pitch — far enough apart to stop reading as one crankcase.
