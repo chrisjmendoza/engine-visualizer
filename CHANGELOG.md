@@ -8,6 +8,11 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### feat: piston-to-head distance and comparison difference table
+
+- The results panel's static range row now shows what was actually asked for: **piston-to-head distance** — clearance height at TDC to clearance height + stroke at BDC (e.g. 9.05 – 95.05 mm at defaults) — plus a live current-distance-to-head readout. The live piston displacement from TDC remains. Backed by a new tested engine function `calculatePistonToHeadDistanceMm`.
+- In comparison mode the two stacked results panels are replaced by a single accessible table — Metric | Engine A | Engine B | Difference — with signed percentage deltas ((B−A)/A, e.g. "+75.4%" for LS7 displacement vs the default engine). No winner highlighting by design: most metrics have no objectively better direction. Zero baselines and the shared crank angle show "—". The table scrolls in its own container on narrow screens; the page never scrolls horizontally.
+
 ### fix: responsive layout across all screen sizes
 
 - Fixed the mobile viewport bug where the canvas inflated below a tall panel with the mechanism lost in dead space — the container now has a definite clamped height, so the auto-framing camera fills it correctly.

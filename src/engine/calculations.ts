@@ -65,3 +65,22 @@ export function calculateClearanceHeightMm(
 ): number {
   return strokeMm / (compressionRatio - 1);
 }
+
+/**
+ * Distance from the piston crown to the cylinder head, in millimeters, for
+ * a given piston displacement from TDC (same flat-disc clearance model as
+ * `calculateClearanceHeightMm`).
+ *
+ * At TDC (displacement 0) this is the clearance height — the minimum; at
+ * BDC (displacement = stroke) it is clearance height + stroke — the maximum.
+ */
+export function calculatePistonToHeadDistanceMm(
+  strokeMm: number,
+  compressionRatio: number,
+  pistonDisplacementMm: number,
+): number {
+  return (
+    calculateClearanceHeightMm(strokeMm, compressionRatio) +
+    pistonDisplacementMm
+  );
+}

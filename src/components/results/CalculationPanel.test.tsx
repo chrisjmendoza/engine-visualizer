@@ -116,33 +116,45 @@ describe("CalculationPanel", () => {
     expect(getResultValue("Current crank angle")).toBe("90.0°");
   });
 
-  it("displays the static piston-travel range (0 to stroke) in millimeters", () => {
+  it("displays the static piston-to-head distance range in millimeters", () => {
     render(<CalculationPanel />);
-    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+    // Literal values for strokeMm=86, compressionRatio=10.5, computed
+    // independently: clearance height = 86 / 9.5 = 9.0526... mm (the TDC
+    // minimum); clearance height + stroke = 95.0526... mm (the BDC
+    // maximum) — rather than by calling the function under test.
+    expect(getResultValue("Piston-to-head distance")).toBe("9.05 – 95.05 mm");
   });
 
-  it("displays the static piston-travel range in inches", () => {
+  it("displays the static piston-to-head distance range in inches", () => {
     useEngineStore.setState({
       preferences: { displayUnit: "in", showLabels: true },
     });
     render(<CalculationPanel />);
-    // 86 / 25.4 = 3.3858... in, rounded to 3 decimals.
-    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 3.386 in");
+    // 9.0526.../25.4 = 0.3564... in; 95.0526.../25.4 = 3.7423... in.
+    expect(getResultValue("Piston-to-head distance")).toBe("0.356 – 3.742 in");
   });
 
-  it("keeps the piston-travel range unchanged as the crank angle changes", () => {
+  it("keeps the piston-to-head distance range unchanged as the crank angle changes", () => {
     render(<CalculationPanel />);
-    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+    expect(getResultValue("Piston-to-head distance")).toBe("9.05 – 95.05 mm");
 
     act(() => {
       useEngineStore.setState({ crankAngleRad: Math.PI / 2 });
     });
-    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+    expect(getResultValue("Piston-to-head distance")).toBe("9.05 – 95.05 mm");
+  });
 
-    act(() => {
-      useEngineStore.setState({ crankAngleRad: Math.PI });
-    });
-    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 86.00 mm");
+  it("shows the live piston-to-head distance at its minimum (TDC)", () => {
+    render(<CalculationPanel />);
+    // Equal to the clearance height, and to the static range's minimum.
+    expect(getResultValue("Current piston-to-head distance")).toBe("9.05 mm");
+  });
+
+  it("shows the live piston-to-head distance at its maximum (BDC)", () => {
+    useEngineStore.setState({ crankAngleRad: Math.PI });
+    render(<CalculationPanel />);
+    // Equal to the static range's maximum.
+    expect(getResultValue("Current piston-to-head distance")).toBe("95.05 mm");
   });
 
   it("renders engine B's own values when given the comparison slot", () => {
@@ -162,9 +174,9 @@ describe("CalculationPanel", () => {
     // rather than by calling the function under test.
     expect(getResultValue("Cylinder displacement")).toBe("706.9 cc");
     expect(getResultValue("Bore-to-stroke ratio")).toBe("1.11:1");
-    // Piston-travel range reflects engine B's own stroke (90 mm), not
-    // engine A's (86 mm).
-    expect(getResultValue("Piston travel (from TDC)")).toBe("0 – 90.00 mm");
+    // Piston-to-head range reflects engine B's own stroke/CR (90 mm, 9:1:
+    // clearance = 90/8 = 11.25 mm, so 11.25 - 101.25 mm), not engine A's.
+    expect(getResultValue("Piston-to-head distance")).toBe("11.25 – 101.25 mm");
 
     // Engine A's own config (still DEFAULT_CONFIG) is untouched.
     expect(useEngineStore.getState().config).toEqual(DEFAULT_CONFIG);

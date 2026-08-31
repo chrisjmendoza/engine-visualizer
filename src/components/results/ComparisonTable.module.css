@@ -1,0 +1,112 @@
+/* Responsive tiers: see the comment at the top of ApplicationShell.module.css. */
+
+.wrapper {
+  padding: 0.5rem;
+  margin: 0 0 0.6rem;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+/*
+ * The table itself never wraps or shrinks its numeric columns below a
+ * readable width; on a screen too narrow for all four columns, this
+ * container scrolls horizontally on its own rather than the whole page
+ * (ApplicationShell.module.css keeps `.shell` clipped either way as a
+ * backstop).
+ */
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 30rem;
+  border-collapse: collapse;
+}
+
+.caption {
+  padding-bottom: 0.6rem;
+  text-align: left;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.table th,
+.table td {
+  padding: 0.35rem 0.6rem;
+  text-align: right;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.table thead th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 0.75rem;
+}
+
+.table tbody th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--color-text);
+  white-space: normal;
+}
+
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+
+.table td {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* Neutral: the difference column is never color-coded by sign — most of
+   these metrics have no objectively "better" side, so nothing here should
+   read as declaring a winner. (`.table td.difference` outranks the plain
+   `.table td` rule above on specificity, so this needs no `!important`.) */
+.table td.difference {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.descriptions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.description {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.descriptionLabel {
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 600px) {
+  .wrapper {
+    padding: 0.75rem;
+    margin: 0 0 1rem;
+  }
+
+  .table th,
+  .table td {
+    padding: 0.4rem 0.75rem;
+  }
+}

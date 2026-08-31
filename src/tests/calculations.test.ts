@@ -5,6 +5,7 @@ import {
   calculateClearanceVolumeCc,
   calculateCylinderDisplacementCc,
   calculateMeanPistonSpeedMps,
+  calculatePistonToHeadDistanceMm,
   calculateRodStrokeRatio,
 } from "../engine/calculations";
 
@@ -27,6 +28,32 @@ describe("calculateClearanceVolumeCc", () => {
     expect(calculateClearanceVolumeCc(100, 80, 19)).toBeCloseTo(
       34.9065850399,
       6,
+    );
+  });
+});
+
+describe("calculatePistonToHeadDistanceMm", () => {
+  it("equals the clearance height at TDC", () => {
+    // 86 / 9.5, computed independently.
+    expect(calculatePistonToHeadDistanceMm(86, 10.5, 0)).toBeCloseTo(
+      9.052631578947368,
+      9,
+    );
+  });
+
+  it("equals clearance height plus stroke at BDC", () => {
+    // 86 / 9.5 + 86, computed independently.
+    expect(calculatePistonToHeadDistanceMm(86, 10.5, 86)).toBeCloseTo(
+      95.05263157894737,
+      9,
+    );
+  });
+
+  it("tracks displacement linearly in between", () => {
+    // 86 / 9.5 + 40, computed independently.
+    expect(calculatePistonToHeadDistanceMm(86, 10.5, 40)).toBeCloseTo(
+      49.05263157894737,
+      9,
     );
   });
 });

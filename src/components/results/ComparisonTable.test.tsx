@@ -1,0 +1,185 @@
+import { act } from "react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { ComparisonTable } from "./ComparisonTable";
+import { useEngineStore } from "../../state/engineStore";
+import {
+  DEFAULT_ANIMATION,
+  DEFAULT_CONFIG,
+  DEFAULT_PLAYBACK_SPEED,
+} from "../../engine/constants";
+import type { CrankMechanismConfig } from "../../engine/types";
+
+function resetStore() {
+  useEngineStore.setState({
+    config: { ...DEFAULT_CONFIG },
+    comparisonConfig: null,
+    preferences: { displayUnit: "mm", showLabels: true },
+    rpm: DEFAULT_ANIMATION.rpm,
+    playbackSpeed: DEFAULT_PLAYBACK_SPEED,
+    isPlaying: false,
+    crankAngleRad: 0,
+  });
+}
+
+beforeEach(() => {
+  resetStore();
+});
+
+// This project's Vitest config does not enable `globals`, so
+// @testing-library/react's automatic afterEach(cleanup) never registers;
+// unmount explicitly so each test starts from an empty document.
+afterEach(cleanup);
+
+/** Reads a metric row's [Engine A, Engine B, Difference] cell text. */
+function getRow(label: string): [string, string, string] {
+  const rowHeader = screen.getByRole("rowheader", { name: label });
+  const row = rowHeader.closest("tr");
+  if (!row) {
+    throw new Error(`expected a <tr> ancestor for row "${label}"`);
+  }
+  const cells = within(row).getAllByRole("cell");
+  return [
+    cells[0].textContent ?? "",
+    cells[1].textContent ?? "",
+    cells[2].textContent ?? "",
+  ];
+}
+
+/** Engine B differs from the default only in stroke (86 -> 90 mm). */
+const STROKE_90_CONFIG: CrankMechanismConfig = {
+  ...DEFAULT_CONFIG,
+  strokeMm: 90,
+};
+
+function enableComparisonWith(config: CrankMechanismConfig) {
+  act(() => {
+    useEngineStore.getState().enableComparison(config);
+  });
+}
+
+describe("ComparisonTable", () => {
+  it("renders an accessible table with a caption and column headers", () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    expect(
+      screen.getByRole("table", { name: /calculated results/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Metric" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Engine A" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Engine B" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Difference" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows both engines' own values and the correct signed percentage difference", () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    // Literal values for A (bore 86, stroke 86, CR 10.5) vs B (bore 86,
+    // stroke 90, CR 10.5), computed independently from the documented
+    // formulas rather than by calling the functions under test.
+    expect(getRow("Cylinder displacement")).toEqual([
+      "499.6 cc",
+      "522.8 cc",
+      "+4.7%",
+    ]);
+    expect(getRow("Bore-to-stroke ratio")).toEqual([
+      "1.00:1",
+      "0.96:1",
+      "−4.4%",
+    ]);
+    expect(getRow("Mean piston speed")).toEqual([
+      "1.72 m/s",
+      "1.80 m/s",
+      "+4.7%",
+    ]);
+    expect(getRow("Clearance height (TDC)")).toEqual([
+      "9.05 mm",
+      "9.47 mm",
+      "+4.7%",
+    ]);
+  });
+
+  it('shows "—" instead of a bogus percentage when the baseline is zero (piston displacement at TDC)', () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    // At crankAngleRad=0 (TDC) piston displacement is exactly 0 for every
+    // configuration, so a relative percentage is undefined, not "0.0%".
+    expect(getRow("Piston displacement from TDC")).toEqual([
+      "0.00 mm",
+      "0.00 mm",
+      "—",
+    ]);
+    expect(getRow("Connecting-rod angle")).toEqual(["0.0°", "0.0°", "—"]);
+  });
+
+  it('shows "—" for the shared crank angle rather than a real 0.0%', () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    // Both engines share one crank angle by definition; equal values here
+    // reflect that they can never differ, not a coincidental match.
+    expect(getRow("Current crank angle")).toEqual(["0.0°", "0.0°", "—"]);
+  });
+
+  it('shows "—" for the piston-to-head distance range (not a single scalar)', () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    expect(getRow("Piston-to-head distance")).toEqual([
+      "9.05 – 95.05 mm",
+      "9.47 – 99.47 mm",
+      "—",
+    ]);
+  });
+
+  it("does not declare a winner: the difference cells carry no sign-based styling hook", () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    const [, , difference] = getRow("Cylinder displacement");
+    expect(difference).toBe("+4.7%");
+
+    // No element anywhere claims a "winner" — this table only ever shows a
+    // neutral delta, per the design intent (deliberately not gpuboss-style
+    // highlighting).
+    expect(screen.queryByText(/winner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/better/i)).not.toBeInTheDocument();
+    expect(document.querySelector("[data-winner]")).toBeNull();
+  });
+
+  it("shows both engines' textual mechanism descriptions, labeled", () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    const descriptionA = screen.getByTestId("mechanism-description-a");
+    const descriptionB = screen.getByTestId("mechanism-description-b");
+    expect(descriptionA.textContent).toMatch(/^Engine A\./);
+    expect(descriptionB.textContent).toMatch(/^Engine B\./);
+    expect(descriptionA.textContent).toMatch(/top dead center/);
+    expect(descriptionB.textContent).toMatch(/top dead center/);
+  });
+
+  it("updates live values when the store's crank angle changes, without new animation logic", () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    render(<ComparisonTable />);
+
+    expect(getRow("Current crank angle")[0]).toBe("0.0°");
+
+    act(() => {
+      useEngineStore.setState({ crankAngleRad: Math.PI / 2 });
+    });
+
+    expect(getRow("Current crank angle")[0]).toBe("90.0°");
+  });
+});

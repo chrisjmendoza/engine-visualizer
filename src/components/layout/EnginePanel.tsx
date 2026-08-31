@@ -14,17 +14,29 @@ export interface EnginePanelProps {
    * disambiguating label and the panel looks the same as it always has.
    */
   heading?: string;
+  /**
+   * Whether to render this engine's own `CalculationPanel`. Defaults to
+   * `true`. Comparison mode passes `false` here for both engines and shows
+   * `ComparisonTable` once instead, alongside the two (preset + geometry
+   * only) `EnginePanel`s — see `App.tsx`.
+   */
+  showResults?: boolean;
 }
 
 /**
- * Groups one engine's presets, geometry inputs, and calculated results
- * under a single heading, so — while comparing — it is unambiguous which
- * controls affect which mechanism. The scene renders engine A on the left
- * and engine B on the right, matching the "Engine A" / "Engine B" order
- * here. Controls that affect both engines (playback, RPM, crank angle,
- * display units) live outside this component, not inside it.
+ * Groups one engine's presets and geometry inputs (and, outside comparison
+ * mode, its calculated results) under a single heading, so — while
+ * comparing — it is unambiguous which controls affect which mechanism. The
+ * scene renders engine A on the left and engine B on the right, matching
+ * the "Engine A" / "Engine B" order here. Controls that affect both engines
+ * (playback, RPM, crank angle, display units) live outside this component,
+ * not inside it.
  */
-export function EnginePanel({ slot, heading }: EnginePanelProps) {
+export function EnginePanel({
+  slot,
+  heading,
+  showResults = true,
+}: EnginePanelProps) {
   const headingId = useId();
 
   return (
@@ -47,7 +59,7 @@ export function EnginePanel({ slot, heading }: EnginePanelProps) {
       <div className={styles.body}>
         <PresetSelector slot={slot} />
         <EngineGeometryControls slot={slot} />
-        <CalculationPanel slot={slot} />
+        {showResults ? <CalculationPanel slot={slot} /> : null}
       </div>
     </section>
   );

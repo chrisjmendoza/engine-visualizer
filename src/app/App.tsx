@@ -6,6 +6,7 @@ import { ApplicationShell } from "../components/layout/ApplicationShell";
 import { EngineComparisonLayout } from "../components/layout/EngineComparisonLayout";
 import { EnginePanel } from "../components/layout/EnginePanel";
 import { SharedControlsRow } from "../components/layout/SharedControlsRow";
+import { ComparisonTable } from "../components/results/ComparisonTable";
 import { useEngineStore } from "../state/engineStore";
 
 /**
@@ -23,13 +24,15 @@ const EngineViewport = lazy(() =>
  * `UnitSelector` are shared: RPM, play/pause, playback speed, crank angle,
  * and display unit all apply to both engines when comparing. `SharedControlsRow`
  * only affects layout (pairing them side by side at tablet-portrait widths),
- * not behavior. Each engine's presets, geometry inputs, and calculated
- * results are grouped by `EnginePanel`, one per slot. In the default
- * (non-comparison) state, a single unlabeled `EnginePanel` renders exactly
- * the controls this app has always shown; enabling comparison wraps a
- * second, explicitly labeled "Engine B" group together with engine A's in
- * `EngineComparisonLayout`, which places them side by side once there is
- * room (see its and ApplicationShell's responsive rules).
+ * not behavior. In the default (non-comparison) state, a single unlabeled
+ * `EnginePanel` renders exactly the controls this app has always shown —
+ * presets, geometry inputs, and its own `CalculationPanel`. Comparison mode
+ * instead renders two `EnginePanel`s with `showResults={false}` (presets
+ * and geometry only, each explicitly labeled "Engine A"/"Engine B" and
+ * placed side by side once there is room, via `EngineComparisonLayout`)
+ * plus a single `ComparisonTable` showing both engines' results together —
+ * a gpuboss-style table replaces two separate result lists rather than
+ * duplicating them.
  */
 export function App() {
   const isComparing = useEngineStore(
@@ -51,10 +54,21 @@ export function App() {
             <UnitSelector />
           </SharedControlsRow>
           {isComparing ? (
-            <EngineComparisonLayout>
-              <EnginePanel slot="primary" heading="Engine A" />
-              <EnginePanel slot="comparison" heading="Engine B" />
-            </EngineComparisonLayout>
+            <>
+              <EngineComparisonLayout>
+                <EnginePanel
+                  slot="primary"
+                  heading="Engine A"
+                  showResults={false}
+                />
+                <EnginePanel
+                  slot="comparison"
+                  heading="Engine B"
+                  showResults={false}
+                />
+              </EngineComparisonLayout>
+              <ComparisonTable />
+            </>
           ) : (
             <EnginePanel slot="primary" />
           )}

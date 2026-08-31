@@ -6,41 +6,19 @@ import {
   calculateClearanceVolumeCc,
   calculateCylinderDisplacementCc,
   calculateMeanPistonSpeedMps,
+  calculatePistonToHeadDistanceMm,
   calculateRodStrokeRatio,
 } from "../../engine/calculations";
-import { mmToIn, radToDeg } from "../../engine/units";
-import type { DisplayUnit, MechanismState } from "../../engine/types";
+import { radToDeg } from "../../engine/units";
 import { formatRounded } from "../shared/formatting";
 import { resolveSlotConfig } from "../shared/configSlot";
 import type { ConfigSlot } from "../shared/configSlot";
+import {
+  describeMechanism,
+  lengthForDisplay,
+  lengthRangeForDisplay,
+} from "../shared/calculationFormatting";
 import styles from "./CalculationPanel.module.css";
-
-function lengthForDisplay(mm: number, unit: DisplayUnit): string {
-  const value = unit === "in" ? mmToIn(mm) : mm;
-  const decimals = unit === "in" ? 3 : 2;
-  return `${formatRounded(value, decimals)} ${unit}`;
-}
-
-/** A mechanical-terms sentence summarizing the live mechanism state (§19). */
-function describeMechanism(state: MechanismState, unit: DisplayUnit): string {
-  const angleDeg = radToDeg(state.crankAngleRad);
-  const rodDeg = radToDeg(state.rodAngleRad);
-
-  let tilt: string;
-  if (rodDeg > 0.05) {
-    tilt = `tilted ${formatRounded(rodDeg, 1)} degrees toward the crankpin's side of the cylinder`;
-  } else if (rodDeg < -0.05) {
-    tilt = `tilted ${formatRounded(Math.abs(rodDeg), 1)} degrees away from the crankpin's side of the cylinder`;
-  } else {
-    tilt = "aligned with the cylinder centerline";
-  }
-
-  return (
-    `At a crank angle of ${formatRounded(angleDeg, 1)} degrees, the piston is ` +
-    `${lengthForDisplay(state.pistonDisplacementMm, unit)} past top dead center, ` +
-    `and the connecting rod is ${tilt}.`
-  );
-}
 
 export interface CalculationPanelProps {
   /**
@@ -92,6 +70,21 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
     slotConfig.strokeMm,
     slotConfig.compressionRatio,
   );
+  const pistonToHeadMinMm = calculatePistonToHeadDistanceMm(
+    slotConfig.strokeMm,
+    slotConfig.compressionRatio,
+    0,
+  );
+  const pistonToHeadMaxMm = calculatePistonToHeadDistanceMm(
+    slotConfig.strokeMm,
+    slotConfig.compressionRatio,
+    slotConfig.strokeMm,
+  );
+  const pistonToHeadCurrentMm = calculatePistonToHeadDistanceMm(
+    slotConfig.strokeMm,
+    slotConfig.compressionRatio,
+    mechanism.pistonDisplacementMm,
+  );
 
   const results: { label: string; value: string }[] = [
     {
@@ -123,15 +116,24 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
       value: `${formatRounded(radToDeg(mechanism.crankAngleRad), 1)}°`,
     },
     {
-      // Static reference range: TDC (0) to BDC (the stroke), independent of
-      // crank angle. Placed directly above the live per-angle displacement
-      // row so the pair reads as "range, then current".
-      label: "Piston travel (from TDC)",
-      value: `0 – ${lengthForDisplay(slotConfig.strokeMm, displayUnit)}`,
+      // Static reference range: the piston crown's closest approach to the
+      // head (TDC) to its farthest retreat (BDC), independent of crank
+      // angle. Placed directly above the live per-angle rows so this reads
+      // as "range, then current".
+      label: "Piston-to-head distance",
+      value: lengthRangeForDisplay(
+        pistonToHeadMinMm,
+        pistonToHeadMaxMm,
+        displayUnit,
+      ),
     },
     {
       label: "Piston displacement from TDC",
       value: lengthForDisplay(mechanism.pistonDisplacementMm, displayUnit),
+    },
+    {
+      label: "Current piston-to-head distance",
+      value: lengthForDisplay(pistonToHeadCurrentMm, displayUnit),
     },
     {
       label: "Connecting-rod angle",

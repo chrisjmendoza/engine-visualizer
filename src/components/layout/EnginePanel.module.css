@@ -68,4 +68,15 @@
   .body > fieldset:first-of-type {
     grid-column: 1 / -1;
   }
+
+  /*
+   * Comparison mode passes `showResults={false}`, so `.body` only has two
+   * children there (preset, geometry) instead of three. When the geometry
+   * fieldset is *also* the last child — i.e. there's no results section
+   * following it to share the second column with — give it the full row
+   * too, rather than leaving half the grid empty.
+   */
+  .body > fieldset:last-child:not(:first-of-type) {
+    grid-column: 1 / -1;
+  }
 }

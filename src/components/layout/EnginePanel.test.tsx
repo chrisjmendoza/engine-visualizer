@@ -64,4 +64,14 @@ describe("EnginePanel", () => {
     expect(useEngineStore.getState().comparisonConfig?.boreMm).toBe(77);
     expect(useEngineStore.getState().config.boreMm).toBe(DEFAULT_CONFIG.boreMm);
   });
+
+  it("omits its CalculationPanel when showResults is false, keeping presets and geometry", () => {
+    render(<EnginePanel slot="primary" showResults={false} />);
+
+    expect(
+      screen.queryByRole("heading", { name: /calculated results/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/bore \(mm\)/i)).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /presets/i })).toBeInTheDocument();
+  });
 });
