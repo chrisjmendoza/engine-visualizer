@@ -80,12 +80,12 @@ export const METRIC_INFO: readonly MetricInfo[] = [
   {
     id: "peakPower",
     label: "Peak power",
-    body: "The engine's maximum power output and the rpm where it happens — a whole-engine figure for all cylinders, unlike the per-cylinder geometry elsewhere in this panel. Power is torque multiplied by rpm, so it peaks well after peak torque: the engine is making somewhat less twist per revolution but doing it far more often. This is why high-revving engines like the F20C can out-power a larger engine that makes more torque.",
+    body: "The manufacturer-published peak power output and the rpm at which it occurs, for the specific market/model-year variant this preset documents — a whole-engine figure for all cylinders, unlike the per-cylinder geometry elsewhere in this panel. Power is torque multiplied by rpm, so it peaks well after peak torque: the engine is making somewhat less twist per revolution but doing it far more often. This is a single verified data point, not a measured curve — it says nothing about how power builds between idle and this peak.",
   },
   {
     id: "peakTorque",
     label: "Peak torque",
-    body: "The maximum twisting force the engine produces and the rpm where it happens — again a whole-engine figure. Torque peaks where the cylinders fill with air most effectively, which is why big-displacement engines make their peak low and small turbocharged engines make theirs wherever the turbo comes on song. The gap between the torque peak and the power peak tells you how the car feels: a narrow gap is punchy and relaxed, a wide one rewards revving it out.",
+    body: "The manufacturer-published peak torque and the rpm at which it occurs, for the specific market/model-year variant this preset documents — again a whole-engine figure, not per-cylinder. Torque peaks where the cylinders fill with air most effectively, which is why big-displacement engines make their peak low and small turbocharged engines make theirs wherever the turbo comes on song. This is a single verified data point, not a measured curve — it says nothing about how torque builds between idle and this peak.",
   },
   {
     id: "rodAngle",

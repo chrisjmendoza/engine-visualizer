@@ -9,14 +9,17 @@ import {
   DEFAULT_PLAYBACK_SPEED,
   TWO_PI,
 } from "../../engine/constants";
+import { DEFAULT_LAYOUT_ID } from "../../engine/engineLayout";
 import type { CrankMechanismConfig } from "../../engine/types";
 
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    cylinderCount: 1,
-    comparisonCylinderCount: 1,
+    layoutId: DEFAULT_LAYOUT_ID,
+    comparisonLayoutId: DEFAULT_LAYOUT_ID,
+    singleCylinderView: true,
+    comparisonSingleCylinderView: true,
     preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,

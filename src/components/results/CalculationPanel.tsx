@@ -10,6 +10,10 @@ import {
   calculatePistonToHeadDistanceMm,
   calculateRodStrokeRatio,
 } from "../../engine/calculations";
+import {
+  createEngineLayout,
+  visibleCylinderCount,
+} from "../../engine/engineLayout";
 import { radToDeg } from "../../engine/units";
 import {
   classifyBoreStrokeRatio,
@@ -22,6 +26,8 @@ import {
   METRIC_INFO_BY_ID,
   lengthForDisplay,
   lengthRangeForDisplay,
+  matchingPresetOutput,
+  peakOutputForDisplay,
 } from "../shared/calculationFormatting";
 import { useMetricInfoToggle } from "../shared/useMetricInfoToggle";
 import { MetricLabelButton } from "../shared/MetricLabelButton";
@@ -52,12 +58,25 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const slotConfig = resolveSlotConfig(slot, config, comparisonConfig);
-  const cylinderCount = useEngineStore((state) => state.cylinderCount);
-  const comparisonCylinderCount = useEngineStore(
-    (state) => state.comparisonCylinderCount,
+  const layoutId = useEngineStore((state) => state.layoutId);
+  const comparisonLayoutId = useEngineStore(
+    (state) => state.comparisonLayoutId,
   );
-  const slotCylinderCount =
-    slot === "comparison" ? comparisonCylinderCount : cylinderCount;
+  const singleCylinderView = useEngineStore(
+    (state) => state.singleCylinderView,
+  );
+  const comparisonSingleCylinderView = useEngineStore(
+    (state) => state.comparisonSingleCylinderView,
+  );
+  // The engine's cylinder count is a property of its layout (§24a), not a
+  // store field of its own: a V8 has eight because `v8-cross` has eight. What
+  // is *shown* is then filtered by the cylinder-view preference through the
+  // engine layer's own helper — the same one the scene uses — so the total
+  // displacement below always describes exactly what is on stage.
+  const slotCylinderCount = visibleCylinderCount(
+    createEngineLayout(slot === "comparison" ? comparisonLayoutId : layoutId),
+    slot === "comparison" ? comparisonSingleCylinderView : singleCylinderView,
+  );
   const rpm = useEngineStore((state) => state.rpm);
   const crankAngleRad = useEngineStore((state) => state.crankAngleRad);
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
@@ -110,6 +129,7 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
     slotConfig.compressionRatio,
     mechanism.pistonDisplacementMm,
   );
+  const slotOutput = matchingPresetOutput(slotConfig);
 
   const results: { id: string; label: string; value: string }[] = [
     {
@@ -193,6 +213,28 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
       id: "rodAngle",
       label: "Connecting-rod angle",
       value: `${formatRounded(radToDeg(mechanism.rodAngleRad), 1)}°`,
+    },
+    {
+      // Whole-engine figures (all cylinders), unlike every other row above —
+      // see this metric's METRIC_INFO_BY_ID entry, which says so plainly.
+      // "—" when the current geometry matches no preset with published
+      // output, same convention as every other preset-derived value here.
+      id: "peakPower",
+      label: "Peak power",
+      value: peakOutputForDisplay(
+        slotOutput?.powerHp,
+        "hp",
+        slotOutput?.powerRpm,
+      ),
+    },
+    {
+      id: "peakTorque",
+      label: "Peak torque",
+      value: peakOutputForDisplay(
+        slotOutput?.torqueLbFt,
+        "lb-ft",
+        slotOutput?.torqueRpm,
+      ),
     },
   ];
 

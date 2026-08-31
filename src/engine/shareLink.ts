@@ -18,8 +18,12 @@
  * |----------|--------------------------------------------------|--------------|
  * | `a`      | Engine A: a preset id, or `bore-stroke-rod-cr-redline` | never |
  * | `b`      | Engine B; its presence turns comparison mode on  | not comparing |
- * | `c`      | Engine A's cylinder count (§24a: 1, 3, 4, or 6)  | matches what `a` implies (a preset's own count, or 1) |
- * | `bc`     | Engine B's cylinder count                        | matches what `b` implies, or not comparing |
+ * | `l`      | Engine A's layout id (§24a: `v8-cross`, `inline-4`, ...) | matches what `a` implies (a preset's own layout, else the default layout) |
+ * | `bl`     | Engine B's layout id                             | matches what `b` implies, or not comparing |
+ * | `sv`     | Engine A's cylinder view: `1` one cylinder, `0` whole engine | matches what the link's own `l`/`c` imply |
+ * | `bsv`    | Engine B's cylinder view                         | matches what `bl`/`bc` imply, or not comparing |
+ * | `c`      | **Legacy.** Engine A's cylinder count (1, 3, 4, 6) | always — superseded by `l`, still decoded |
+ * | `bc`     | **Legacy.** Engine B's cylinder count            | always — superseded by `bl`, still decoded |
  * | `rpm`    | Engine speed (engine A's, when speeds are split) | default |
  * | `brpm`   | Engine B's speed; its presence means unlinked    | speeds linked |
  * | `u`      | `in` for inch display                            | millimeters |
@@ -37,6 +41,34 @@
  * outdated link yields whatever parts are valid and silently drops the
  * rest, rather than failing. Every decoded config passes `validateConfig`,
  * so a malformed link can never push invalid geometry into the simulation.
+ *
+ * ## `c`/`bc`, and `l=single` — the append-only rule in practice
+ *
+ * The first multi-cylinder release identified a layout by a bare cylinder
+ * count (`c=6`). A count can no longer identify a layout (a V8 and an
+ * inline-8 share one), so `l`/`bl` carry a layout id instead — but links
+ * written by that release are already out in the world, so `c`/`bc` must
+ * keep decoding forever. They map onto the only layouts that release could
+ * render (see `LEGACY_COUNT_LAYOUT_IDS`) and are never emitted again. An
+ * explicit `l` always wins over a legacy `c` in the same link.
+ *
+ * The release after that split "which engine is this" from "how much of it am
+ * I looking at" (§24a): `l` now names an **architecture** and `sv` names the
+ * **view**. `l=single` and `c=1` predate the split and said both things at
+ * once, so they now decode as "one cylinder of whatever `a` implies" —
+ * `singleCylinderView: true`, with the architecture still taken from `a`. A
+ * legacy link therefore opens showing exactly the one cylinder it always did.
+ * `c=3|4|6` and any other `l` keep meaning that architecture with the whole
+ * engine on stage.
+ *
+ * ## When `sv` travels
+ *
+ * `sv` follows the same rule `l` does — it is written exactly when it
+ * disagrees with what the rest of the link already implies (see
+ * `impliedSingleCylinderView`), which is what keeps every state round-tripping
+ * while leaving the common links short. A link that names no architecture is
+ * describing one cylinder of whatever `a` implies; a link that names one is
+ * describing that whole engine.
  */
 
 import {
@@ -47,8 +79,8 @@ import {
   TWO_PI,
 } from "./constants";
 import type { PlaybackSpeed } from "./constants";
-import { isSupportedCylinderCount } from "./engineLayout";
-import type { SupportedCylinderCount } from "./engineLayout";
+import { DEFAULT_LAYOUT_ID, isEngineLayoutId } from "./engineLayout";
+import type { EngineLayoutId } from "./engineLayout";
 import { ENGINE_PRESETS } from "./presets";
 import type { EnginePreset } from "./presets";
 import type { CrankMechanismConfig, DisplayUnit } from "./types";
@@ -58,10 +90,14 @@ import { validateConfig } from "./validation";
 export interface ShareState {
   config: CrankMechanismConfig;
   comparisonConfig: CrankMechanismConfig | null;
-  /** Engine A's cylinder count (§24a). */
-  cylinderCount: SupportedCylinderCount;
-  /** Engine B's cylinder count; only meaningful while `comparisonConfig` is set. */
-  comparisonCylinderCount: SupportedCylinderCount;
+  /** Engine A's layout (§24a). */
+  layoutId: EngineLayoutId;
+  /** Engine B's layout; only meaningful while `comparisonConfig` is set. */
+  comparisonLayoutId: EngineLayoutId;
+  /** Engine A's view: one cylinder of that layout, or the whole engine (§24a). */
+  singleCylinderView: boolean;
+  /** Engine B's view; only meaningful while `comparisonConfig` is set. */
+  comparisonSingleCylinderView: boolean;
   rpm: number;
   /** Engine B's speed; only travels in a link while `rpmLinked` is false. */
   comparisonRpm: number;
@@ -100,9 +136,9 @@ function configsEqual(
 /**
  * Finds the preset (if any) whose geometry exactly matches `config`. Shared
  * by `encodeConfig` (to decide whether a preset id or five numbers gets
- * written) and `defaultCylinderCountFor` (to decide what cylinder count a
- * link implies when it omits `c`/`bc`), so the two stay in lockstep by
- * construction rather than by two independently-maintained rules.
+ * written) and `defaultLayoutIdFor` (to decide what layout a link implies
+ * when it omits `l`/`bl`), so the two stay in lockstep by construction
+ * rather than by two independently-maintained rules.
  */
 function presetForConfig(
   config: CrankMechanismConfig,
@@ -111,17 +147,71 @@ function presetForConfig(
 }
 
 /**
- * The cylinder count a link implies for `config` when it carries no
- * explicit `c`/`bc`: a preset's own real cylinder count when `config`
- * matches one exactly (§24a — falling back to 1 for a preset whose real
- * layout isn't renderable yet, e.g. a V8), or 1 for a hand-typed numeric
- * config. A link is a complete description of an engine, so a numeric `a`
- * with no `c` means single-cylinder, not "leave the current count alone".
+ * The layout a link implies for `config` when it carries no explicit
+ * `l`/`bl`: a preset's own real layout when `config` matches one exactly
+ * (§24a), else `DEFAULT_LAYOUT_ID` — the same architecture the app itself
+ * opens on. A link is a complete description of an engine, so a numeric `a`
+ * with no `l` describes the default engine, not "leave the current layout
+ * alone".
+ *
+ * The fallback used to be `"single"`, back when that was both an architecture
+ * and a view. It no longer is: the *view* now comes from `sv` (which defaults
+ * to one cylinder), so a bare numeric link still opens on exactly one
+ * cylinder, as it always did — that cylinder is simply now labeled as
+ * belonging to the default architecture rather than to a layout called
+ * "single".
  */
-export function defaultCylinderCountFor(
+export function defaultLayoutIdFor(
   config: CrankMechanismConfig,
-): SupportedCylinderCount {
-  return presetForConfig(config)?.cylinderCount ?? 1;
+): EngineLayoutId {
+  return presetForConfig(config)?.layoutId ?? DEFAULT_LAYOUT_ID;
+}
+
+/**
+ * The layouts the pre-`l` release could describe with its `c` cylinder
+ * count, all of them inline (§25a's append-only rule). Decode-only: nothing
+ * writes `c` any more, and a count outside this map is dropped like any
+ * other malformed parameter.
+ */
+const LEGACY_COUNT_LAYOUT_IDS: Record<string, EngineLayoutId> = {
+  "1": "single",
+  "3": "inline-3",
+  "4": "inline-4",
+  "6": "inline-6",
+};
+
+/** Reads a legacy `c`/`bc` cylinder count as a layout id, or null. */
+function layoutIdFromLegacyCount(raw: string): EngineLayoutId | null {
+  return LEGACY_COUNT_LAYOUT_IDS[raw.trim()] ?? null;
+}
+
+/**
+ * The cylinder view a link implies when it carries no explicit `sv`/`bsv`,
+ * given the layout id that link writes (or `null` when it writes none).
+ *
+ * A link that names an architecture is describing that whole engine; a link
+ * that names none — or names the legacy `"single"`, which never was an
+ * architecture — is describing one cylinder. Encoding and decoding both go
+ * through this one function, which is what makes "omit `sv` when it agrees
+ * with the rest of the link" safe to round-trip.
+ */
+function impliedSingleCylinderView(layoutParam: string | null): boolean {
+  return layoutParam === null || layoutParam === "single";
+}
+
+/** Reads an `sv`/`bsv` flag: `"1"` one cylinder, `"0"` whole engine, else null. */
+function parseViewParam(raw: string | null): boolean | null {
+  if (raw === null) {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "1") {
+    return true;
+  }
+  if (trimmed === "0") {
+    return false;
+  }
+  return null;
 }
 
 /** Encodes one config as a preset id when possible, else as five numbers. */
@@ -200,6 +290,41 @@ function parseRpmParam(raw: string): number | null {
 }
 
 /**
+ * Writes one engine's layout and cylinder-view parameters, each omitted when
+ * the rest of the link already implies it. Shared by engines A (`l`/`sv`) and
+ * B (`bl`/`bsv`) so the two can never drift apart.
+ *
+ * A state still carrying the legacy `"single"` layout id is normalized on the
+ * way out rather than written verbatim: `"single"` was an architecture *and* a
+ * view before §24a's second amendment split them, so it is written here as
+ * what it always meant — the architecture `a` implies, viewed one cylinder at
+ * a time. Nothing in the app stores `"single"` any more, but normalizing keeps
+ * the encoder total, and keeps every state it can be handed round-trippable.
+ */
+function writeLayoutParams(
+  params: URLSearchParams,
+  layoutKey: string,
+  viewKey: string,
+  config: CrankMechanismConfig,
+  layoutId: EngineLayoutId,
+  singleCylinderView: boolean,
+): void {
+  const legacySingle = layoutId === "single";
+  const impliedLayoutId = defaultLayoutIdFor(config);
+  const effectiveLayoutId = legacySingle ? impliedLayoutId : layoutId;
+  const effectiveView = legacySingle ? true : singleCylinderView;
+
+  const layoutParam =
+    effectiveLayoutId === impliedLayoutId ? null : effectiveLayoutId;
+  if (layoutParam !== null) {
+    params.set(layoutKey, layoutParam);
+  }
+  if (effectiveView !== impliedSingleCylinderView(layoutParam)) {
+    params.set(viewKey, effectiveView ? "1" : "0");
+  }
+}
+
+/**
  * Builds the query string (without a leading "?") for the given state.
  * Values at their defaults are omitted to keep shared links short.
  */
@@ -210,22 +335,32 @@ export function encodeShareState(state: ShareState): string {
   if (state.comparisonConfig) {
     params.set("b", encodeConfig(state.comparisonConfig));
   }
-  // `c` only needs to travel when it disagrees with what decoding `a` will
-  // infer on its own: a preset id already implies its own real cylinder
-  // count (§24a), and a numeric config implies 1. Omitting `c` whenever the
-  // count merely equals 1 (regardless of what `a` implies) would corrupt a
-  // preset-id link deliberately viewed at a different count — see
-  // `defaultCylinderCountFor`. Engine B's count only means anything once
-  // engine B itself is in the link, same reasoning as `brpm`/`bangle` below.
-  if (state.cylinderCount !== defaultCylinderCountFor(state.config)) {
-    params.set("c", String(state.cylinderCount));
-  }
-  if (
-    state.comparisonConfig &&
-    state.comparisonCylinderCount !==
-      defaultCylinderCountFor(state.comparisonConfig)
-  ) {
-    params.set("bc", String(state.comparisonCylinderCount));
+  // `l` only needs to travel when it disagrees with what decoding `a` will
+  // infer on its own: a preset id already implies its own real layout
+  // (§24a), and any other config implies `DEFAULT_LAYOUT_ID`. Engine B's
+  // layout only means anything once engine B itself is in the link, same
+  // reasoning as `brpm`/`bangle` below. The legacy `c`/`bc` are never
+  // written: they are decode-only now.
+  //
+  // `sv` then travels only when the view disagrees with what that `l` (or
+  // its absence) implies — see `impliedSingleCylinderView`.
+  writeLayoutParams(
+    params,
+    "l",
+    "sv",
+    state.config,
+    state.layoutId,
+    state.singleCylinderView,
+  );
+  if (state.comparisonConfig) {
+    writeLayoutParams(
+      params,
+      "bl",
+      "bsv",
+      state.comparisonConfig,
+      state.comparisonLayoutId,
+      state.comparisonSingleCylinderView,
+    );
   }
   if (state.rpm !== DEFAULT_ANIMATION.rpm) {
     params.set("rpm", formatNumber(state.rpm));
@@ -263,6 +398,71 @@ export function encodeShareState(state: ShareState): string {
 }
 
 /**
+ * Reads one engine's layout and cylinder-view parameters back out of a link
+ * — the exact inverse of `writeLayoutParams`, shared by engines A and B.
+ *
+ * An explicit `l` wins, then a legacy `c` (§25a: old links keep working).
+ * Absent both, `a` still implies a layout (see `defaultLayoutIdFor`), so a
+ * link is a complete description of the engine even when nothing travelled. A
+ * parameter that is present but unrecognized (a stale or hand-edited value) is
+ * neither "explicit" nor "absent": it is dropped without falling back, leaving
+ * the current session's layout standing, same as any other malformed param
+ * here — and it implies nothing about the view either.
+ *
+ * The legacy `l=single` and `c=1` are the one asymmetry: they named a view,
+ * not an architecture, so they set `singleCylinderView` and leave the
+ * architecture to `a`. An explicit `sv` always overrides whatever the layout
+ * parameters implied.
+ */
+function readLayoutParams(
+  layoutParam: string | null,
+  legacyCountParam: string | null,
+  viewParam: string | null,
+  config: CrankMechanismConfig | undefined,
+): { layoutId?: EngineLayoutId; singleCylinderView?: boolean } {
+  // The layout id the link names, once the legacy count has been mapped on.
+  // Null means "the link named none", which is not the same as naming one
+  // this build does not know (`named === undefined`).
+  let named: EngineLayoutId | null | undefined;
+  if (layoutParam !== null) {
+    named = isEngineLayoutId(layoutParam) ? layoutParam : undefined;
+  } else if (legacyCountParam !== null) {
+    named = layoutIdFromLegacyCount(legacyCountParam) ?? undefined;
+  } else {
+    named = null;
+  }
+
+  const result: { layoutId?: EngineLayoutId; singleCylinderView?: boolean } =
+    {};
+  const explicitView = parseViewParam(viewParam);
+  if (explicitView !== null) {
+    result.singleCylinderView = explicitView;
+  }
+
+  // Nothing usable was named, or nothing at all was said about this engine
+  // (no layout parameter *and* no config): imply neither a layout nor a view,
+  // so a link about something else entirely — `?rpm=4500` — leaves the
+  // current session's engine alone.
+  if (named === undefined || (named === null && config === undefined)) {
+    return result;
+  }
+
+  // `"single"` was a view, not an architecture (see the module header), so it
+  // leaves the architecture to whatever `a` implies — exactly as an absent
+  // layout parameter does.
+  const impliedLayoutId = config ? defaultLayoutIdFor(config) : undefined;
+  const layoutId =
+    named === null || named === "single" ? impliedLayoutId : named;
+  if (layoutId !== undefined) {
+    result.layoutId = layoutId;
+  }
+  if (explicitView === null) {
+    result.singleCylinderView = impliedSingleCylinderView(named);
+  }
+  return result;
+}
+
+/**
  * Parses a query string into whatever state it validly carried. Unknown,
  * malformed, or out-of-range parameters are ignored rather than throwing,
  * so an old or hand-edited link still opens.
@@ -289,37 +489,34 @@ export function decodeShareState(query: string): PartialShareState {
     }
   }
 
-  // An explicit `c` always wins. Absent, `a` still implies a count — a
-  // preset id implies its own real cylinder count, a numeric config implies
-  // 1 (see `defaultCylinderCountFor`) — so a link is a complete description
-  // of engine A's layout even when `c` never travelled. `c` present but
-  // unsupported (a stale or hand-edited value) is neither "explicit" nor
-  // "absent": it's dropped without falling back, leaving the current
-  // session's count stand, same as any other malformed param here.
-  const rawC = params.get("c");
-  if (rawC !== null) {
-    const count = Number(rawC);
-    if (isSupportedCylinderCount(count)) {
-      state.cylinderCount = count;
-    }
-  } else if (state.config) {
-    state.cylinderCount = defaultCylinderCountFor(state.config);
+  const decodedA = readLayoutParams(
+    params.get("l"),
+    params.get("c"),
+    params.get("sv"),
+    state.config,
+  );
+  if (decodedA.layoutId !== undefined) {
+    state.layoutId = decodedA.layoutId;
+  }
+  if (decodedA.singleCylinderView !== undefined) {
+    state.singleCylinderView = decodedA.singleCylinderView;
   }
 
-  // `bc` only means anything alongside a successfully decoded engine B —
-  // same reasoning as `brpm`/`bangle` above — and so does its absence:
-  // no `b`, no implied count either.
-  const rawBc = params.get("bc");
+  // `bl`/`bc`/`bsv` only mean anything alongside a successfully decoded
+  // engine B — same reasoning as `brpm`/`bangle` below — and so does their
+  // absence: no `b`, no implied layout or view either.
   if (state.comparisonConfig) {
-    if (rawBc !== null) {
-      const count = Number(rawBc);
-      if (isSupportedCylinderCount(count)) {
-        state.comparisonCylinderCount = count;
-      }
-    } else {
-      state.comparisonCylinderCount = defaultCylinderCountFor(
-        state.comparisonConfig,
-      );
+    const decodedB = readLayoutParams(
+      params.get("bl"),
+      params.get("bc"),
+      params.get("bsv"),
+      state.comparisonConfig,
+    );
+    if (decodedB.layoutId !== undefined) {
+      state.comparisonLayoutId = decodedB.layoutId;
+    }
+    if (decodedB.singleCylinderView !== undefined) {
+      state.comparisonSingleCylinderView = decodedB.singleCylinderView;
     }
   }
 

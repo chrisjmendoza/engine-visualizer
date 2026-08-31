@@ -7,8 +7,10 @@
  */
 
 import { mmToIn } from "../../engine/units";
-import type { DisplayUnit } from "../../engine/types";
-import { formatRounded } from "./formatting";
+import type { CrankMechanismConfig, DisplayUnit } from "../../engine/types";
+import { ENGINE_PRESETS } from "../../engine/presets";
+import type { EnginePreset } from "../../engine/presets";
+import { formatRounded, formatRpm } from "./formatting";
 import { METRIC_INFO } from "./metricInfo";
 import type { MetricInfo } from "./metricInfo";
 
@@ -38,4 +40,46 @@ export function lengthRangeForDisplay(
   const min = unit === "in" ? mmToIn(minMm) : minMm;
   const max = unit === "in" ? mmToIn(maxMm) : maxMm;
   return `${formatRounded(min, decimals)} – ${formatRounded(max, decimals)} ${unit}`;
+}
+
+/**
+ * The verified whole-engine output (peak power and peak torque, each with
+ * its own rpm) for whichever preset a config's per-cylinder geometry
+ * exactly matches — the same bore/stroke/rod comparison
+ * `PresetSelector.tsx` uses to decide whether a preset button reads as
+ * selected. Deliberately ignores cylinder count/layout and the
+ * cylinder-view preference: `output` describes the whole real engine
+ * regardless of which layout this visualizer currently renders for it, or
+ * how much of it is on stage. Returns `undefined` when no preset matches,
+ * or when the matching preset has no published output (a hand-edited
+ * config, or a preset whose figures couldn't clear the two-source bar) —
+ * callers render "—" in that case, the same as any other preset-derived
+ * value.
+ */
+export function matchingPresetOutput(
+  config: CrankMechanismConfig,
+): EnginePreset["output"] | undefined {
+  const preset = ENGINE_PRESETS.find(
+    (candidate) =>
+      candidate.config.boreMm === config.boreMm &&
+      candidate.config.strokeMm === config.strokeMm &&
+      candidate.config.rodLengthMm === config.rodLengthMm,
+  );
+  return preset?.output;
+}
+
+/**
+ * Renders one peak-output figure with its own rpm, e.g. "240 hp @ 8,300
+ * rpm" — or "—" when the value/rpm pair isn't available (no matching
+ * preset, or a matching preset with no published output).
+ */
+export function peakOutputForDisplay(
+  value: number | undefined,
+  unit: string,
+  rpm: number | undefined,
+): string {
+  if (value === undefined || rpm === undefined) {
+    return "—";
+  }
+  return `${formatRounded(value, 0)} ${unit} @ ${formatRpm(rpm)}`;
 }

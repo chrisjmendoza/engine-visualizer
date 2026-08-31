@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { ENGINE_PRESETS } from "../engine/presets";
 import type { EnginePreset } from "../engine/presets";
 import { validateConfig } from "../engine/validation";
+import {
+  DEFAULT_LAYOUT_ID,
+  createEngineLayout,
+  isEngineLayoutId,
+} from "../engine/engineLayout";
 
 /**
  * Advertised total displacement (cc) and cylinder count for each preset
@@ -392,5 +397,38 @@ describe("ENGINE_PRESETS", () => {
     // the doc comment on `EnginePreset.output` describes.
     expect(() => withoutOutput.output?.powerHp).not.toThrow();
     expect(withoutOutput.output?.powerHp).toBeUndefined();
+  });
+});
+
+describe("preset layouts (§24a)", () => {
+  it.each(ENGINE_PRESETS)(
+    "$name ($engineCode) declares a real layout",
+    (preset) => {
+      expect(preset.layoutId).toBeDefined();
+      expect(isEngineLayoutId(preset.layoutId)).toBe(true);
+    },
+  );
+
+  it.each(ENGINE_PRESETS)(
+    "$name ($engineCode) layout has the engine's advertised cylinder count",
+    (preset) => {
+      const advertised = ADVERTISED[preset.id];
+      expect(advertised).toBeDefined();
+      const layout = createEngineLayout(preset.layoutId ?? DEFAULT_LAYOUT_ID);
+      expect(layout.cylinders).toHaveLength(advertised!.cylinders);
+    },
+  );
+
+  it("gives each V-engine preset the crank its sourcing comment names", () => {
+    const layoutOf = (id: string) =>
+      ENGINE_PRESETS.find((preset) => preset.id === id)?.layoutId;
+
+    // The two GM V8s are cross-plane; the Ferrari is flat-plane. Getting
+    // these two backwards would be invisible on screen but wrong.
+    expect(layoutOf("corvette-c6-ls3")).toBe("v8-cross");
+    expect(layoutOf("corvette-z06-c6-ls7")).toBe("v8-cross");
+    expect(layoutOf("ferrari-458-italia")).toBe("v8-flat");
+    // The R35's VR38DETT is a 60° V6, not the odd-fire 90° one.
+    expect(layoutOf("gtr-r35-vr38dett")).toBe("v6-60");
   });
 });

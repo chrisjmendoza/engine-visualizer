@@ -17,10 +17,15 @@
 
 import { useMemo } from "react";
 import { calculateClearanceHeightMm } from "../engine/calculations";
-import { createEngineLayout } from "../engine/engineLayout";
+import {
+  createEngineLayout,
+  sharesCrankpin,
+  visibleCylinders,
+} from "../engine/engineLayout";
 import type {
   CylinderDefinition,
-  SupportedCylinderCount,
+  EngineLayoutId,
+  EngineLayoutKind,
 } from "../engine/engineLayout";
 import type { CrankMechanismConfig } from "../engine/types";
 import { useEngineStore } from "../state/engineStore";
@@ -61,6 +66,19 @@ export const FRAME_PADDING = 1.1;
  * comparison is two small motorcycle singles or two large-bore V8 cylinders.
  */
 export const COMPARISON_GAP_FRACTION = 0.18;
+
+/**
+ * Vertical gap between stacked compared engines, as a fraction of their mean
+ * height — the exact analogue of `COMPARISON_GAP_FRACTION` on the other axis,
+ * and scaled to the engines for the same reason.
+ *
+ * Deliberately smaller than the horizontal fraction: two rows on separate
+ * baselines already read as two engines without much help, whereas two rows
+ * side by side would run into one another. The vertical axis is also the one
+ * a stacked pair is most likely to be zoom-limited by, and every millimeter of
+ * gap here costs both engines size on screen.
+ */
+export const COMPARISON_VERTICAL_GAP_FRACTION = 0.1;
 
 /**
  * Crank-direction indicator (§19, front cylinder only): a static reference
@@ -121,8 +139,10 @@ export const CRANK_ARROW_HEAD_ROTATION_Z_RAD = clockwiseTangentRotationZRad(
 );
 
 /**
- * Gap between adjacent cylinders of one engine, as a fraction of a single
- * cylinder's bounds width (§24).
+ * Gap between adjacent slots of one engine's row, as a fraction of the widest
+ * reach one of its slots has across its own crank center (§24) — the
+ * cylinder's plain bounds width for an upright layout, and the combined
+ * rotated footprint of a throw's pair for a V or flat one (§24a).
  *
  * Much tighter than `COMPARISON_GAP_FRACTION`: cylinders of one engine share a
  * crankcase and should read as one machine, while two compared engines must
@@ -393,11 +413,75 @@ export interface LabelPlacement {
  *
  * Carries the whole `CylinderDefinition` rather than just the phase so the
  * frame loop can hand it straight to `cylinderCrankAngleRad` and index the
- * stage's per-cylinder registry by `index`, without rebuilding anything.
+ * stage's per-cylinder registry by `index`, without rebuilding anything —
+ * and so the renderer can read `bankOffsetRad` to tilt this cylinder onto
+ * its bank.
  */
 export interface PlacedCylinder extends CylinderDefinition {
+  /**
+   * Which slot of the row this cylinder is drawn in — a **throw** slot, not a
+   * cylinder slot (§24a). Inline and single layouts give every cylinder its own
+   * slot, so this is just `index`. V and flat layouts draw the pair `2k` /
+   * `2k+1` in slot `k`, around one crank center: for a V that pair genuinely
+   * shares one throw, and for a boxer it is two adjacent throws 180° apart that
+   * the schematic collapses into one plane.
+   *
+   * Cylinders of one slot share an `offsetXMm` and an `offsetYMm`; only
+   * `offsetZMm` and the bank tilt tell them apart.
+   */
+  throwIndex: number;
   /** X of this cylinder's crankshaft center on the stage, scene millimeters. */
   offsetXMm: number;
+  /**
+   * Y of this cylinder's crankshaft center on the stage, scene millimeters.
+   * Always 0 except for the lower engine of a stacked comparison (§24a), which
+   * is what lets two multi-cylinder engines be compared column by column.
+   */
+  offsetYMm: number;
+  /**
+   * Depth of this cylinder's whole drawn mechanism, scene millimeters. Zero for
+   * the first cylinder of every slot — which is every cylinder of an inline
+   * engine — and a small negative step for the second cylinder of a throw pair,
+   * pushing it just behind its partner (§24a).
+   *
+   * Two cylinders sharing one plane would otherwise put coincident faces at
+   * identical depths and z-fight: a boxer pair's main journals sit on the same
+   * axis, and its bore centerlines are outright collinear. The step is also
+   * physically honest — the two cylinders of a real throw pair *are* at
+   * different axial positions, which is the very dimension this cutaway view
+   * cannot show — and it puts the two rods of a shared-pin V side by side on
+   * the pin, as they are in the real engine.
+   *
+   * The step is deliberately small (half a rod thickness): big enough that
+   * nothing is coplanar, small enough that the shifted cylinder's reference
+   * plane stays in front of its partner's solid parts.
+   */
+  offsetZMm: number;
+  /**
+   * Whether this cylinder draws its own crank throw, or only its rod, piston,
+   * guide, and reference marks (§24a).
+   *
+   * False exactly when an earlier cylinder in the same slot already drew a
+   * crank this one would land on top of — i.e. when `sharesCrankpin` holds, as
+   * it does for a plain-pin V pair, whose crank drawings coincide at every
+   * crank angle. The single drawn crankpin is then genuinely shared by both
+   * rods, which is what a real V engine does. A split-pin V (`v6-60`) and a
+   * boxer both have two real, distinct pins in the pair, so both cylinders draw
+   * their own.
+   */
+  drawsCrank: boolean;
+  /**
+   * This cylinder's extents relative to its own crankshaft center, already
+   * rotated onto its bank (§24a). Equal to `proportions.bounds` for an
+   * upright cylinder; for a V or flat cylinder it is the axis-aligned
+   * envelope of the rotated mechanism, which is what keeps a tilted bore from
+   * overlapping its neighbour or being clipped by the camera.
+   *
+   * Still per cylinder, not per slot: a slot's own footprint is the union of
+   * its cylinders' (see `MeasuredThrow`), but framing checks and label
+   * placement want the real reach of each drawn mechanism.
+   */
+  bounds: SceneBounds;
 }
 
 /** One engine — a row of one or more identical cylinders — on the stage. */
@@ -429,128 +513,330 @@ export interface PlacedEngine {
  * offsets differ; no mechanism is ever scaled to fit.
  */
 export interface SceneLayout {
-  /** Engine A, on the left when a comparison is shown. */
+  /**
+   * How the stage is arranged: one engine, a side-by-side pair (both showing
+   * a single cylinder), or a stacked pair (either showing more than one).
+   */
+  arrangement: ComparisonArrangement;
+  /** Engine A: to the left of, or above, engine B when comparing. */
   primary: PlacedEngine;
-  /** Engine B, on the right, or null when comparison is off. */
+  /** Engine B, to the right of or below A, or null when comparison is off. */
   secondary: PlacedEngine | null;
   /** Union of every placed engine's extents, in world coordinates. */
   bounds: SceneBounds;
 }
 
-function widthOf(bounds: SceneBounds): number {
-  return bounds.maxX - bounds.minX;
-}
+/**
+ * Which axis a comparison pair is laid out along (§24a), or `"single"` when
+ * only one engine is on stage. See `deriveLayout` for the rule that picks it.
+ */
+export type ComparisonArrangement = "single" | "side-by-side" | "stacked";
 
 /** Horizontal center of a span already expressed in world coordinates. */
 function centerXOf(bounds: SceneBounds): number {
   return (bounds.minX + bounds.maxX) / 2;
 }
 
+/**
+ * The axis-aligned envelope of `bounds` after rotating it about the origin
+ * (the crankshaft center) by `angleRad` — a cylinder's real footprint once it
+ * has been tilted onto its bank (§24a).
+ *
+ * Rotating the four corners and re-enveloping them is deliberately generous:
+ * the true rotated shape is a tilted rectangle, so its axis-aligned envelope
+ * is at least as large. Framing and spacing computed from it can never clip or
+ * overlap, which is the property that matters. For an unrotated cylinder
+ * (`angleRad === 0`) it returns the original numbers untouched, so inline
+ * layouts keep exactly the framing they had before banks existed.
+ */
+export function rotateBounds(
+  bounds: SceneBounds,
+  angleRad: number,
+): SceneBounds {
+  if (angleRad === 0) {
+    return bounds;
+  }
+
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const xs: number[] = [];
+  const ys: number[] = [];
+
+  for (const x of [bounds.minX, bounds.maxX]) {
+    for (const y of [bounds.minY, bounds.maxY]) {
+      xs.push(x * cos - y * sin);
+      ys.push(x * sin + y * cos);
+    }
+  }
+
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+}
+
+/** One cylinder of a measured row: its definition and its rotated footprint. */
+interface MeasuredCylinder {
+  definition: CylinderDefinition;
+  bounds: SceneBounds;
+  /**
+   * Position within its slot: 0 for the cylinder that owns the plane, 1 for the
+   * partner drawn behind it. Becomes `offsetZMm` once proportions are known.
+   */
+  slotPosition: number;
+  drawsCrank: boolean;
+}
+
+/**
+ * One slot of a measured row — one crank center, one cutaway plane (§24a).
+ *
+ * Holds one cylinder for an inline or single layout and the two cylinders of a
+ * throw pair for a V or flat one. Its bounds are the union of its cylinders'
+ * rotated footprints, which is what both the row spacing and the camera framing
+ * are derived from: a V pair's two tilted mechanisms occupy one slot between
+ * them, so a V8 needs four slots rather than eight.
+ */
+interface MeasuredThrow {
+  cylinders: readonly MeasuredCylinder[];
+  bounds: SceneBounds;
+}
+
 /** An engine's row, measured but not yet positioned on the stage. */
 interface MeasuredRow {
   config: CrankMechanismConfig;
   proportions: MechanismProportions;
-  cylinders: readonly CylinderDefinition[];
+  throws: readonly MeasuredThrow[];
+  /** How many cylinders are on stage, across every slot. */
+  cylinderCount: number;
   /** Distance between adjacent crankshaft centers. */
   spacingMm: number;
-  /** Left edge of cylinder 0 to right edge of the last cylinder. */
+  /** Left edge of slot 0 to right edge of the last slot. */
+  widthMm: number;
+  /** Leftmost reach of the row, relative to slot 0's crankshaft center. */
+  leftReachMm: number;
+  minYMm: number;
+  maxYMm: number;
+}
+
+/** How far a row reaches either side of slot 0 at a given spacing. */
+interface RowExtents {
+  leftReachMm: number;
   widthMm: number;
 }
 
 /**
- * Measures one engine as a row of `cylinderCount` identical cylinders.
+ * A row's horizontal extents at an arbitrary slot spacing, relative to slot 0's
+ * crankshaft center.
  *
- * The phase table comes from `createEngineLayout`, which returns a shared
- * frozen layout — the scene never invents crank phases of its own (§24).
- * Spacing is a fraction of one cylinder's own width, so a big-bore engine
- * spaces its cylinders proportionally further apart and the row keeps the same
- * visual density at every size. A single cylinder measures exactly its own
- * bounds width, which is what keeps the one-cylinder framing identical to what
- * it was before rows existed.
+ * Spacing is normally the row's own (`MeasuredRow.spacingMm`), but a stacked
+ * comparison drives both rows at one shared spacing so corresponding slots line
+ * up in columns, and then neither row's own extents apply.
+ */
+function rowExtentsAt(
+  throws: readonly MeasuredThrow[],
+  spacingMm: number,
+): RowExtents {
+  const lefts = throws.map((t, i) => i * spacingMm + t.bounds.minX);
+  const rights = throws.map((t, i) => i * spacingMm + t.bounds.maxX);
+  const leftReachMm = Math.min(...lefts);
+  return { leftReachMm, widthMm: Math.max(...rights) - leftReachMm };
+}
+
+/**
+ * Groups an engine's visible cylinders into the slots the row draws them in
+ * (§24a): one cylinder per slot for inline and single layouts, and the pair
+ * `2k` / `2k+1` in slot `k` for V and flat layouts, whose cylinder order
+ * already alternates banks.
+ *
+ * Grouping by *position in the visible list* rather than by `index` keeps the
+ * single-cylinder view working: it shows cylinder 0 alone, which is then the
+ * only occupant of the only slot, exactly as an inline cylinder would be.
+ */
+function groupIntoThrows(
+  definitions: readonly CylinderDefinition[],
+  kind: EngineLayoutKind,
+  proportions: MechanismProportions,
+): MeasuredThrow[] {
+  const paired = kind === "v" || kind === "flat";
+  const perThrow = paired ? 2 : 1;
+  const throws: MeasuredThrow[] = [];
+
+  for (let start = 0; start < definitions.length; start += perThrow) {
+    const group = definitions.slice(start, start + perThrow);
+    const cylinders: MeasuredCylinder[] = group.map((definition, position) => ({
+      definition,
+      bounds: rotateBounds(proportions.bounds, definition.bankOffsetRad),
+      slotPosition: position,
+      // A cylinder draws its own crank unless one already drawn in this slot
+      // would coincide with it at every crank angle. That is a question about
+      // the pins, not about the layout kind: a plain-pin V pair shares one, a
+      // split-pin V and a boxer each have two real ones.
+      drawsCrank: !group.some(
+        (earlier, j) => j < position && sharesCrankpin(earlier, definition),
+      ),
+    }));
+
+    throws.push({
+      cylinders,
+      bounds: unionBounds(cylinders.map((c) => c.bounds)),
+    });
+  }
+
+  return throws;
+}
+
+/** Axis-aligned envelope of several extents. */
+function unionBounds(all: readonly SceneBounds[]): SceneBounds {
+  return {
+    minX: Math.min(...all.map((b) => b.minX)),
+    maxX: Math.max(...all.map((b) => b.maxX)),
+    minY: Math.min(...all.map((b) => b.minY)),
+    maxY: Math.max(...all.map((b) => b.maxY)),
+  };
+}
+
+/**
+ * Measures one engine as a row of slots — one per cylinder for an inline or
+ * single layout, one per **throw** for a V or flat one, each slot's cylinders
+ * tilted onto their own banks around one shared crank center (§24a).
+ *
+ * The layout — phases, bank indices, and bank offsets — comes from
+ * `createEngineLayout`, which returns a shared frozen instance; the scene
+ * never invents crank phases of its own (§24).
+ *
+ * Drawing a V's two banks in one plane is what makes it read as a V: the
+ * alternative — a plane per cylinder — makes a V8 eight units wide and
+ * stubbornly short, so the shared zoom goes width-constrained and the engine is
+ * drawn tiny with the vertical space empty. Four V-shaped slots use both axes
+ * and halve the row.
+ *
+ * Spacing is derived from the widest reach any *slot* of this engine has to
+ * either side of its crank center, so a V8's paired tilts and a flat engine's
+ * opposed bores get the room they actually occupy. It stays a fraction of the
+ * engine's own size, so a big-bore engine spaces its slots proportionally
+ * further apart and the row keeps the same visual density at every size. For an
+ * upright single cylinder this reduces exactly to the old
+ * `width * (1 + INLINE_GAP_FRACTION)`, which is what keeps the one-cylinder
+ * framing identical to what it was before rows existed — and for any inline
+ * layout it reduces to exactly the per-cylinder spacing it had before throws
+ * existed, since each slot is then one cylinder.
  */
 function measureRow(
   config: CrankMechanismConfig,
-  cylinderCount: SupportedCylinderCount,
+  layoutId: EngineLayoutId,
+  singleCylinderView: boolean,
 ): MeasuredRow {
   const proportions = deriveProportions(config);
-  const { cylinders } = createEngineLayout(cylinderCount);
-  const cylinderWidth = widthOf(proportions.bounds);
-  const spacingMm = cylinderWidth * (1 + INLINE_GAP_FRACTION);
+  const layout = createEngineLayout(layoutId);
+  // Which cylinders are on stage is decided in exactly one place, in the
+  // engine layer (§24a) — the scene never re-derives it from the view flag.
+  const definitions = visibleCylinders(layout, singleCylinderView);
+  const throws = groupIntoThrows(definitions, layout.kind, proportions);
+
+  // Uniform spacing, sized so the widest right-hand reach clears the widest
+  // left-hand reach whichever two slots end up adjacent.
+  const rightReach = Math.max(...throws.map((t) => t.bounds.maxX));
+  const leftReach = Math.max(...throws.map((t) => -t.bounds.minX));
+  const spacingMm = (rightReach + leftReach) * (1 + INLINE_GAP_FRACTION);
 
   return {
     config,
     proportions,
-    cylinders,
+    throws,
+    cylinderCount: definitions.length,
     spacingMm,
-    widthMm: cylinderWidth + (cylinders.length - 1) * spacingMm,
+    ...rowExtentsAt(throws, spacingMm),
+    minYMm: Math.min(...throws.map((t) => t.bounds.minY)),
+    maxYMm: Math.max(...throws.map((t) => t.bounds.maxY)),
   };
 }
 
+/** A row of cylinders placed on the stage, with its world extents. */
+interface PlacedRow {
+  cylinders: PlacedCylinder[];
+  bounds: SceneBounds;
+}
+
 /**
- * Positions a measured row so its left edge lands on `leftXMm`, and returns
- * the placed cylinders plus the row's world extents.
+ * Positions a measured row so its left edge lands on `leftXMm` and its
+ * crankshaft centerline on `centerYMm`, and returns the placed cylinders plus
+ * the row's world extents.
  *
- * A cylinder's own bounds are relative to its crankshaft center, so the first
- * crank center sits at `leftXMm - bounds.minX` and each subsequent one is a
- * fixed spacing further right.
+ * A slot's own bounds are relative to its crankshaft center, so the first crank
+ * center sits at `leftXMm - leftReachMm` and each subsequent one is a fixed
+ * spacing further right. Both cylinders of a throw pair take that one X, which
+ * is what draws them around a single crank center.
+ *
+ * `spacingMm` is normally the row's own; a stacked comparison passes one
+ * shared spacing for both rows so that slot *i* of each engine lands on the
+ * same X (see `deriveLayout`), and `extents` must then be measured at that
+ * spacing rather than read off the row.
  */
 function placeRow(
   row: MeasuredRow,
   leftXMm: number,
-): { cylinders: PlacedCylinder[]; bounds: SceneBounds } {
-  const firstCenterX = leftXMm - row.proportions.bounds.minX;
+  spacingMm: number = row.spacingMm,
+  centerYMm = 0,
+  extents: RowExtents = row,
+): PlacedRow {
+  const firstCenterX = leftXMm - extents.leftReachMm;
+  // Half a rod thickness per step behind the slot's first cylinder: enough to
+  // break every coincident face, small enough to leave the depth order of the
+  // drawn parts alone. See `PlacedCylinder.offsetZMm`.
+  const zStepMm = row.proportions.rodDepthMm / 2;
 
   return {
-    cylinders: row.cylinders.map((cylinder) => ({
-      ...cylinder,
-      offsetXMm: firstCenterX + cylinder.index * row.spacingMm,
-    })),
+    cylinders: row.throws.flatMap((measured, throwIndex) =>
+      measured.cylinders.map((cylinder) => ({
+        ...cylinder.definition,
+        throwIndex,
+        bounds: cylinder.bounds,
+        drawsCrank: cylinder.drawsCrank,
+        offsetXMm: firstCenterX + throwIndex * spacingMm,
+        offsetYMm: centerYMm,
+        // Spelled out rather than multiplied, so the untouched first cylinder
+        // of every slot gets a plain +0 and an inline row stays byte-identical.
+        offsetZMm:
+          cylinder.slotPosition === 0 ? 0 : -cylinder.slotPosition * zStepMm,
+      })),
+    ),
     bounds: {
       minX: leftXMm,
-      maxX: leftXMm + row.widthMm,
-      minY: row.proportions.bounds.minY,
-      maxY: row.proportions.bounds.maxY,
+      maxX: leftXMm + extents.widthMm,
+      minY: centerYMm + row.minYMm,
+      maxY: centerYMm + row.maxYMm,
     },
   };
 }
 
+/** Where the rows ended up, plus everything the label pass needs. */
+interface StagePlacement {
+  placedA: PlacedRow;
+  placedB: PlacedRow | null;
+  /** Union of the placed rows, before any label band is reserved. */
+  content: SceneBounds;
+  /** Baseline for engine A's label; only meaningful when labels are shown. */
+  labelAnchorYA: number;
+  /** Baseline for engine B's label. Equals A's unless the pair is stacked. */
+  labelAnchorYB: number;
+  /** Framed bottom once the label band(s) below the engines are reserved. */
+  labelledMinY: number;
+}
+
 /**
- * Places one or two engines side by side and returns the union of their
- * extents for auto-framing.
+ * The classic arrangement: one row centered on x = 0, or a pair laid out left
+ * to right with the comparison gap between them, the pair itself centered.
  *
- * Each engine is a row of `cylinderCount` cylinders laid left to right in
- * crankshaft order, all at the same scale (§24). A single engine's row is
- * centered on x = 0 — which for one cylinder is exactly where it sat before
- * multi-cylinder layouts existed, since a cylinder's bounds are symmetric
- * about its crank center.
- *
- * With a comparison engine, the pair is laid out left to right — A then a gap
- * proportional to their mean *row* width, then B — and centered on x = 0, so
- * the camera position does not have to move laterally when comparison toggles.
- * Scaling the gap to row widths rather than single-cylinder widths is what
- * keeps two inline-sixes from looking crammed together.
- *
- * When `showLabels` is set, a band is reserved below the mechanisms for their
- * name labels and included in the returned bounds, so auto-framing keeps the
- * labels on screen at every configuration. One label sits centered under each
- * engine's whole row, and both labels share one baseline — taken from the
- * union, not from each engine separately — so a tall engine beside a short one
+ * Both rows keep their crankshaft centerlines on y = 0, and both labels share
+ * one baseline taken from the union — so a tall engine beside a short one
  * still gets labels that line up.
  */
-export function deriveLayout(
-  config: CrankMechanismConfig,
-  comparisonConfig: CrankMechanismConfig | null,
-  showLabels = false,
-  cylinderCount: SupportedCylinderCount = 1,
-  comparisonCylinderCount: SupportedCylinderCount = 1,
-): SceneLayout {
-  const rowA = measureRow(config, cylinderCount);
-  const rowB = comparisonConfig
-    ? measureRow(comparisonConfig, comparisonCylinderCount)
-    : null;
-
-  // A lone row is centered on x = 0; a pair is laid out left to right with the
-  // comparison gap between them and the pair as a whole is centered instead.
+function placeSideBySide(
+  rowA: MeasuredRow,
+  rowB: MeasuredRow | null,
+): StagePlacement {
   const gap = rowB
     ? (COMPARISON_GAP_FRACTION * (rowA.widthMm + rowB.widthMm)) / 2
     : 0;
@@ -570,8 +856,179 @@ export function deriveLayout(
       }
     : placedA.bounds;
 
+  const contentHeight = content.maxY - content.minY;
+  const labelGap = LABEL_GAP_FRACTION * contentHeight;
+  const labelBand = LABEL_BAND_FRACTION * contentHeight;
+  // Labels are centered on this anchor, so the band spans half above and half
+  // below it and the reserved space is exactly the band.
+  const anchorY = content.minY - labelGap - labelBand / 2;
+
+  return {
+    placedA,
+    placedB,
+    content,
+    labelAnchorYA: anchorY,
+    labelAnchorYB: anchorY,
+    labelledMinY: content.minY - labelGap - labelBand,
+  };
+}
+
+/**
+ * Engine A above engine B, for a comparison where either side is showing more
+ * than one cylinder (§24a).
+ *
+ * Two multi-cylinder engines placed left to right force the camera to fit a
+ * dozen cylinders across, shrinking both, and they push cylinder 1 of A as far
+ * as possible from cylinder 1 of B — the comparison a viewer actually wants.
+ * Stacking fixes both: the rows are driven at **one shared slot spacing** (the
+ * wider of the two, so neither engine's slots can collide) and share one slot-0
+ * crank center, which puts corresponding slots in vertical columns. The columns
+ * are throws, not cylinders (§24a), so a V8 stacked over an inline-6 lines its
+ * four V units up with the first four of the six.
+ *
+ * The zoom is still shared and no engine is ever rescaled (§12.2) — only the
+ * axis of arrangement changes, so a big engine still visibly towers over a
+ * small one, now directly above or below it.
+ *
+ * Each engine keeps its own label, under its own row: A's sits in the gap
+ * between the two engines, B's below the stage. The vertical separation
+ * therefore grows by exactly the reserved band when labels are shown, which is
+ * what keeps A's label clear of B's cylinder heads. Band sizing follows the
+ * side-by-side rule — a fraction of the staged content's height — measured on
+ * the unlabelled stack, so the two are not defined in terms of each other.
+ */
+function placeStacked(
+  rowA: MeasuredRow,
+  rowB: MeasuredRow,
+  showLabels: boolean,
+): StagePlacement {
+  // One spacing for both rows, wide enough for whichever engine needs more
+  // room, so column i of A sits directly above column i of B.
+  const spacingMm = Math.max(rowA.spacingMm, rowB.spacingMm);
+  const extentsA = rowExtentsAt(rowA.throws, spacingMm);
+  const extentsB = rowExtentsAt(rowB.throws, spacingMm);
+
+  // Shared slot-0 crank center, chosen so the union of the two rows is
+  // centered on x = 0 — the same centering the side-by-side pair gets.
+  const unionLeft = Math.min(extentsA.leftReachMm, extentsB.leftReachMm);
+  const unionRight = Math.max(
+    extentsA.leftReachMm + extentsA.widthMm,
+    extentsB.leftReachMm + extentsB.widthMm,
+  );
+  const firstCenterXMm = -(unionLeft + unionRight) / 2;
+
+  const heightA = rowA.maxYMm - rowA.minYMm;
+  const heightB = rowB.maxYMm - rowB.minYMm;
+  const verticalGap =
+    (COMPARISON_VERTICAL_GAP_FRACTION * (heightA + heightB)) / 2;
+
+  const stackHeight = heightA + verticalGap + heightB;
+  const labelGap = LABEL_GAP_FRACTION * stackHeight;
+  const labelBand = LABEL_BAND_FRACTION * stackHeight;
+  const labelReserve = showLabels ? labelGap + labelBand : 0;
+
+  // Engine A keeps its crankshaft on y = 0 — exactly where it sits with
+  // comparison off — and engine B drops below it by the gap, plus the band
+  // engine A's own label needs.
+  const centerYB = rowA.minYMm - verticalGap - labelReserve - rowB.maxYMm;
+
+  const placedA = placeRow(
+    rowA,
+    firstCenterXMm + extentsA.leftReachMm,
+    spacingMm,
+    0,
+    extentsA,
+  );
+  const placedB = placeRow(
+    rowB,
+    firstCenterXMm + extentsB.leftReachMm,
+    spacingMm,
+    centerYB,
+    extentsB,
+  );
+
+  const content: SceneBounds = {
+    minX: Math.min(placedA.bounds.minX, placedB.bounds.minX),
+    maxX: Math.max(placedA.bounds.maxX, placedB.bounds.maxX),
+    minY: placedB.bounds.minY,
+    maxY: placedA.bounds.maxY,
+  };
+
+  return {
+    placedA,
+    placedB,
+    content,
+    labelAnchorYA: placedA.bounds.minY - labelGap - labelBand / 2,
+    labelAnchorYB: placedB.bounds.minY - labelGap - labelBand / 2,
+    labelledMinY: placedB.bounds.minY - labelGap - labelBand,
+  };
+}
+
+/**
+ * Places one or two engines on the stage and returns the union of their
+ * extents for auto-framing.
+ *
+ * Each engine is a row of slots (`singleCylinderView` picks one cylinder or the
+ * whole engine, §24a) laid left to right in crankshaft order, all at the same
+ * scale (§24), each cylinder tilted onto its own bank. A slot is one cylinder
+ * for an inline or single layout and one throw — both of its cylinders, around
+ * one crank center — for a V or flat one, which is what makes a V8 four
+ * V-shaped units rather than eight separate mechanisms. A single engine's row
+ * is centered on x = 0 — which for one cylinder is exactly where it sat before
+ * multi-cylinder layouts existed, since an upright cylinder's bounds are
+ * symmetric about its crank center.
+ *
+ * A comparison pair is arranged along whichever axis reads better:
+ *
+ * - **Side by side** when both engines are showing exactly one cylinder. A
+ *   lone mechanism is tall and narrow and reads best beside its twin, and this
+ *   is the arrangement — down to the arithmetic — that comparison has always
+ *   used.
+ * - **Stacked**, A above B, as soon as either side shows more than one. See
+ *   `placeStacked` for why.
+ *
+ * Either way both engines stay at one shared zoom: only the axis changes, and
+ * no mechanism is ever scaled to fit (§12.2).
+ *
+ * When `showLabels` is set, a band is reserved below the mechanisms for their
+ * name labels and included in the returned bounds, so auto-framing keeps the
+ * labels on screen at every configuration. One label sits centered under each
+ * engine's whole row.
+ */
+export function deriveLayout(
+  config: CrankMechanismConfig,
+  comparisonConfig: CrankMechanismConfig | null,
+  showLabels = false,
+  layoutId: EngineLayoutId = "single",
+  comparisonLayoutId: EngineLayoutId = "single",
+  singleCylinderView = false,
+  comparisonSingleCylinderView = false,
+): SceneLayout {
+  const rowA = measureRow(config, layoutId, singleCylinderView);
+  const rowB = comparisonConfig
+    ? measureRow(
+        comparisonConfig,
+        comparisonLayoutId,
+        comparisonSingleCylinderView,
+      )
+    : null;
+
+  const arrangement: ComparisonArrangement =
+    rowB === null
+      ? "single"
+      : rowA.cylinderCount > 1 || rowB.cylinderCount > 1
+        ? "stacked"
+        : "side-by-side";
+
+  const placement =
+    arrangement === "stacked"
+      ? placeStacked(rowA, rowB as MeasuredRow, showLabels)
+      : placeSideBySide(rowA, rowB);
+  const { placedA, placedB, content } = placement;
+
   if (!showLabels) {
     return {
+      arrangement,
       primary: { ...rowAsEngine(rowA, placedA), label: null },
       secondary:
         rowB && placedB ? { ...rowAsEngine(rowB, placedB), label: null } : null,
@@ -579,22 +1036,17 @@ export function deriveLayout(
     };
   }
 
-  const contentHeight = content.maxY - content.minY;
-  const labelGap = LABEL_GAP_FRACTION * contentHeight;
-  const labelBand = LABEL_BAND_FRACTION * contentHeight;
-  // Labels are centered on this anchor, so the band spans half above and half
-  // below it and the reserved space is exactly the band.
-  const anchorY = content.minY - labelGap - labelBand / 2;
   const comparing = rowB !== null;
 
   return {
+    arrangement,
     primary: {
       ...rowAsEngine(rowA, placedA),
       label: {
         slot: comparing ? "A" : null,
         name: describeConfig(rowA.config),
         anchorXMm: centerXOf(placedA.bounds),
-        anchorYMm: anchorY,
+        anchorYMm: placement.labelAnchorYA,
       },
     },
     secondary:
@@ -605,13 +1057,13 @@ export function deriveLayout(
               slot: "B",
               name: describeConfig(rowB.config),
               anchorXMm: centerXOf(placedB.bounds),
-              anchorYMm: anchorY,
+              anchorYMm: placement.labelAnchorYB,
             },
           }
         : null,
     bounds: {
       ...content,
-      minY: content.minY - labelGap - labelBand,
+      minY: placement.labelledMinY,
     },
   };
 }
@@ -619,7 +1071,7 @@ export function deriveLayout(
 /** Joins a measured row with its placement, less the label the caller adds. */
 function rowAsEngine(
   row: MeasuredRow,
-  placed: { cylinders: PlacedCylinder[]; bounds: SceneBounds },
+  placed: PlacedRow,
 ): Omit<PlacedEngine, "label"> {
   return {
     config: row.config,
@@ -630,18 +1082,20 @@ function rowAsEngine(
 }
 
 /**
- * Subscribes to both engine configurations, both cylinder counts, and the
- * label preference, and memoizes the stage layout. This is the single store
- * subscriber for stage placement: recomputed only when a configuration or
- * cylinder count changes, comparison is toggled, or labels are shown or
- * hidden — never per frame.
+ * Subscribes to both engine configurations, both layouts, both cylinder-view
+ * preferences, and the label preference, and memoizes the stage layout. This
+ * is the single store subscriber for stage placement: recomputed only when a
+ * configuration, layout, or view changes, comparison is toggled, or labels are
+ * shown or hidden — never per frame.
  */
 export function useSceneLayout(): SceneLayout {
   const config = useEngineStore((s) => s.config);
   const comparisonConfig = useEngineStore((s) => s.comparisonConfig);
-  const cylinderCount = useEngineStore((s) => s.cylinderCount);
-  const comparisonCylinderCount = useEngineStore(
-    (s) => s.comparisonCylinderCount,
+  const layoutId = useEngineStore((s) => s.layoutId);
+  const comparisonLayoutId = useEngineStore((s) => s.comparisonLayoutId);
+  const singleCylinderView = useEngineStore((s) => s.singleCylinderView);
+  const comparisonSingleCylinderView = useEngineStore(
+    (s) => s.comparisonSingleCylinderView,
   );
   const showLabels = useEngineStore((s) => s.preferences.showLabels);
   return useMemo(
@@ -650,15 +1104,19 @@ export function useSceneLayout(): SceneLayout {
         config,
         comparisonConfig,
         showLabels,
-        cylinderCount,
-        comparisonCylinderCount,
+        layoutId,
+        comparisonLayoutId,
+        singleCylinderView,
+        comparisonSingleCylinderView,
       ),
     [
       config,
       comparisonConfig,
       showLabels,
-      cylinderCount,
-      comparisonCylinderCount,
+      layoutId,
+      comparisonLayoutId,
+      singleCylinderView,
+      comparisonSingleCylinderView,
     ],
   );
 }

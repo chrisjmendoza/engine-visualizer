@@ -7,7 +7,8 @@ import type { CrankMechanismConfig, DisplayUnit } from "../../engine/types";
 import { formatTrimmed } from "../shared/formatting";
 import { resolveSlotConfig } from "../shared/configSlot";
 import type { ConfigSlot } from "../shared/configSlot";
-import { CylinderCountSelector } from "./CylinderCountSelector";
+import { CylinderViewToggle } from "./CylinderViewToggle";
+import { EngineLayoutSelector } from "./EngineLayoutSelector";
 import styles from "./EngineGeometryControls.module.css";
 
 type ConfigField = keyof CrankMechanismConfig;
@@ -133,11 +134,13 @@ export interface EngineGeometryControlsProps {
  * flow is identical for both slots; only which config is read and which
  * setter a successful edit commits through differs.
  *
- * The fieldset also carries the "Cylinders" layout select (§24a) via
- * `CylinderCountSelector` — that field lives on the store next to `config`
- * rather than inside `CrankMechanismConfig`, but it's still a geometry
- * choice from the user's point of view, so it's grouped under this same
- * "Engine geometry" legend rather than getting its own top-level fieldset
+ * The fieldset also carries the "Layout" select and the "Cylinders shown"
+ * switch (§24a) via `EngineLayoutSelector` and `CylinderViewToggle` — those
+ * fields live on the store next to `config` rather than inside
+ * `CrankMechanismConfig`, but they are still part of "what engine is this and
+ * how am I looking at it" from the user's point of view, so they are grouped
+ * under this same "Engine geometry" legend rather than getting their own
+ * top-level fieldset
  * (which would also disturb the two-column grid `EnginePanel.module.css`
  * builds from this component's fieldset being the layout's second direct
  * child).
@@ -255,7 +258,8 @@ export function EngineGeometryControls({
   return (
     <fieldset className={styles.fieldset}>
       <legend className={styles.legend}>Engine geometry</legend>
-      <CylinderCountSelector slot={slot} />
+      <EngineLayoutSelector slot={slot} />
+      <CylinderViewToggle slot={slot} />
       {FIELD_ORDER.map((field) => {
         const inputId = `${field}-input-${errorIds[field]}`;
         const error = fieldStates[field].error;

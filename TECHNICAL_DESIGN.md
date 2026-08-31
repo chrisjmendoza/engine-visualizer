@@ -958,6 +958,63 @@ Cylinder 0's phase is always 0, so the degree counter, scrubbing, and every calc
 
 **Presets.** Presets whose documented layout is a supported inline arrangement declare a `cylinderCount`; selecting such a preset applies its real layout. Presets for V and flat engines fall back to the single-cylinder view until those layouts render.
 
+### Amendment — the full layout roster (V, flat, inline-5, odd-fire)
+
+_Added 2026-08-31. Supersedes the Phase 1 paragraphs above wherever the two disagree; the Phase 1 text is kept for the history of the decision._
+
+**A layout id replaces the cylinder count.** A bare count can no longer identify a layout — a V8 and an inline-8 share a count, so do a flat-4 and an inline-4 — so `EngineLayoutId` is the identifying value everywhere a count used to be: store (`layoutId`, `comparisonLayoutId`, default `"single"`), presets (`layoutId`), share links (`l`/`bl`), and the layout picker. The roster is `single`, `inline-3/4/5/6`, `v6-60`, `v6-90-odd`, `v8-cross`, `v8-flat`, `v10-72`, `v12-60`, `flat-4`, `flat-6`. A layout carries its `id`, `kind` (`single | inline | v | flat`), a human `label`, its `bankAngleRad`, its cylinders, and its real published `firingOrder`. Cylinder count is now read from the layout (`createEngineLayout(id).cylinders.length`) rather than stored beside it, so the two can never disagree.
+
+**Two angles per cylinder, never folded together.** `crankPhaseRad` is the crank-throw phase — where that cylinder's crankpin sits relative to cylinder 0's — and is the only angle the kinematics see (`cylinderCrankAngleRad(θ, cyl) = θ + crankPhaseRad`, unchanged). `bankOffsetRad` is a geometric rotation of the bore axis away from vertical: `−bankAngle/2` on bank 0, `+bankAngle/2` on bank 1, `0` for inline, `±π/2` for flat. The renderer rotates the drawn mechanism by it; the mechanism's internal math never sees it.
+
+**Sign convention.** A cylinder is at TDC when its own crank angle is zero, i.e. at engine crank angle `−crankPhaseRad`. Engine literature quotes the other quantity ("cylinder 5 comes up 120° after cylinder 1"), so the tables in `engineLayout.ts` are written as TDC angles and negated once when the layout is built.
+
+**How the two combine.** Rotating a mechanism by `β` puts its crankpin where an unrotated one would draw `ψ − β`, so two cylinders share one physical crankpin exactly when `φ − β` agrees: `φ_bank1 = φ_bank0 + bankAngle`. A split-pin ("flying arm") crank adds its split angle to that; a boxer shares no pins at all — opposed cylinders sit on separate throws 180° apart, which with bores 180° apart makes their phases equal, so the opposed pistons move outward together. That is the real difference between a flat-4 boxer and a 180° V, and only the boxer is modeled.
+
+**Phase tables and firing intervals.** Each table is derived from crank geometry and documented in place with its crankpin arrangement, firing order, and interval pattern. Every even-fire layout fires at 720/N; `v6-90-odd` (shared pins, 90° vee, no split journals) genuinely alternates 150°/90° and must never be flattened to an even 120°. The two V8s are the instructive pair: both are even-fire at 90°, and what differs is the crank plane — the flat-plane crank alternates banks on every firing so each bank fires evenly every 180°, while the cross-plane crank does not, which is where the American-V8 beat comes from. A crank table alone cannot imply a firing order (each cylinder reaches TDC twice per cycle and fires on only one), so each layout carries its real firing order and `firingSequenceRad`/`firingIntervalsRad` derive the intervals from the two together — which is what the tests assert against.
+
+**Rendering — still a schematic.** Cylinders keep their side-by-side placement, each in its own cutaway plane, and a cylinder with a non-zero `bankOffsetRad` has its whole mechanism rotated by that angle about its crankshaft center. So a V8 visibly alternates its bores left and right and a flat engine lays its bores out horizontally, at their real bank angle — but this is still not a true axial crankshaft view, which remains future work behind a camera change (§12). Because a rotated mechanism no longer occupies its upright footprint, `sceneGeometry` measures each cylinder by the axis-aligned envelope of its rotated bounds (`rotateBounds`) and derives both row spacing and camera framing from that; without it a flat engine would clip and tilted bores could overlap.
+
+**Presets.** Every preset now declares its real layout, including the four V engines: LS3 and LS7 → `v8-cross`, Ferrari 458 → `v8-flat`, VR38DETT → `v6-60`. Nothing falls back to a single-cylinder view any more; the fallback remains only for a future preset whose layout the roster cannot yet express.
+
+**Share links.** `l` (and `bl` for engine B) carries the layout id, omitted exactly when it equals what decoding `a` implies — a preset's own `layoutId`, else `"single"` — so round-trips hold. The §25a contract is append-only, so the old `c`/`bc` cylinder counts keep decoding (`1|3|4|6` → `single`/`inline-3`/`inline-4`/`inline-6`) and are never emitted again; an explicit `l` wins over a legacy `c` in the same link.
+
+### Amendment — architecture and view are separate questions
+
+_Added 2026-08-31. Supersedes the paragraphs above wherever the two disagree; the earlier text is kept for the history of the decision._
+
+`layoutId` was doing two jobs. `"single"` sat in the layout picker beside `"v8-cross"`, so choosing to study one cylinder meant forgetting what engine it belonged to, and picking a preset while zoomed in on one cylinder threw that view away. Those are two independent questions and they now have two independent answers.
+
+**`layoutId` is the architecture, and only that.** The picker offers `ENGINE_ARCHITECTURE_IDS` — the roster minus `"single"` — and the app defaults to `DEFAULT_LAYOUT_ID` (`inline-4`, the most common engine there is). `"single"` stays in `ENGINE_LAYOUT_IDS` so `createEngineLayout("single")` and old share links keep working, but nothing in the running application selects or stores it.
+
+**`singleCylinderView` is the view.** A per-engine boolean on the store (`singleCylinderView`, `comparisonSingleCylinderView`, the latter seeded on `enableComparison` like `comparisonRpm` and `comparisonLayoutId`), default **true**, so the app opens on exactly the one cylinder it always has — now labelled as an inline-4's cylinder. It is exposed as a real switch (`CylinderViewToggle`, `role="switch"` + `aria-checked`, named "Single cylinder" / "Full engine"), one per engine, sitting beside that engine's layout select. Switching it never touches `layoutId`, and setting `layoutId` — including by picking a preset — never touches it: an LS7 chosen while studying one cylinder keeps you on one cylinder, now known to be a V8's. Like a geometry change it never resets the crank angle or playback (§11.1).
+
+**One place decides what is visible.** `visibleCylinders(layout, singleCylinderView)` / `visibleCylinderCount(...)` in `src/engine/engineLayout.ts` are the only implementation of that rule; the scene's `measureRow` and the displacement multipliers in `CalculationPanel` and `ComparisonTable` all go through them rather than re-deriving it. The single-cylinder view returns the architecture's genuine cylinder 0 — its phase and bank tilt intact — from a shared frozen array, so nothing allocates per frame (§18).
+
+**Stacked comparison.** `deriveLayout` now picks the axis a comparison is laid out along:
+
+- **Side by side** (the existing arrangement, arithmetic unchanged) when both engines show exactly one cylinder — a lone mechanism is tall and narrow and reads best beside its twin.
+- **Stacked**, engine A above engine B, as soon as either side shows more than one. Two multi-cylinder rows placed left to right force the camera to fit a dozen cylinders across, shrinking both, and put cylinder 1 of A as far as possible from cylinder 1 of B — the comparison a viewer actually wants. Stacked, the rows run at **one shared cylinder spacing** (the wider of the two, so neither engine's cylinders collide) from **one shared cylinder-0 crank center**, which puts corresponding cylinders in vertical columns. The vertical gap is `COMPARISON_VERTICAL_GAP_FRACTION` of the two rows' mean height — the exact analogue of `COMPARISON_GAP_FRACTION`, and deliberately smaller, since rows on separate baselines already read as separate engines and the vertical axis is what the zoom is usually limited by.
+
+Both arrangements keep **one shared zoom** and never rescale a mechanism (§12.2): only the axis changes, so a big engine still visibly towers over a small one. Each engine keeps one label under its own row; stacked, engine A's sits in the gap between the engines (the vertical separation grows by exactly the reserved band to make room) and engine B's below the stack, with both bands sized from the unlabelled stack's height so the two are not defined in terms of each other. Placed cylinders therefore carry an `offsetYMm` as well as an `offsetXMm`; it is zero everywhere except a stacked comparison's engine B. The single-engine path is untouched in every case.
+
+### Amendment — one cutaway plane per throw for V and flat engines
+
+_Added 2026-08-31. Supersedes the paragraphs above wherever the two disagree; the earlier text is kept for the history of the decision._
+
+**The schematic now draws one plane per _throw_, not per cylinder, for V and flat layouts** — one plane per cylinder still, for single and inline ones. A V8 drawn as eight independent mechanisms side by side is eight units wide and one unit tall; the shared zoom fits both axes at once, goes width-constrained, and renders the engine tiny with most of the viewport empty. It also does not read as a V8. Drawing the pair `2k` / `2k+1` — which the cylinder ordering already guarantees is one bank-0 / bank-1 pair on throw `k` — around **one crank center, in one plane**, makes a V8 four V-shaped units instead of eight upright ones. Measured on an LS7: the row narrows to 53% of its former width at unchanged slot spacing and unchanged height, and the fitted zoom rises by 1.88×.
+
+The row's slots are therefore throws. `sceneGeometry` groups the visible cylinders into slots, measures each slot by the **union of its cylinders' rotated bounds**, and derives spacing, row extents, and camera framing from those — so the spacing rule, the inline gap fraction, the stacked comparison's shared spacing and shared slot-0 center, and the label placement all carry over unchanged, now indexed by throw. Both cylinders of a slot share its `offsetXMm` and `offsetYMm`; a `throwIndex` on `PlacedCylinder` says which slot each is in. Inline and single layouts have one cylinder per slot and come out bit for bit identical to the previous arrangement, which is asserted directly against the old row arithmetic.
+
+**Shared pin vs. antipodal pin — why the two are drawn differently.** A cylinder's crankpin sits, in world terms, at direction `bankOffsetRad − θ − crankPhaseRad` from +Y, so two cylinders' pins coincide **at every crank angle** exactly when `crankPhaseRad − bankOffsetRad` agrees between them. That is the whole of `sharesCrankpin` in `engineLayout.ts`, and it splits the roster three ways:
+
+- **Plain-pin V** (`v6-90-odd`, both V8s, `v10-72`, `v12-60`): the bank-1 partner's phase leads by exactly the bank angle, cancelling the bank offset. The pins coincide — and since the drawn crank group's rotation is that same expression, the two _entire crank drawings_ coincide, so drawing both would put two identical cranks in one place and z-fight. The bank-1 cylinder therefore draws only its rod, piston, guide, and reference marks, and the one drawn crankpin genuinely carries both rods, exactly as a real V engine does.
+- **Split-pin V** (`v6-60`): the flying-arm journal adds a further 60°, so the pair's pins are 60° apart. **Both are real and both are drawn.** This is the case a "V engines share pins" shortcut would get wrong, and it is why the decision is made from the pin geometry rather than from the layout kind.
+- **Boxer** (`flat-4`, `flat-6`): a boxer is not a 180° V. Its opposed cylinders sit on **separate crankpins 180° apart** — which is exactly why its pistons move outward together — so equal phases with bores 180° apart put the pins antipodal. Both throws are real and both are drawn.
+
+**Depth.** Two mechanisms in one plane would otherwise put coincident faces at identical depths: a boxer pair's main journals sit on the same axis and its bore centerlines are outright collinear. A slot's second cylinder is therefore stepped back by **half a rod thickness** (`PlacedCylinder.offsetZMm`) — physically honest, since the two cylinders of a real throw pair _are_ at different axial positions, the one dimension this cutaway cannot show. The magnitude is bounded at both ends and tested: large enough that nothing is coplanar, small enough that the stepped cylinder's reference plane stays in front of its partner's bore walls and its rod's big end stays inside the drawn crankpin's axial span, so a shared-pin V reads as two rods side by side on one pin.
+
+`CrankMechanism` gains `positionZ` and `drawsCrank` rather than forking into two components; when the crank is omitted its `crankRef` is simply never attached, and the frame loop skips a null group by the same check that already covered an unmounted cylinder. Nothing in `src/engine/`'s kinematics changes: every cylinder is still driven at `cylinderCrankAngleRad(θ, cylinder)`. The crank-direction ring is still drawn once per engine, on cylinder 0 — the first cylinder of the first throw.
+
 ---
 
 ## 25. Key Technical Decisions
@@ -983,18 +1040,28 @@ Application state is serialized into the URL query string by `src/engine/shareLi
 
 **The URL format is a public contract.** Shared links outlive releases, so the format is append-only: new optional parameters may be added, but existing parameters must never be repurposed, removed, or reparsed differently.
 
-| Param    | Meaning                                                     | Omitted when                    |
-| -------- | ----------------------------------------------------------- | ------------------------------- |
-| `a`      | Engine A: a preset id, or `bore-stroke-rod-cr-redline`      | never                           |
-| `b`      | Engine B; its presence enables comparison mode              | not comparing                   |
-| `c`      | Engine A's cylinder count (§24a: 1, 3, 4, or 6)             | single-cylinder (1)             |
-| `bc`     | Engine B's cylinder count                                   | single (1), or not comparing    |
-| `rpm`    | Engine speed (engine A's, when speeds are split)            | at default                      |
-| `brpm`   | Engine B's speed; its presence marks the speeds as unlinked | speeds linked, or not comparing |
-| `u`      | `in` for inch display                                       | millimeters                     |
-| `sp`     | Playback speed multiplier                                   | at default                      |
-| `angle`  | Crank angle in degrees; implies paused                      | playing                         |
-| `bangle` | Engine B's crank angle in degrees                           | playing, or speeds linked       |
+| Param    | Meaning                                                      | Omitted when                                   |
+| -------- | ------------------------------------------------------------ | ---------------------------------------------- |
+| `a`      | Engine A: a preset id, or `bore-stroke-rod-cr-redline`       | never                                          |
+| `b`      | Engine B; its presence enables comparison mode               | not comparing                                  |
+| `l`      | Engine A's architecture id (§24a, e.g. `v8-cross`)           | matches what `a` implies                       |
+| `bl`     | Engine B's architecture id                                   | matches what `b` implies, or not comparing     |
+| `sv`     | Engine A's cylinder view: `1` one cylinder, `0` whole engine | matches what this link's `l`/`c` imply         |
+| `bsv`    | Engine B's cylinder view                                     | matches what `bl`/`bc` imply, or not comparing |
+| `c`      | _Legacy._ Engine A's cylinder count (1, 3, 4, 6)             | always — superseded by `l`, still decoded      |
+| `bc`     | _Legacy._ Engine B's cylinder count                          | always — superseded by `bl`, still decoded     |
+| `rpm`    | Engine speed (engine A's, when speeds are split)             | at default                                     |
+| `brpm`   | Engine B's speed; its presence marks the speeds as unlinked  | speeds linked, or not comparing                |
+| `u`      | `in` for inch display                                        | millimeters                                    |
+| `sp`     | Playback speed multiplier                                    | at default                                     |
+| `angle`  | Crank angle in degrees; implies paused                       | playing                                        |
+| `bangle` | Engine B's crank angle in degrees                            | playing, or speeds linked                      |
+
+`c`/`bc` are decode-only: links written by the first multi-cylinder release still open, mapping their counts onto the matching inline layouts, and an explicit `l` in the same link wins over them. This is the append-only rule in practice — an existing parameter is never repurposed or reparsed, only superseded.
+
+`l` names an architecture and `sv` names the view (§24a's second amendment). Two spellings predate that split and said both things at once: **`l=single` and `c=1` decode as "one cylinder of whatever `a` implies"** — `singleCylinderView: true`, architecture still taken from `a` — so a legacy link opens showing exactly the one cylinder it always did. `c=3|4|6` and every other `l` keep meaning that architecture with the whole engine on stage. Nothing writes `l=single` any more; an encoder handed the legacy id normalizes it to that same pair on the way out.
+
+`sv` follows the same "omit when the link already implies it" rule `l` does, which is what keeps every state round-tripping while leaving the common links short: a link naming no architecture is describing one cylinder of what `a` implies, and a link naming one is describing that whole engine. So `?a=corvette-z06-c6-ls7` is one cylinder of an LS7, `?a=corvette-z06-c6-ls7&sv=0` is the whole V8, and `?a=s2000-ap1&l=v12-60&sv=1` is one cylinder with the S2000's bore and stroke, seen as part of a V12. A malformed `sv` is ignored like any other bad parameter, falling back to what the rest of the link implies.
 
 `brpm` doubles as the unlinked marker — it always travels when the speeds are split, even if the two values happen to coincide, and a link without it says nothing about linking. Both `brpm` and `bangle` are honored only alongside a successfully decoded `b`, so a hand-edited fragment cannot pre-unlink a future comparison.
 

@@ -10,7 +10,8 @@ import type {
   DisplayUnit,
   UserPreferences,
 } from "../engine/types";
-import type { SupportedCylinderCount } from "../engine/engineLayout";
+import { DEFAULT_LAYOUT_ID } from "../engine/engineLayout";
+import type { EngineLayoutId } from "../engine/engineLayout";
 import type { PartialShareState } from "../engine/shareLink";
 
 /**
@@ -31,20 +32,40 @@ interface EngineStore {
    */
   comparisonConfig: CrankMechanismConfig | null;
   /**
-   * Number of cylinders in engine A's layout (§24a). This is geometry, like
+   * Engine A's layout (§24a) — a layout id, not a cylinder count, since a
+   * count cannot tell a V8 from an inline-8. This is geometry, like
    * `config`, so changing it must never touch `crankAngleRad` or playback
    * (§11.1's geometry-change rule).
    */
-  cylinderCount: SupportedCylinderCount;
+  layoutId: EngineLayoutId;
   /**
-   * Engine B's cylinder count. `enableComparison` seeds it from engine A's
-   * current `cylinderCount` (same pattern as `comparisonRpm`), so turning on
-   * comparison shows two copies of the same layout before the user diverges
-   * them. `disableComparison` leaves it alone, again like `comparisonRpm`,
-   * so re-enabling comparison later re-seeds from A rather than restoring a
+   * Engine B's layout. `enableComparison` seeds it from engine A's current
+   * `layoutId` (same pattern as `comparisonRpm`), so turning on comparison
+   * shows two copies of the same layout before the user diverges them.
+   * `disableComparison` leaves it alone, again like `comparisonRpm`, so
+   * re-enabling comparison later re-seeds from A rather than restoring a
    * stale value.
    */
-  comparisonCylinderCount: SupportedCylinderCount;
+  comparisonLayoutId: EngineLayoutId;
+  /**
+   * Engine A's view (§24a): when true — the default, and how the app has
+   * always opened — only cylinder 0 of `layoutId` is drawn and counted, so
+   * one cylinder can be studied without forgetting which engine it belongs
+   * to. This is a *view* preference, not an architecture: `layoutId` is
+   * untouched by it, and so are the phases and bank tilt of the cylinder that
+   * remains. It lives here beside `layoutId` rather than in `preferences`
+   * because it is per-engine, exactly like the layout it filters.
+   *
+   * Like every other geometry/layout field it must never reset the crank
+   * angle or playback (§11.1).
+   */
+  singleCylinderView: boolean;
+  /**
+   * Engine B's view. `enableComparison` seeds it from engine A's, alongside
+   * `comparisonRpm` and `comparisonLayoutId`, so a comparison starts as two
+   * copies of what engine A is showing.
+   */
+  comparisonSingleCylinderView: boolean;
   preferences: UserPreferences;
   rpm: number;
   /**
@@ -95,8 +116,8 @@ interface EngineStore {
   setConfig: (partial: Partial<CrankMechanismConfig>) => void;
   /**
    * Turns comparison on, seeding engine B's config (defaults to a copy of
-   * engine A's), its speed (`comparisonRpm`), and its cylinder count
-   * (`comparisonCylinderCount`) — all from engine A's current values, see
+   * engine A's), its speed (`comparisonRpm`), and its layout
+   * (`comparisonLayoutId`) — all from engine A's current values, see
    * each field's doc comment.
    */
   enableComparison: (initial?: CrankMechanismConfig) => void;
@@ -104,9 +125,18 @@ interface EngineStore {
   /** No-op while comparison is off. */
   setComparisonConfig: (partial: Partial<CrankMechanismConfig>) => void;
   /** Geometry change (§11.1): never resets crank angle or playback. */
-  setCylinderCount: (count: SupportedCylinderCount) => void;
+  setLayoutId: (id: EngineLayoutId) => void;
   /** Geometry change (§11.1): never resets crank angle or playback. */
-  setComparisonCylinderCount: (count: SupportedCylinderCount) => void;
+  setComparisonLayoutId: (id: EngineLayoutId) => void;
+  /**
+   * View change: shows one cylinder or the whole engine. Never touches
+   * `layoutId` — the architecture and how much of it is on screen are
+   * independent — and, like a geometry change, never resets crank angle or
+   * playback.
+   */
+  setSingleCylinderView: (single: boolean) => void;
+  /** Engine B's equivalent; no-op-safe while comparison is off. */
+  setComparisonSingleCylinderView: (single: boolean) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setDisplayUnit: (unit: DisplayUnit) => void;
   setShowLabels: (show: boolean) => void;
@@ -170,8 +200,10 @@ function initialIsPlaying(): boolean {
 export const useEngineStore = create<EngineStore>((set) => ({
   config: DEFAULT_CONFIG,
   comparisonConfig: null,
-  cylinderCount: 1,
-  comparisonCylinderCount: 1,
+  layoutId: DEFAULT_LAYOUT_ID,
+  comparisonLayoutId: DEFAULT_LAYOUT_ID,
+  singleCylinderView: true,
+  comparisonSingleCylinderView: true,
   preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
   rpm: DEFAULT_ANIMATION.rpm,
   comparisonRpm: DEFAULT_ANIMATION.rpm,
@@ -193,9 +225,13 @@ export const useEngineStore = create<EngineStore>((set) => ({
       // engine B to the pristine default (DEFAULT_ANIMATION.rpm). A later
       // re-enable re-seeds from whatever engine A is running at then.
       comparisonRpm: state.rpm,
-      // Same reasoning for cylinder count: comparison starts as two copies
-      // of engine A's layout, not a snap back to a pristine single cylinder.
-      comparisonCylinderCount: state.cylinderCount,
+      // Same reasoning for the layout: comparison starts as two copies of
+      // engine A's layout, not a snap back to a pristine default.
+      comparisonLayoutId: state.layoutId,
+      // ...and for how much of it is on screen, so turning comparison on
+      // while studying one cylinder gives you two single cylinders, not one
+      // cylinder beside a whole engine.
+      comparisonSingleCylinderView: state.singleCylinderView,
     })),
   disableComparison: () => set({ comparisonConfig: null }),
   setComparisonConfig: (partial) =>
@@ -204,9 +240,11 @@ export const useEngineStore = create<EngineStore>((set) => ({
         ? { comparisonConfig: { ...state.comparisonConfig, ...partial } }
         : {},
     ),
-  setCylinderCount: (count) => set({ cylinderCount: count }),
-  setComparisonCylinderCount: (count) =>
-    set({ comparisonCylinderCount: count }),
+  setLayoutId: (id) => set({ layoutId: id }),
+  setComparisonLayoutId: (id) => set({ comparisonLayoutId: id }),
+  setSingleCylinderView: (single) => set({ singleCylinderView: single }),
+  setComparisonSingleCylinderView: (single) =>
+    set({ comparisonSingleCylinderView: single }),
   setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
   setDisplayUnit: (unit) =>
     set((state) => ({
@@ -255,11 +293,19 @@ export const useEngineStore = create<EngineStore>((set) => ({
       // "absent" is the only falsy-ish case to guard against here.
       comparisonConfig: partial.comparisonConfig ?? state.comparisonConfig,
       // Same `??` pattern as every other field here: a link either carried
-      // a valid, supported count (decodeShareState already dropped anything
-      // else) or it carried nothing, in which case the current value stands.
-      cylinderCount: partial.cylinderCount ?? state.cylinderCount,
-      comparisonCylinderCount:
-        partial.comparisonCylinderCount ?? state.comparisonCylinderCount,
+      // a known layout id (decodeShareState already dropped anything else)
+      // or it carried nothing, in which case the current value stands.
+      layoutId: partial.layoutId ?? state.layoutId,
+      comparisonLayoutId:
+        partial.comparisonLayoutId ?? state.comparisonLayoutId,
+      // Same `??` pattern again: a link either said which cylinders to show
+      // (explicitly via `sv`, or by implication from `l`/`c`) or said nothing,
+      // in which case the current view stands.
+      singleCylinderView:
+        partial.singleCylinderView ?? state.singleCylinderView,
+      comparisonSingleCylinderView:
+        partial.comparisonSingleCylinderView ??
+        state.comparisonSingleCylinderView,
       preferences:
         partial.displayUnit !== undefined
           ? { ...state.preferences, displayUnit: partial.displayUnit }

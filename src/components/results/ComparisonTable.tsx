@@ -11,7 +11,11 @@ import {
   calculateRodStrokeRatio,
 } from "../../engine/calculations";
 import { radToDeg } from "../../engine/units";
-import type { SupportedCylinderCount } from "../../engine/engineLayout";
+import {
+  createEngineLayout,
+  visibleCylinderCount,
+} from "../../engine/engineLayout";
+import type { EngineLayoutId } from "../../engine/engineLayout";
 import type { CrankMechanismConfig, MechanismState } from "../../engine/types";
 import {
   classifyBoreStrokeRatio,
@@ -22,6 +26,8 @@ import {
   METRIC_INFO_BY_ID,
   lengthForDisplay,
   lengthRangeForDisplay,
+  matchingPresetOutput,
+  peakOutputForDisplay,
 } from "../shared/calculationFormatting";
 import { useMetricInfoToggle } from "../shared/useMetricInfoToggle";
 import { MetricLabelButton } from "../shared/MetricLabelButton";
@@ -103,8 +109,17 @@ function computeMetrics(
  */
 function displacementCellValue(
   displacementCc: number,
-  cylinderCount: SupportedCylinderCount,
+  layoutId: EngineLayoutId,
+  singleCylinderView: boolean,
 ): string {
+  // Cylinder count comes from the layout itself (§24a) — a V8 has eight
+  // because `v8-cross` has eight — never from a separate stored number, and
+  // then filtered by the cylinder-view preference through the engine layer's
+  // own helper, so the total describes exactly what is on stage.
+  const cylinderCount = visibleCylinderCount(
+    createEngineLayout(layoutId),
+    singleCylinderView,
+  );
   if (cylinderCount <= 1) {
     return `${formatRounded(displacementCc, 1)} cc`;
   }
@@ -170,9 +185,15 @@ interface TableRow {
 export function ComparisonTable() {
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
-  const cylinderCount = useEngineStore((state) => state.cylinderCount);
-  const comparisonCylinderCount = useEngineStore(
-    (state) => state.comparisonCylinderCount,
+  const layoutId = useEngineStore((state) => state.layoutId);
+  const comparisonLayoutId = useEngineStore(
+    (state) => state.comparisonLayoutId,
+  );
+  const singleCylinderView = useEngineStore(
+    (state) => state.singleCylinderView,
+  );
+  const comparisonSingleCylinderView = useEngineStore(
+    (state) => state.comparisonSingleCylinderView,
   );
   const rpm = useEngineStore((state) => state.rpm);
   const comparisonRpm = useEngineStore((state) => state.comparisonRpm);
@@ -200,6 +221,8 @@ export function ComparisonTable() {
 
   const metricsA = computeMetrics(config, rpm, crankAngleRad);
   const metricsB = computeMetrics(configB, rpmB, angleRadB);
+  const outputA = matchingPresetOutput(config);
+  const outputB = matchingPresetOutput(configB);
 
   const angleDegA = `${formatRounded(radToDeg(crankAngleRad), 1)}°`;
   const angleDegB = `${formatRounded(radToDeg(angleRadB), 1)}°`;
@@ -208,10 +231,15 @@ export function ComparisonTable() {
     {
       id: "cylinderDisplacement",
       label: "Cylinder displacement",
-      a: displacementCellValue(metricsA.displacementCc, cylinderCount),
+      a: displacementCellValue(
+        metricsA.displacementCc,
+        layoutId,
+        singleCylinderView,
+      ),
       b: displacementCellValue(
         metricsB.displacementCc,
-        comparisonCylinderCount,
+        comparisonLayoutId,
+        comparisonSingleCylinderView,
       ),
       // Difference stays per-cylinder (not total), matching every other row
       // here: this table compares the two engines' fundamentals, and the
@@ -350,6 +378,31 @@ export function ComparisonTable() {
         radToDeg(metricsA.mechanism.rodAngleRad),
         radToDeg(metricsB.mechanism.rodAngleRad),
       ),
+    },
+    {
+      // Whole-engine figures (all cylinders), unlike every other row above —
+      // see this metric's METRIC_INFO_BY_ID entry, which says so plainly.
+      // "—" on a side when that side's geometry matches no preset with
+      // published output, same convention as every other preset-derived
+      // value; the difference follows suit when either side is missing.
+      id: "peakPower",
+      label: "Peak power",
+      a: peakOutputForDisplay(outputA?.powerHp, "hp", outputA?.powerRpm),
+      b: peakOutputForDisplay(outputB?.powerHp, "hp", outputB?.powerRpm),
+      difference:
+        outputA && outputB
+          ? percentDifference(outputA.powerHp, outputB.powerHp)
+          : "—",
+    },
+    {
+      id: "peakTorque",
+      label: "Peak torque",
+      a: peakOutputForDisplay(outputA?.torqueLbFt, "lb-ft", outputA?.torqueRpm),
+      b: peakOutputForDisplay(outputB?.torqueLbFt, "lb-ft", outputB?.torqueRpm),
+      difference:
+        outputA && outputB
+          ? percentDifference(outputA.torqueLbFt, outputB.torqueLbFt)
+          : "—",
     },
   ];
 

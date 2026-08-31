@@ -8,6 +8,30 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### feat: the full layout roster — V, flat, inline-5, and odd-fire
+
+- **Thirteen layouts**: inline-3/4/5/6, V6 at 60° and the odd-fire 90°, V8 in both cross-plane and flat-plane, V10, V12, and boxer flat-4/flat-6. All 16 presets now render their real architecture — the LS3 and LS7 as cross-plane V8s, the 458 as a flat-plane V8, the VR38DETT as a 60° V6.
+- A cylinder **count** can no longer identify a layout (a V8 and an inline-8 share one), so a layout id identifies the architecture instead, carried in links as `l`/`bl`. Legacy `c`/`bc` links keep decoding exactly as before.
+- **Firing behavior is derived and tested, not asserted in a comment.** Each table is built from crank geometry and checked by sorting its firing events across 720°: the odd-fire V6 comes out at the real alternating 150°/90°, and the flat-plane V8 stays even-fire at 90° overall while each of its banks fires evenly at 180° — the actual origin of that engine's sound, with a test asserting the cross-plane V8's banks are specifically _not_ even. `firingOrder` is stored as real data because a crank table alone cannot determine intervals: every cylinder reaches TDC twice per cycle, and which pass fires is not derivable from geometry.
+- **Fixed**: the previously shipped inline-3 and inline-6 tables were mirrored — under the code's sign convention they implied firing orders 1-2-3 and 1-4-2-6-3-5, the reverse-rotation twins of the textbook 1-3-2 and 1-5-3-6-2-4. Same crank physically; the row now leads from the correct end.
+
+### feat: V and flat engines draw one cutaway plane per throw
+
+- A V8 previously drew as eight separate upright mechanisms in a row: very wide, very short, and shrunk to almost nothing once the camera fitted it. The two cylinders of a throw now share one plane, so a V8 reads as four V units — the row narrows by 47% and the fitted zoom grows 1.88×.
+- The two cases are physically different and are drawn differently. Plain-pin V engines genuinely **share** a crankpin, so one crank is drawn with both rods hanging off the single shared pin. A **boxer is not a 180° V**: its paired cylinders run on separate throws 180° apart, which is exactly why the pistons move outward together, so both throws are drawn. The 60° V6 is a third case — its flying-arm **split-pin** crank puts the pair's journals 60° apart, which is what makes it even-fire. The renderer decides from the pin geometry itself rather than from the layout kind, so all three come out right.
+
+### feat: single-cylinder / full-engine toggle
+
+- Architecture and viewing depth are now separate questions. The layout picker says _which engine this is_; a new switch says _how much of it you're looking at_, so studying one cylinder no longer costs you the knowledge that it belongs to a V8. Per engine, shareable as `sv`/`bsv`, and legacy `?c=1` / `?l=single` links still open on a single cylinder.
+- **Comparison stacks vertically** whenever either engine shows more than one cylinder, aligning corresponding throws in columns — the comparison a viewer actually wants is now the easy one to make, instead of cylinder 1 of each engine sitting at opposite ends of the frame. Two single cylinders still sit side by side. One shared zoom throughout, so a big engine still towers over a small one.
+- **Fixed**: picking a layout left the view toggle alone, so selecting "Inline-4" while viewing a single cylinder showed one cylinder and made the control look broken. Choosing a layout now shows that whole engine; choosing a _preset_ still leaves your view untouched, since a car is an identity rather than a viewing choice.
+
+### fix: torque and horsepower — sourced peaks only, no modeled curve
+
+- **Removed the modeled torque/power curves.** Presets carry two verified peak figures, never dyno sweeps, and no shape drawn through two points can represent real delivery. Checked against dyno sheets for a stock S2000 AP1, the model was not merely imprecise but wrong in character: it held torque flat from idle to the peak, erasing the one thing an F20C is known for — that the torque isn't there until VTEC arrives near 6,000 rpm.
+- Published dyno sheets can't stand in as the source either: they are single-source wheel figures (208 whp against Honda's 240 crank hp) from one car on one dyno, which would fail the two-source standard the rest of the roster is held to.
+- The verified peaks remain as plain readouts — "240 hp @ 8,300 rpm", "153 lb-ft @ 7,500 rpm" — stated as manufacturer-published figures for the documented market variant, saying nothing about what happens between them. The piston kinematic curves are unaffected; those are exact closed-form geometry, not modeled data. Full suite: 1,061 tests.
+
 ### fix: review pass over the multi-cylinder work
 
 - **A share link naming a preset now carries that engine's real layout.** `?a=s2000-ap1` with no `c` used to load the F20C's geometry but render it as a single cylinder, while clicking the same preset set inline-4 — the link silently misrepresented the engine it named. A preset id now implies its own cylinder count, and a numeric configuration implies 1, so a link stays a complete description of an engine. Encoding mirrors the rule exactly: `c` travels only when it disagrees with what decoding the config will infer, so viewing a real four deliberately as a single cylinder still round-trips (the naive fix would have decoded it back as an inline-4).

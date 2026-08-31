@@ -9,6 +9,8 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_PLAYBACK_SPEED,
 } from "../../engine/constants";
+import { DEFAULT_LAYOUT_ID } from "../../engine/engineLayout";
+import { ENGINE_PRESETS } from "../../engine/presets";
 import { METRIC_INFO_BY_ID } from "../shared/calculationFormatting";
 import type { CrankMechanismConfig } from "../../engine/types";
 
@@ -16,8 +18,10 @@ function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    cylinderCount: 1,
-    comparisonCylinderCount: 1,
+    layoutId: DEFAULT_LAYOUT_ID,
+    comparisonLayoutId: DEFAULT_LAYOUT_ID,
+    singleCylinderView: true,
+    comparisonSingleCylinderView: true,
     preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,
@@ -118,16 +122,40 @@ describe("ComparisonTable", () => {
     ]);
   });
 
-  it("shows each side's own total displacement once its cylinderCount is more than one (§24a)", () => {
+  it("shows each side's own total displacement once its layout has more than one cylinder (§24a)", () => {
     enableComparisonWith(STROKE_90_CONFIG);
-    useEngineStore.setState({ cylinderCount: 4, comparisonCylinderCount: 6 });
+    useEngineStore.setState({
+      layoutId: "inline-4",
+      comparisonLayoutId: "v6-60",
+      singleCylinderView: false,
+      comparisonSingleCylinderView: false,
+    });
     render(<ComparisonTable />);
 
     // Per-cylinder values are the same as the plain two-engine test above
     // (499.6 cc / 522.8 cc); each side additionally multiplies by its own
-    // cylinderCount for "total", and the difference column stays per-cylinder.
+    // layout's cylinder count for "total", and the difference column stays
+    // per-cylinder.
     expect(getRow("Cylinder displacement")).toEqual([
       "499.6 cc/cyl · 1998.2 cc total",
+      "522.8 cc/cyl · 3136.8 cc total",
+      "+4.7%",
+    ]);
+  });
+
+  it("counts only what each side is showing when a cylinder view is on (§24a)", () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    useEngineStore.setState({
+      layoutId: "inline-4",
+      comparisonLayoutId: "v6-60",
+      // Engine A is being studied one cylinder at a time; engine B is not.
+      singleCylinderView: true,
+      comparisonSingleCylinderView: false,
+    });
+    render(<ComparisonTable />);
+
+    expect(getRow("Cylinder displacement")).toEqual([
+      "499.6 cc",
       "522.8 cc/cyl · 3136.8 cc total",
       "+4.7%",
     ]);
@@ -281,6 +309,57 @@ describe("ComparisonTable", () => {
         "15.86 mm",
         "52.26 mm",
         "+229.4%",
+      ]);
+    });
+  });
+
+  describe("peak power / peak torque (verified preset output only)", () => {
+    function presetFixture(id: string) {
+      const preset = ENGINE_PRESETS.find((candidate) => candidate.id === id);
+      if (!preset?.output) {
+        throw new Error(`Fixture preset '${id}' must have output`);
+      }
+      return preset;
+    }
+
+    it('shows "—" for peak power/torque and their difference when neither engine matches a preset', () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      render(<ComparisonTable />);
+
+      expect(getRow("Peak power")).toEqual(["—", "—", "—"]);
+      expect(getRow("Peak torque")).toEqual(["—", "—", "—"]);
+    });
+
+    it("shows each engine's own manufacturer-published peak figures and a signed percentage difference", () => {
+      const s2000Ap1 = presetFixture("s2000-ap1");
+      const ls3 = presetFixture("corvette-c6-ls3");
+      useEngineStore.setState({ config: s2000Ap1.config });
+      enableComparisonWith(ls3.config);
+      render(<ComparisonTable />);
+
+      expect(getRow("Peak power")).toEqual([
+        "240 hp @ 8,300 rpm",
+        "430 hp @ 5,900 rpm",
+        "+79.2%",
+      ]);
+      expect(getRow("Peak torque")).toEqual([
+        "153 lb-ft @ 7,500 rpm",
+        "424 lb-ft @ 4,600 rpm",
+        "+177.1%",
+      ]);
+    });
+
+    it('shows "—" for the difference when only one engine matches a preset', () => {
+      const s2000Ap1 = presetFixture("s2000-ap1");
+      useEngineStore.setState({ config: s2000Ap1.config });
+      enableComparisonWith(STROKE_90_CONFIG);
+      render(<ComparisonTable />);
+
+      expect(getRow("Peak power")).toEqual(["240 hp @ 8,300 rpm", "—", "—"]);
+      expect(getRow("Peak torque")).toEqual([
+        "153 lb-ft @ 7,500 rpm",
+        "—",
+        "—",
       ]);
     });
   });

@@ -2,9 +2,9 @@
  * The stage: owns the single animation loop and places one or two engines on
  * it, each a row of one or more cylinders (§11, §12.1, §24).
  *
- * React subscribes only to the configurations and cylinder counts (through the
- * layout passed in), so geometry is rebuilt when a dimension changes, a
- * cylinder count changes, or comparison is toggled. Per frame nothing touches
+ * React subscribes only to the configurations and layouts (through the layout
+ * passed in), so geometry is rebuilt when a dimension changes, a layout
+ * changes, or comparison is toggled. Per frame nothing touches
  * React: one loop computes each cylinder's mechanism state at that cylinder's
  * own crank angle — the engine's angle plus the cylinder's crank-throw phase —
  * and mutates its Three.js groups through a reusable carrier (§18).
@@ -13,6 +13,21 @@
  * exact crank angle while `rpmLinked` is set, so differences between them are
  * purely geometric; unlinked, each runs at its own rpm and the angles diverge,
  * which is how two different redlines can be watched side by side.
+ *
+ * A cylinder whose layout gives it a non-zero bank offset is drawn rotated by
+ * that angle about its own crankshaft center (§24a); only the drawing is
+ * rotated, so the loop below keeps driving it at exactly its crank phase. On a
+ * V or flat engine the two cylinders of a throw share that crank center — same
+ * `offsetXMm`, opposite tilts — so the row is a row of throws, and one of the
+ * pair may omit its crank throw entirely (`drawsCrank`) when the other already
+ * draws the pin they share. None of that reaches the loop either: every
+ * cylinder is still driven at its own crank phase, and a cylinder with no crank
+ * group is skipped by the same null check that covers an unmounted one.
+ *
+ * Each cylinder is also placed at a crank-center height (`offsetYMm`), which
+ * is zero everywhere except the lower engine of a stacked comparison (§24a) —
+ * the arrangement the layout picks when either engine shows more than one
+ * cylinder. Nothing about the animation changes with it.
  *
  * Because `useMechanismRefs` is a hook, a variable number of cylinders cannot
  * own their refs here. Each cylinder is therefore a child component that holds
@@ -177,7 +192,11 @@ interface EngineRowProps {
   cylinders: readonly PlacedCylinder[];
 }
 
-/** One engine's cylinders, drawn side by side along the crankshaft. */
+/**
+ * One engine's cylinders, drawn along the crankshaft — one per slot for an
+ * inline engine, two sharing a slot for each throw of a V or flat one (§24a).
+ * The placement is entirely the layout's; this only unpacks it.
+ */
 function EngineRow({ slot, registry, proportions, cylinders }: EngineRowProps) {
   return (
     <>
@@ -189,6 +208,10 @@ function EngineRow({ slot, registry, proportions, cylinders }: EngineRowProps) {
           registry={registry}
           proportions={proportions}
           offsetXMm={cylinder.offsetXMm}
+          offsetYMm={cylinder.offsetYMm}
+          offsetZMm={cylinder.offsetZMm}
+          bankOffsetRad={cylinder.bankOffsetRad}
+          drawsCrank={cylinder.drawsCrank}
         />
       ))}
     </>
@@ -201,6 +224,14 @@ interface PlacedCylinderMechanismProps {
   registry: RefObject<MechanismRegistry>;
   proportions: MechanismProportions;
   offsetXMm: number;
+  /** Crank-center height (§24a); non-zero only for a stacked comparison's engine B. */
+  offsetYMm: number;
+  /** Depth (§24a); non-zero only for the second cylinder of a throw pair. */
+  offsetZMm: number;
+  /** This cylinder's bank tilt (§24a); 0 for inline layouts. */
+  bankOffsetRad: number;
+  /** False for the bank-1 cylinder of a shared-pin V pair (§24a). */
+  drawsCrank: boolean;
 }
 
 /**
@@ -218,6 +249,10 @@ function PlacedCylinderMechanism({
   registry,
   proportions,
   offsetXMm,
+  offsetYMm,
+  offsetZMm,
+  bankOffsetRad,
+  drawsCrank,
 }: PlacedCylinderMechanismProps) {
   const refs = useMechanismRefs();
 
@@ -243,10 +278,17 @@ function PlacedCylinderMechanism({
     <CrankMechanism
       p={proportions}
       positionX={offsetXMm}
+      positionY={offsetYMm}
+      positionZ={offsetZMm}
+      bankOffsetRad={bankOffsetRad}
       crankRef={refs.crank}
       rodRef={refs.rod}
       pistonRef={refs.piston}
+      // Cylinder 0 is the first cylinder of the first throw, so the
+      // crank-direction ring is still drawn exactly once per engine even now
+      // that two cylinders can share a plane.
       isFrontCylinder={index === 0}
+      drawsCrank={drawsCrank}
     />
   );
 }

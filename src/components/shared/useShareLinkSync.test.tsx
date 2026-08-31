@@ -8,14 +8,17 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_PLAYBACK_SPEED,
 } from "../../engine/constants";
+import { DEFAULT_LAYOUT_ID } from "../../engine/engineLayout";
 import { ENGINE_PRESETS } from "../../engine/presets";
 
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    cylinderCount: 1,
-    comparisonCylinderCount: 1,
+    layoutId: DEFAULT_LAYOUT_ID,
+    comparisonLayoutId: DEFAULT_LAYOUT_ID,
+    singleCylinderView: true,
+    comparisonSingleCylinderView: true,
     preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,

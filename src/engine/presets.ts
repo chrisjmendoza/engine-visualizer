@@ -39,7 +39,7 @@
  */
 
 import type { CrankMechanismConfig } from "./types";
-import type { SupportedCylinderCount } from "./engineLayout";
+import type { EngineLayoutId } from "./engineLayout";
 
 export interface EnginePreset {
   /** Kebab-case identifier, stable across releases. */
@@ -53,16 +53,20 @@ export interface EnginePreset {
   /** Short displacement/layout label, e.g. "2.0 L inline-4". */
   layoutLabel: string;
   /**
-   * The engine's real cylinder count (§24a), when `layoutLabel` names a
-   * layout this visualizer can currently render (inline-3/4/6; single is
-   * never a real preset's layout, so it never appears here). Omitted for
-   * V/flat-layout presets (V6, V8, flat-plane...) until those layout kinds
-   * land — selecting one of those then falls back to a single-cylinder
-   * view rather than a wrong one. Wherever a preset is applied, this value
-   * (or 1 when absent) is what `setCylinderCount`/`setComparisonCylinderCount`
-   * is called with, so picking a real engine shows its real layout.
+   * The engine's real layout (§24a). Every preset here declares one — the
+   * roster covers V and flat engines. It stays optional only so a future
+   * preset whose layout this module cannot yet express (a W12, a rotary) can
+   * omit it and fall back to `DEFAULT_LAYOUT_ID`. Wherever a preset is
+   * applied, this value (or that default when absent) is what
+   * `setLayoutId`/`setComparisonLayoutId` is called with, so picking a real
+   * engine shows its real architecture. How much of it is drawn is a separate
+   * preference (`singleCylinderView`) that a preset never touches.
+   *
+   * Where the layout is not obvious from `layoutLabel` — which V8 crank, how
+   * a V6 achieves even firing — the reason is noted with that preset's
+   * sourcing comments.
    */
-  cylinderCount?: SupportedCylinderCount;
+  layoutId?: EngineLayoutId;
   /** Per-cylinder stock geometry. */
   config: CrankMechanismConfig;
   /**
@@ -90,7 +94,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "F20C",
     layoutLabel: "2.0 L inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // rod 153.0 mm — corroborated by Wiseco piston specs (cartel-aus.com),
     // FCP Engineering (fcp-engineering.com), and ZRP (zrp-rods.com).
     // CR 11.0:1 — US/European-spec F20C, confirmed by Wikipedia ("Honda
@@ -131,7 +135,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "F22C1",
     layoutLabel: "2.2 L inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // rod 149.7 mm — CP Pistons spec sheet (realstreetperformance.com) and
     // Eagle/Brian Crower part numbers denoting 5.893 in (drifthq.com,
     // briancrower.com) both give 149.68 mm center-to-center.
@@ -160,7 +164,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Mazda",
     engineCode: "BP",
     layoutLabel: "1.8 L inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // rod 132.9 mm (5.233 in) — Manley (lmperformance.com) and Eagle
     // (eaglerod.com) both catalog stock-length B6/BP replacement rods at
     // 5.233 in center-to-center.
@@ -193,7 +197,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Mazda",
     engineCode: "B6",
     layoutLabel: "1.6 L inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // rod 132.9 mm (5.233 in) — same Manley/Eagle B6/BP catalog entry as the
     // BP above, corroborated by Wiseco's B6 turbo piston spec
     // (cartel-aus.com), which lists a 133 mm (5.234 in) rod.
@@ -223,6 +227,11 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Chevrolet",
     engineCode: "LS3",
     layoutLabel: "6.2 L V8",
+    // Layout: 90° V8 on a cross-plane crank (§24a's `v8-cross`) — four
+    // crankpins at 90°, two cylinders per pin, firing order 1-8-7-2-6-5-4-3.
+    // That is the GM small-block architecture the LS family inherits, and the
+    // source of the American V8 burble.
+    layoutId: "v8-cross",
     // rod 154.9 mm (6.098 in) — GM Performance part 12649190 spec, listed
     // consistently across JEGS (jegs.com) and K1 Technologies
     // (k1technologies.com).
@@ -251,6 +260,10 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Chevrolet",
     engineCode: "LS7",
     layoutLabel: "7.0 L V8",
+    // Layout: the same 90° cross-plane V8 crank as the LS3 above (§24a's
+    // `v8-cross`); the LS7 differs in displacement and internals, not in
+    // crank architecture.
+    layoutId: "v8-cross",
     // rod 154.1 mm (6.067 in) stock titanium rod — Wiseco piston spec
     // listing "6.067 Rod" for LS7 stock rods (briantooleyracing.com),
     // corroborated by LS-engine community references to GM's 6.067 in
@@ -280,7 +293,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Toyota",
     engineCode: "2JZ-GTE",
     layoutLabel: "3.0 L inline-6",
-    cylinderCount: 6,
+    layoutId: "inline-6",
     // rod 142.0 mm — Tomei Powered (products.tomeiusa.com), CXRacing, and
     // Boostline (boostlineproducts.com) all list 142.00 mm as the
     // OEM-length replacement rod for 2JZ-GE/GTE.
@@ -311,7 +324,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "K20A",
     layoutLabel: "2.0 L inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // rod 139.0 mm — K1 Technologies, Manley, and Eagle each catalog
     // 139 mm stock-length H-beam rods for K20A/K20A2.
     // CR 11.5:1 — JDM K20A figure, as used in the DC5 Integra Type R and
@@ -341,7 +354,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "K24A2",
     layoutLabel: "2.4 L inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // Acura-badged (2004-2008 Acura TSX); grouped under brand "Honda" here
     // so it sits with the other Honda-family cars rather than starting a
     // one-car "Acura" brand.
@@ -387,7 +400,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Mazda",
     engineCode: "PE",
     layoutLabel: "2.0 L Skyactiv-G inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // rod 154.8 mm — consistently published stock-length replacement-rod
     // dimension across Maxpeedingrods (maxpeedingrods.co.uk) and Clegg
     // Engine (cleggengine.com).
@@ -417,6 +430,12 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Ferrari",
     engineCode: "F136 FB",
     layoutLabel: "4.5 L V8",
+    // Layout: 90° V8 on a FLAT-plane crank (§24a's `v8-flat`) — all four
+    // throws in one plane, like an inline-4's, which is what makes each bank
+    // fire evenly every 180° and gives the 458 its wail. Still even-fire at
+    // 90° overall, exactly like the cross-plane LS engines above; the crank
+    // plane, not the firing interval, is the difference.
+    layoutId: "v8-flat",
     // bore/stroke 94.0/81.0 mm, CR 12.5:1 — confirmed by Wikipedia
     // ("Ferrari F136 engine") and encycarpedia.com's 458 Italia spec page.
     // rod 144.0 mm (5.669 in), rod/stroke 1.778 — despite an extensive
@@ -452,7 +471,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "SR20DET",
     layoutLabel: "2.0 L turbo inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // bore/stroke 86.0/86.0 mm (square), CR 8.5:1 — confirmed by
     // hpacademy.com ("Everything You Need to Know About the SR20DET") and
     // Wikipedia ("Nissan SR20DET").
@@ -483,7 +502,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "RB26DETT",
     layoutLabel: "2.6 L twin-turbo inline-6",
-    cylinderCount: 6,
+    layoutId: "inline-6",
     // bore/stroke 86.0/73.7 mm, CR 8.5:1 — confirmed by drifted.com
     // ("RB26DETT - Nissan's Ultimate Engine?") and 8020automotive.com
     // ("Nissan RB26DETT Engine Guide").
@@ -513,6 +532,11 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "VR38DETT",
     layoutLabel: "3.8 L twin-turbo V6",
+    // Layout: 60° V6 (§24a's `v6-60`). Even-fire at 120°, which a 60° vee can
+    // only manage on a split-pin ("flying arm") crank — the journals are
+    // offset a further 60° so the effective throw separation between the
+    // banks is 120°. Nissan's VR/VQ 60° V6 family is built exactly that way.
+    layoutId: "v6-60",
     // bore/stroke 95.5/88.4 mm, CR 9.0:1 — confirmed by a MAHLE Motorsports
     // spec sheet (mahle.com) and Wikipedia ("Nissan VR engine").
     // rod 165.0 mm (6.500 in) — stock-length replacement rods from
@@ -543,7 +567,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "KA24DE",
     layoutLabel: "2.4 L inline-4",
-    cylinderCount: 4,
+    layoutId: "inline-4",
     // Twin-cam KA24DE (1991+), not the earlier single-cam KA24E — this is
     // the naturally aspirated US-market engine that stood in for the
     // JDM-only turbo SR20DET Silvia preset above; swapping an SR20DET into
@@ -582,7 +606,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "BMW",
     engineCode: "S54",
     layoutLabel: "3.2 L inline-6",
-    cylinderCount: 6,
+    layoutId: "inline-6",
     // bore/stroke 87.0/91.0 mm, CR 11.5:1, redline 8000 rpm — all three
     // confirmed by a MAHLE Motorsports spec sheet (us.mahle.com) and
     // bmwtuning.co's S54 engine guide.

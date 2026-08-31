@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { useEngineStore } from "../../state/engineStore";
+import { DEFAULT_LAYOUT_ID } from "../../engine/engineLayout";
 import { ENGINE_PRESETS } from "../../engine/presets";
 import type { EnginePreset } from "../../engine/presets";
 import type { CrankMechanismConfig } from "../../engine/types";
@@ -62,12 +63,13 @@ export interface PresetSelectorProps {
  * slot's config; it never touches RPM or playback state.
  *
  * A preset is shown pressed only when the slot's current config exactly
- * equals that preset's values AND the slot's current cylinder count matches
- * that preset's real layout (§24a, `cylinderCount ?? 1`) — hand-edited
- * geometry that happens to drift away from every preset shows no selection
- * at all, and so does switching the cylinder count away after picking a
- * preset (the geometry still matches, but the app is no longer showing that
- * engine's real layout). Whenever the slot's
+ * equals that preset's values AND the slot's current layout matches that
+ * preset's real one (§24a, `layoutId ?? DEFAULT_LAYOUT_ID`) — hand-edited
+ * geometry that happens to drift away from every preset shows no selection at
+ * all, and so does switching the architecture away after picking a preset (the
+ * geometry still matches, but the app is no longer showing that engine's real
+ * layout). The cylinder-view switch is not part of that test: one cylinder of
+ * an LS7 is still an LS7. Whenever the slot's
  * config newly matches a preset (picking one, or a slot being seeded by
  * `enableComparison`), that preset's brand auto-expands; losing a match
  * (e.g. hand-editing away from it) leaves whatever the user currently has
@@ -77,23 +79,22 @@ export function PresetSelector({ slot = "primary" }: PresetSelectorProps) {
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const slotConfig = resolveSlotConfig(slot, config, comparisonConfig);
-  const cylinderCount = useEngineStore((state) => state.cylinderCount);
-  const comparisonCylinderCount = useEngineStore(
-    (state) => state.comparisonCylinderCount,
+  const layoutId = useEngineStore((state) => state.layoutId);
+  const comparisonLayoutId = useEngineStore(
+    (state) => state.comparisonLayoutId,
   );
-  const slotCylinderCount =
-    slot === "comparison" ? comparisonCylinderCount : cylinderCount;
+  const slotLayoutId = slot === "comparison" ? comparisonLayoutId : layoutId;
   const setConfig = useEngineStore((state) => state.setConfig);
   const setComparisonConfig = useEngineStore(
     (state) => state.setComparisonConfig,
   );
   const commitSlot = slot === "comparison" ? setComparisonConfig : setConfig;
-  const setCylinderCount = useEngineStore((state) => state.setCylinderCount);
-  const setComparisonCylinderCount = useEngineStore(
-    (state) => state.setComparisonCylinderCount,
+  const setLayoutId = useEngineStore((state) => state.setLayoutId);
+  const setComparisonLayoutId = useEngineStore(
+    (state) => state.setComparisonLayoutId,
   );
-  const commitCylinderCount =
-    slot === "comparison" ? setComparisonCylinderCount : setCylinderCount;
+  const commitLayoutId =
+    slot === "comparison" ? setComparisonLayoutId : setLayoutId;
 
   const groups = groupByBrand(ENGINE_PRESETS);
   const matchingPreset = ENGINE_PRESETS.find((preset) =>
@@ -170,14 +171,16 @@ export function PresetSelector({ slot = "primary" }: PresetSelectorProps) {
         >
           {expandedGroup.presets.map((preset) => {
             // Geometry alone isn't enough: a preset whose geometry matches
-            // but whose real cylinder count (§24a) no longer matches the
-            // slot's current count (e.g. switched to "Single" after picking
-            // a 4-cylinder preset) is no longer actually selected — showing
-            // it pressed would claim a real engine's layout the app isn't
-            // currently rendering.
+            // but whose real layout (§24a) no longer matches the slot's
+            // current one (e.g. switched from a V8 to an inline-6 after
+            // picking a V8 preset) is no longer actually selected — showing
+            // it pressed would claim a real engine's architecture the app
+            // isn't currently configured for. The cylinder *view*
+            // deliberately plays no part: one cylinder of an LS7 is still an
+            // LS7, and the preset stays pressed while you study it.
             const isActive =
               configsMatch(slotConfig, preset.config) &&
-              slotCylinderCount === (preset.cylinderCount ?? 1);
+              slotLayoutId === (preset.layoutId ?? DEFAULT_LAYOUT_ID);
             return (
               <button
                 key={preset.id}
@@ -187,13 +190,16 @@ export function PresetSelector({ slot = "primary" }: PresetSelectorProps) {
                 data-active={isActive ? "true" : undefined}
                 onClick={() => {
                   commitSlot(preset.config);
-                  // §24a: a preset whose real layout this visualizer
-                  // supports (inline-3/4/6) shows that layout; one without
-                  // (V6, V8, flat...) falls back to a single-cylinder view
-                  // rather than leaving whatever layout was previously
-                  // selected — selecting a real engine should always show
-                  // its own layout, never a leftover from a different one.
-                  commitCylinderCount(preset.cylinderCount ?? 1);
+                  // §24a: selecting a real engine always shows that
+                  // engine's own architecture, never a leftover from a
+                  // different one. Every preset declares a layout now; the
+                  // fallback covers a future preset whose layout the roster
+                  // cannot yet express.
+                  //
+                  // It deliberately does NOT touch the cylinder view:
+                  // picking an LS7 while studying one cylinder keeps you on
+                  // one cylinder, now labelled as a V8's.
+                  commitLayoutId(preset.layoutId ?? DEFAULT_LAYOUT_ID);
                 }}
               >
                 <span className={styles.name}>{preset.name}</span>

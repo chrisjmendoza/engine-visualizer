@@ -10,6 +10,8 @@ import {
   DEFAULT_PLAYBACK_SPEED,
 } from "../../engine/constants";
 import { calculateCylinderDisplacementCc } from "../../engine/calculations";
+import { DEFAULT_LAYOUT_ID } from "../../engine/engineLayout";
+import { ENGINE_PRESETS } from "../../engine/presets";
 import { formatRounded } from "../shared/formatting";
 import { METRIC_INFO_BY_ID } from "../shared/calculationFormatting";
 import type { CrankMechanismConfig } from "../../engine/types";
@@ -18,8 +20,10 @@ function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    cylinderCount: 1,
-    comparisonCylinderCount: 1,
+    layoutId: DEFAULT_LAYOUT_ID,
+    comparisonLayoutId: DEFAULT_LAYOUT_ID,
+    singleCylinderView: true,
+    comparisonSingleCylinderView: true,
     preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
@@ -67,8 +71,11 @@ describe("CalculationPanel", () => {
     );
   });
 
-  it("shows per-cylinder and total displacement, relabeled, once cylinderCount is more than one (§24a)", () => {
-    useEngineStore.setState({ cylinderCount: 4 });
+  it("shows per-cylinder and total displacement, relabeled, once the layout has more than one cylinder (§24a)", () => {
+    useEngineStore.setState({
+      layoutId: "inline-4",
+      singleCylinderView: false,
+    });
     render(<CalculationPanel />);
 
     const perCylinder = calculateCylinderDisplacementCc(
@@ -83,11 +90,31 @@ describe("CalculationPanel", () => {
     );
   });
 
-  it("reads the comparison slot's own cylinderCount, not engine A's", () => {
+  it("counts only the cylinder on stage while the single-cylinder view is on (§24a)", () => {
+    // Same architecture as the test above — a real inline-4 — but only one of
+    // its cylinders is being shown, so a whole-engine total would describe
+    // something that isn't on screen.
+    useEngineStore.setState({
+      layoutId: "inline-4",
+      singleCylinderView: true,
+    });
+    render(<CalculationPanel />);
+
+    const perCylinder = calculateCylinderDisplacementCc(
+      DEFAULT_CONFIG.boreMm,
+      DEFAULT_CONFIG.strokeMm,
+    );
+    expect(getResultValue("Cylinder displacement")).toBe(
+      `${formatRounded(perCylinder, 1)} cc`,
+    );
+  });
+
+  it("reads the comparison slot's own layout, not engine A's", () => {
     useEngineStore.setState({
       comparisonConfig: { ...DEFAULT_CONFIG },
-      cylinderCount: 1,
-      comparisonCylinderCount: 6,
+      layoutId: DEFAULT_LAYOUT_ID,
+      comparisonLayoutId: "flat-6",
+      comparisonSingleCylinderView: false,
     });
     render(<CalculationPanel slot="comparison" />);
 
@@ -232,6 +259,29 @@ describe("CalculationPanel", () => {
 
     // Engine A's own config (still DEFAULT_CONFIG) is untouched.
     expect(useEngineStore.getState().config).toEqual(DEFAULT_CONFIG);
+  });
+
+  describe("peak power / peak torque (verified preset output only)", () => {
+    it('shows "—" for peak power and torque when the configuration matches no preset', () => {
+      render(<CalculationPanel />);
+
+      expect(getResultValue("Peak power")).toBe("—");
+      expect(getResultValue("Peak torque")).toBe("—");
+    });
+
+    it("shows the manufacturer-published peak power and torque for a matching preset", () => {
+      const s2000Ap1 = ENGINE_PRESETS.find(
+        (preset) => preset.id === "s2000-ap1",
+      );
+      if (!s2000Ap1?.output) {
+        throw new Error("Fixture preset 's2000-ap1' must have output");
+      }
+      useEngineStore.setState({ config: s2000Ap1.config });
+      render(<CalculationPanel />);
+
+      expect(getResultValue("Peak power")).toBe("240 hp @ 8,300 rpm");
+      expect(getResultValue("Peak torque")).toBe("153 lb-ft @ 7,500 rpm");
+    });
   });
 
   describe("metric info popups", () => {

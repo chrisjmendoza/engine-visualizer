@@ -80,11 +80,11 @@ export const crankMechanismConfigSchema = z
   });
 
 /*
- * Cylinder counts (§24a) are deliberately validated by `engineLayout.ts`'s
- * `isSupportedCylinderCount` type guard rather than by a schema here. Both
- * entry points — the share-link decoder and the cylinder-count select — need
- * a boolean narrowing to `SupportedCylinderCount`, not a parsed value with a
- * user-facing message: the select is a closed list, and a bad count in a
+ * Engine layouts (§24a) are deliberately validated by `engineLayout.ts`'s
+ * `isEngineLayoutId` type guard rather than by a schema here. Both entry
+ * points — the share-link decoder and the layout picker — need a boolean
+ * narrowing to `EngineLayoutId`, not a parsed value with a user-facing
+ * message: the picker is a closed list, and an unknown layout id in a
  * hand-edited link is dropped silently like every other malformed parameter
  * (§25a). A schema would only earn its place alongside free-text entry, the
  * way `rpmSchema` does below.

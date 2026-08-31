@@ -17,8 +17,10 @@ export function getShareState(): ShareState {
   return {
     config: state.config,
     comparisonConfig: state.comparisonConfig,
-    cylinderCount: state.cylinderCount,
-    comparisonCylinderCount: state.comparisonCylinderCount,
+    layoutId: state.layoutId,
+    comparisonLayoutId: state.comparisonLayoutId,
+    singleCylinderView: state.singleCylinderView,
+    comparisonSingleCylinderView: state.comparisonSingleCylinderView,
     rpm: state.rpm,
     comparisonRpm: state.comparisonRpm,
     rpmLinked: state.rpmLinked,

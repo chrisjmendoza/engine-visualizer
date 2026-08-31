@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeConfig,
   decodeShareState,
-  defaultCylinderCountFor,
+  defaultLayoutIdFor,
   encodeConfig,
   encodeShareState,
 } from "../engine/shareLink";
@@ -12,7 +12,10 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_PLAYBACK_SPEED,
 } from "../engine/constants";
-import { SUPPORTED_CYLINDER_COUNTS } from "../engine/engineLayout";
+import {
+  DEFAULT_LAYOUT_ID,
+  ENGINE_ARCHITECTURE_IDS,
+} from "../engine/engineLayout";
 import { ENGINE_PRESETS } from "../engine/presets";
 import type { CrankMechanismConfig } from "../engine/types";
 
@@ -28,8 +31,11 @@ function baseState(overrides: Partial<ShareState> = {}): ShareState {
   return {
     config: DEFAULT_CONFIG,
     comparisonConfig: null,
-    cylinderCount: 1,
-    comparisonCylinderCount: 1,
+    layoutId: DEFAULT_LAYOUT_ID,
+    comparisonLayoutId: DEFAULT_LAYOUT_ID,
+    // The app's own defaults: the default architecture, one cylinder of it.
+    singleCylinderView: true,
+    comparisonSingleCylinderView: true,
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,
     rpmLinked: true,
@@ -94,14 +100,15 @@ describe("encodeShareState", () => {
   it("includes engine B when comparing, by preset id", () => {
     const ls7 = ENGINE_PRESETS.find((p) => p.id === "corvette-z06-c6-ls7");
     const f20c = ENGINE_PRESETS.find((p) => p.id === "s2000-ap1");
-    // cylinderCount matches f20c's own real count (4, §24a) so `c` stays
-    // omitted here — this test is about the `a`/`b` preset-id encoding,
-    // not the `c`/`bc` cylinder-count rules covered separately below.
+    // Both layouts match what their preset ids already imply (§24a), so
+    // `l`/`bl` stay omitted here — this test is about the `a`/`b` preset-id
+    // encoding, not the layout rules covered separately below.
     const query = encodeShareState(
       baseState({
         config: f20c!.config,
         comparisonConfig: ls7!.config,
-        cylinderCount: 4,
+        layoutId: "inline-4",
+        comparisonLayoutId: "v8-cross",
       }),
     );
     expect(query).toBe("a=s2000-ap1&b=corvette-z06-c6-ls7");
@@ -352,192 +359,376 @@ describe("decodeShareState", () => {
   });
 });
 
-describe("cylinder counts (§24a)", () => {
-  it("omits both counts when both engines are single-cylinder", () => {
+describe("engine layouts (§24a)", () => {
+  it("omits both layout params when both engines are single-cylinder", () => {
     const query = encodeShareState(baseState());
-    expect(query).not.toContain("c=");
-    expect(query).not.toContain("bc=");
+    expect(query).not.toContain("l=");
+    expect(query).not.toContain("bl=");
   });
 
-  it("includes engine A's count whenever it isn't single-cylinder", () => {
-    const query = encodeShareState(baseState({ cylinderCount: 4 }));
-    expect(query).toContain("c=4");
+  it("includes engine A's layout whenever it isn't what `a` implies", () => {
+    const query = encodeShareState(baseState({ layoutId: "v8-cross" }));
+    expect(query).toContain("l=v8-cross");
   });
 
-  it("includes engine B's count only once engine B is present and non-default", () => {
+  it("includes engine B's layout only once engine B is present and non-default", () => {
     const noB = encodeShareState(
-      baseState({ comparisonCylinderCount: 6 }), // no comparisonConfig
+      baseState({ comparisonLayoutId: "inline-6" }), // no comparisonConfig
     );
-    expect(noB).not.toContain("bc=");
+    expect(noB).not.toContain("bl=");
 
     const withB = encodeShareState(
-      baseState({ comparisonConfig: LS7, comparisonCylinderCount: 6 }),
+      baseState({ comparisonConfig: CUSTOM, comparisonLayoutId: "inline-6" }),
     );
-    expect(withB).toContain("bc=6");
+    expect(withB).toContain("bl=inline-6");
   });
 
-  it("omits engine B's count when comparing but B is single-cylinder", () => {
+  it("omits engine B's layout when comparing but B is at its implied layout", () => {
     const query = encodeShareState(
-      baseState({ comparisonConfig: LS7, comparisonCylinderCount: 1 }),
+      baseState({ comparisonConfig: LS7, comparisonLayoutId: "v8-cross" }),
     );
-    expect(query).not.toContain("bc=");
+    expect(query).not.toContain("bl=");
   });
 
-  it("decodes valid counts", () => {
+  it("never emits the legacy `c`/`bc` params any more", () => {
+    for (const id of ENGINE_ARCHITECTURE_IDS) {
+      const query = encodeShareState(
+        baseState({
+          config: CUSTOM,
+          comparisonConfig: F20C,
+          layoutId: id,
+          comparisonLayoutId: id,
+        }),
+      );
+      expect(query).not.toMatch(/(^|&)c=/);
+      expect(query).not.toMatch(/(^|&)bc=/);
+    }
+  });
+
+  it("decodes valid layout ids", () => {
     const state = decodeShareState(
-      "?a=s2000-ap1&b=corvette-z06-c6-ls7&c=4&bc=6",
+      "?a=s2000-ap1&b=corvette-z06-c6-ls7&l=flat-4&bl=v12-60",
     );
-    expect(state.cylinderCount).toBe(4);
-    expect(state.comparisonCylinderCount).toBe(6);
+    expect(state.layoutId).toBe("flat-4");
+    expect(state.comparisonLayoutId).toBe("v12-60");
   });
 
-  it("drops an unsupported engine-A count instead of failing the whole link", () => {
-    const state = decodeShareState("?a=s2000-ap1&c=5");
-    expect(state.cylinderCount).toBeUndefined();
+  it("drops an unknown engine-A layout instead of failing the whole link", () => {
+    const state = decodeShareState("?a=s2000-ap1&l=inline-8");
+    expect(state.layoutId).toBeUndefined();
     expect(state.config).toBeDefined();
   });
 
-  it("drops an unsupported, non-finite, or malformed engine-B count", () => {
+  it("drops an unknown or malformed engine-B layout", () => {
     expect(
-      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&bc=8")
-        .comparisonCylinderCount,
+      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&bl=w16")
+        .comparisonLayoutId,
     ).toBeUndefined();
     expect(
-      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&bc=nope")
-        .comparisonCylinderCount,
+      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&bl=")
+        .comparisonLayoutId,
     ).toBeUndefined();
   });
 
-  it("ignores bc entirely when the link carries no usable engine B", () => {
+  it("ignores bl entirely when the link carries no usable engine B", () => {
     // No `b` at all, and a `b` that fails to decode: neither may leave
-    // comparisonCylinderCount set with no comparisonConfig to go with it.
-    expect(decodeShareState("?a=s2000-ap1&bc=4").comparisonCylinderCount).toBe(
-      undefined,
-    );
+    // comparisonLayoutId set with no comparisonConfig to go with it.
     expect(
-      decodeShareState("?a=s2000-ap1&b=not-real&bc=4").comparisonCylinderCount,
+      decodeShareState("?a=s2000-ap1&bl=inline-4").comparisonLayoutId,
+    ).toBeUndefined();
+    expect(
+      decodeShareState("?a=s2000-ap1&b=not-real&bl=inline-4")
+        .comparisonLayoutId,
     ).toBeUndefined();
   });
 
-  it("round-trips both counts through encode/decode", () => {
+  it("round-trips both layouts through encode/decode", () => {
     const original = baseState({
       config: F20C,
       comparisonConfig: LS7,
-      cylinderCount: 4,
-      comparisonCylinderCount: 6,
+      layoutId: "v6-90-odd",
+      comparisonLayoutId: "flat-6",
     });
     const decoded = decodeShareState(encodeShareState(original));
-    expect(decoded.cylinderCount).toBe(4);
-    expect(decoded.comparisonCylinderCount).toBe(6);
+    expect(decoded.layoutId).toBe("v6-90-odd");
+    expect(decoded.comparisonLayoutId).toBe("flat-6");
   });
 });
 
-describe("preset-id share links imply the preset's real cylinder count", () => {
-  it("defaultCylinderCountFor returns the preset's own count, or 1 for a non-preset config", () => {
-    expect(defaultCylinderCountFor(F20C)).toBe(4);
-    expect(defaultCylinderCountFor(CUSTOM)).toBe(1);
-    // LS7 (a V8) isn't a currently-renderable layout, so its preset omits
-    // `cylinderCount` — falls back to 1, same as any non-preset config.
-    expect(defaultCylinderCountFor(LS7)).toBe(1);
+describe("legacy `c`/`bc` cylinder counts still decode (§25a append-only)", () => {
+  it("maps every multi-cylinder count onto its inline layout, whole engine shown", () => {
+    const expected = {
+      "3": "inline-3",
+      "4": "inline-4",
+      "6": "inline-6",
+    } as const;
+
+    for (const [count, layoutId] of Object.entries(expected)) {
+      const a = decodeShareState(`?a=s2000-ap1&c=${count}`);
+      expect(a.layoutId).toBe(layoutId);
+      expect(a.singleCylinderView).toBe(false);
+
+      const b = decodeShareState(`?a=s2000-ap1&b=s2000-ap1&bc=${count}`);
+      expect(b.comparisonLayoutId).toBe(layoutId);
+      expect(b.comparisonSingleCylinderView).toBe(false);
+    }
   });
 
-  it("a bare preset-id `a` with no `c` decodes to the preset's own cylinder count", () => {
-    // s2000-ap1 (F20C) is a real inline-4 (§24a); with no `c` at all, the
-    // link must not silently render as a single cylinder.
-    const state = decodeShareState("?a=s2000-ap1");
-    expect(state.cylinderCount).toBe(4);
-  });
-
-  it("an explicit `c` still overrides the preset's implied count", () => {
-    // A deliberate "view this real engine as a single cylinder" link.
+  it("reads the legacy `c=1` as the single-cylinder view, not an architecture", () => {
+    // `c=1` predates the view/architecture split (§24a): it now means "one
+    // cylinder of whatever `a` implies", so the S2000 stays an inline-4 and
+    // exactly one of its cylinders is drawn — the same picture as before.
     const state = decodeShareState("?a=s2000-ap1&c=1");
-    expect(state.cylinderCount).toBe(1);
+    expect(state.layoutId).toBe("inline-4");
+    expect(state.singleCylinderView).toBe(true);
 
-    const state6 = decodeShareState("?a=s2000-ap1&c=6");
-    expect(state6.cylinderCount).toBe(6);
+    const b = decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&bc=1");
+    expect(b.comparisonLayoutId).toBe("v8-cross");
+    expect(b.comparisonSingleCylinderView).toBe(true);
   });
 
-  it("a numeric (non-preset) `a` with no `c` implies 1, not the current session's count", () => {
+  it("keeps a real old link opening exactly as it did", () => {
+    // A link written by the pre-layout release: an inline-6 Supra beside a
+    // single-cylinder custom engine, paused at 90 degrees. The Supra still
+    // shows six cylinders; the custom engine still shows exactly one — now
+    // described as one cylinder of the default architecture rather than as a
+    // layout called "single".
+    const state = decodeShareState(
+      "?a=supra-2jzgte&b=86-86-143-10.5-7000&c=6&bc=1&rpm=4500&angle=90",
+    );
+    expect(state.layoutId).toBe("inline-6");
+    expect(state.singleCylinderView).toBe(false);
+    expect(state.comparisonLayoutId).toBe(DEFAULT_LAYOUT_ID);
+    expect(state.comparisonSingleCylinderView).toBe(true);
+    expect(state.rpm).toBe(4500);
+    expect(state.isPlaying).toBe(false);
+  });
+
+  it("lets an explicit `l` win over a legacy `c` in the same link", () => {
+    const state = decodeShareState("?a=s2000-ap1&c=6&l=v8-flat");
+    expect(state.layoutId).toBe("v8-flat");
+
+    const b = decodeShareState("?a=s2000-ap1&b=s2000-ap1&bc=6&bl=flat-4");
+    expect(b.comparisonLayoutId).toBe("flat-4");
+  });
+
+  it("drops a count the old format never supported, rather than guessing", () => {
+    expect(decodeShareState("?a=s2000-ap1&c=5").layoutId).toBeUndefined();
+    expect(decodeShareState("?a=s2000-ap1&c=nope").layoutId).toBeUndefined();
+    expect(
+      decodeShareState("?a=s2000-ap1&b=s2000-ap1&bc=8").comparisonLayoutId,
+    ).toBeUndefined();
+  });
+});
+
+describe("preset-id share links imply the preset's real layout", () => {
+  it("defaultLayoutIdFor returns the preset's own layout, or the default for a non-preset config", () => {
+    expect(defaultLayoutIdFor(F20C)).toBe("inline-4");
+    expect(defaultLayoutIdFor(CUSTOM)).toBe(DEFAULT_LAYOUT_ID);
+    // The V engines now have real layouts of their own (§24a), so an LS7
+    // link no longer falls back to a single cylinder.
+    expect(defaultLayoutIdFor(LS7)).toBe("v8-cross");
+  });
+
+  it("a bare preset-id `a` with no `l` decodes to the preset's own layout, one cylinder shown", () => {
+    const s2000 = decodeShareState("?a=s2000-ap1");
+    expect(s2000.layoutId).toBe("inline-4");
+    expect(s2000.singleCylinderView).toBe(true);
+
+    const ferrari = decodeShareState("?a=ferrari-458-italia");
+    expect(ferrari.layoutId).toBe("v8-flat");
+    expect(ferrari.singleCylinderView).toBe(true);
+  });
+
+  it("an explicit `l` overrides the preset's implied layout and shows the whole engine", () => {
+    const state = decodeShareState("?a=s2000-ap1&l=inline-6");
+    expect(state.layoutId).toBe("inline-6");
+    expect(state.singleCylinderView).toBe(false);
+  });
+
+  it("reads the legacy `l=single` as the single-cylinder view of what `a` implies", () => {
+    // A deliberate "view this real engine as a single cylinder" link from
+    // before the split: the architecture now comes from `a`.
+    const state = decodeShareState("?a=s2000-ap1&l=single");
+    expect(state.layoutId).toBe("inline-4");
+    expect(state.singleCylinderView).toBe(true);
+  });
+
+  it("lets an explicit `sv` override what `l` implies, either way", () => {
+    const wholeEngine = decodeShareState("?a=s2000-ap1&sv=0");
+    expect(wholeEngine.layoutId).toBe("inline-4");
+    expect(wholeEngine.singleCylinderView).toBe(false);
+
+    const oneCylinder = decodeShareState("?a=s2000-ap1&l=v8-cross&sv=1");
+    expect(oneCylinder.layoutId).toBe("v8-cross");
+    expect(oneCylinder.singleCylinderView).toBe(true);
+  });
+
+  it("ignores a malformed `sv`, falling back to what the rest of the link implies", () => {
+    expect(decodeShareState("?a=s2000-ap1&sv=maybe").singleCylinderView).toBe(
+      true,
+    );
+    expect(
+      decodeShareState("?a=s2000-ap1&l=inline-6&sv=").singleCylinderView,
+    ).toBe(false);
+  });
+
+  it("says nothing about the view when the link is about something else", () => {
+    // No `a`, no layout parameters: a link carrying only a speed must not
+    // silently snap the current session to one cylinder.
+    const state = decodeShareState("?rpm=4500");
+    expect(state.layoutId).toBeUndefined();
+    expect(state.singleCylinderView).toBeUndefined();
+  });
+
+  it("a numeric (non-preset) `a` with no `l` implies the default layout, one cylinder", () => {
     const state = decodeShareState(`?a=${encodeConfig(CUSTOM)}`);
     expect(state.config).toEqual(CUSTOM);
-    expect(state.cylinderCount).toBe(1);
+    expect(state.layoutId).toBe(DEFAULT_LAYOUT_ID);
+    expect(state.singleCylinderView).toBe(true);
   });
 
-  it("the same rules apply to engine B via `b`/`bc`", () => {
-    const bareB = decodeShareState("?a=s2000-ap1&b=s2000-ap1");
-    expect(bareB.comparisonCylinderCount).toBe(4);
+  it("the same rules apply to engine B via `b`/`bl`/`bsv`", () => {
+    const bareB = decodeShareState("?a=s2000-ap1&b=corvette-c6-ls3");
+    expect(bareB.comparisonLayoutId).toBe("v8-cross");
+    expect(bareB.comparisonSingleCylinderView).toBe(true);
 
-    const overriddenB = decodeShareState("?a=s2000-ap1&b=s2000-ap1&bc=1");
-    expect(overriddenB.comparisonCylinderCount).toBe(1);
+    const legacyB = decodeShareState(
+      "?a=s2000-ap1&b=corvette-c6-ls3&bl=single",
+    );
+    expect(legacyB.comparisonLayoutId).toBe("v8-cross");
+    expect(legacyB.comparisonSingleCylinderView).toBe(true);
+
+    const wholeB = decodeShareState("?a=s2000-ap1&b=corvette-c6-ls3&bsv=0");
+    expect(wholeB.comparisonSingleCylinderView).toBe(false);
 
     const numericB = decodeShareState(`?a=s2000-ap1&b=${encodeConfig(CUSTOM)}`);
-    expect(numericB.comparisonCylinderCount).toBe(1);
+    expect(numericB.comparisonLayoutId).toBe(DEFAULT_LAYOUT_ID);
   });
 
-  it("encodeShareState omits `c`/`bc` exactly when they'd round-trip to the same count anyway", () => {
-    // F20C at its own real count (4): omitted, decode still infers 4.
-    const atOwnCount = encodeShareState(
-      baseState({ config: F20C, cylinderCount: 4 }),
+  it("encodeShareState omits `l`/`bl` exactly when they'd round-trip to the same layout anyway", () => {
+    // F20C at its own real layout: omitted, decode still infers inline-4.
+    const atOwnLayout = encodeShareState(
+      baseState({ config: F20C, layoutId: "inline-4" }),
     );
-    expect(atOwnCount).not.toContain("c=");
-    expect(decodeShareState(atOwnCount).cylinderCount).toBe(4);
+    expect(atOwnLayout).not.toContain("l=");
+    expect(decodeShareState(atOwnLayout).layoutId).toBe("inline-4");
 
-    // F20C deliberately viewed at count 1: must NOT be silently omitted,
-    // or the link would corrupt back to an inline-4 on decode (the bug
-    // this fix addresses).
+    // A layout the config does not imply must NOT be silently omitted, or
+    // the link would corrupt back to an inline-4 on decode.
     const overridden = encodeShareState(
-      baseState({ config: F20C, cylinderCount: 1 }),
+      baseState({ config: F20C, layoutId: "v8-cross" }),
     );
-    expect(overridden).toContain("c=1");
-    expect(decodeShareState(overridden).cylinderCount).toBe(1);
+    expect(overridden).toContain("l=v8-cross");
+    expect(decodeShareState(overridden).layoutId).toBe("v8-cross");
 
     // Same for engine B.
-    const bAtOwnCount = encodeShareState(
+    const bAtOwnLayout = encodeShareState(
       baseState({
         config: DEFAULT_CONFIG,
         comparisonConfig: F20C,
-        comparisonCylinderCount: 4,
+        comparisonLayoutId: "inline-4",
       }),
     );
-    expect(bAtOwnCount).not.toContain("bc=");
-    expect(decodeShareState(bAtOwnCount).comparisonCylinderCount).toBe(4);
+    expect(bAtOwnLayout).not.toContain("bl=");
+    expect(decodeShareState(bAtOwnLayout).comparisonLayoutId).toBe("inline-4");
 
     const bOverridden = encodeShareState(
       baseState({
         config: DEFAULT_CONFIG,
         comparisonConfig: F20C,
-        comparisonCylinderCount: 1,
+        comparisonLayoutId: "flat-4",
       }),
     );
-    expect(bOverridden).toContain("bc=1");
-    expect(decodeShareState(bOverridden).comparisonCylinderCount).toBe(1);
+    expect(bOverridden).toContain("bl=flat-4");
+    expect(decodeShareState(bOverridden).comparisonLayoutId).toBe("flat-4");
   });
 
-  it("round-trips every preset at every supported cylinder count", () => {
+  it("omits `sv` when the rest of the link already implies the view", () => {
+    // Default: one cylinder of what `a` implies — nothing has to travel.
+    expect(encodeShareState(baseState({ config: F20C }))).not.toMatch(
+      /(^|&)sv=/,
+    );
+    // An explicit `l` already says "the whole of this engine".
+    expect(
+      encodeShareState(
+        baseState({
+          config: F20C,
+          layoutId: "v8-cross",
+          singleCylinderView: false,
+        }),
+      ),
+    ).not.toMatch(/(^|&)sv=/);
+  });
+
+  it("carries `sv` when the view disagrees with what the link implies", () => {
+    // Whole engine, but the layout is the one `a` already implies, so no `l`
+    // travels and `sv=0` has to.
+    const whole = encodeShareState(
+      baseState({ config: F20C, singleCylinderView: false }),
+    );
+    expect(whole).toContain("sv=0");
+    expect(decodeShareState(whole).singleCylinderView).toBe(false);
+
+    // One cylinder, but of an architecture the config does not imply, so `l`
+    // travels and `sv=1` has to travel with it.
+    const one = encodeShareState(
+      baseState({ config: F20C, layoutId: "v12-60" }),
+    );
+    expect(one).toContain("sv=1");
+    const decoded = decodeShareState(one);
+    expect(decoded.layoutId).toBe("v12-60");
+    expect(decoded.singleCylinderView).toBe(true);
+  });
+
+  it("normalizes a legacy `single` layout on the way out rather than writing it", () => {
+    // Nothing stores `"single"` any more (§24a), but an encoder handed it
+    // must still produce a link that means what it always meant: one
+    // cylinder of whatever `a` implies.
+    const query = encodeShareState(
+      baseState({ config: F20C, layoutId: "single" }),
+    );
+    expect(query).not.toContain("l=single");
+    const decoded = decodeShareState(query);
+    expect(decoded.layoutId).toBe("inline-4");
+    expect(decoded.singleCylinderView).toBe(true);
+  });
+
+  it("round-trips every preset at every architecture and both views", () => {
     for (const preset of ENGINE_PRESETS) {
-      for (const count of SUPPORTED_CYLINDER_COUNTS) {
-        const state = baseState({
-          config: preset.config,
-          cylinderCount: count,
-        });
-        const decoded = decodeShareState(encodeShareState(state));
-        expect(decoded.config).toEqual(preset.config);
-        expect(decoded.cylinderCount).toBe(count);
+      for (const id of ENGINE_ARCHITECTURE_IDS) {
+        for (const singleCylinderView of [true, false]) {
+          const state = baseState({
+            config: preset.config,
+            layoutId: id,
+            singleCylinderView,
+          });
+          const decoded = decodeShareState(encodeShareState(state));
+          expect(decoded.config).toEqual(preset.config);
+          expect(decoded.layoutId).toBe(id);
+          expect(decoded.singleCylinderView).toBe(singleCylinderView);
+        }
       }
     }
   });
 
-  it("round-trips every preset as engine B at every supported cylinder count", () => {
+  it("round-trips every preset as engine B at every architecture and both views", () => {
     for (const preset of ENGINE_PRESETS) {
-      for (const count of SUPPORTED_CYLINDER_COUNTS) {
-        const state = baseState({
-          config: DEFAULT_CONFIG,
-          comparisonConfig: preset.config,
-          comparisonCylinderCount: count,
-        });
-        const decoded = decodeShareState(encodeShareState(state));
-        expect(decoded.comparisonConfig).toEqual(preset.config);
-        expect(decoded.comparisonCylinderCount).toBe(count);
+      for (const id of ENGINE_ARCHITECTURE_IDS) {
+        for (const comparisonSingleCylinderView of [true, false]) {
+          const state = baseState({
+            config: DEFAULT_CONFIG,
+            comparisonConfig: preset.config,
+            comparisonLayoutId: id,
+            comparisonSingleCylinderView,
+          });
+          const decoded = decodeShareState(encodeShareState(state));
+          expect(decoded.comparisonConfig).toEqual(preset.config);
+          expect(decoded.comparisonLayoutId).toBe(id);
+          expect(decoded.comparisonSingleCylinderView).toBe(
+            comparisonSingleCylinderView,
+          );
+        }
       }
     }
   });
