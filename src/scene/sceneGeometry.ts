@@ -882,6 +882,29 @@ function measureRow(
   };
 }
 
+/**
+ * Where a row's **first** crank center must sit for the midpoint of its crank
+ * span — first crank center to last — to land on `centerXMm` (§24a).
+ *
+ * The span is measured from the crank centers themselves, not from the drawn
+ * bounds: a row's bounds swell with bank tilt and with an upright-flat quarter
+ * turn, so centering on them would let a V's wide tilted throws drag the row
+ * off-center relative to the crankshaft it is built on. The crankshaft is the
+ * engine's spine, and it is what should line up.
+ *
+ * Slots are evenly spaced, so that span is simply `(slots - 1) * spacing`. A
+ * single-slot row — a single-cylinder view, or a one-cylinder engine — has a
+ * zero-width span and puts its one crank center straight on the line, so the
+ * degenerate case needs no special handling and nothing is ever divided by the
+ * slot count.
+ */
+function firstCenterForCrankSpanCenteredAt(
+  row: MeasuredRow,
+  centerXMm: number,
+): number {
+  return centerXMm - ((row.throws.length - 1) * row.spacingMm) / 2;
+}
+
 /** A row of cylinders placed on the stage, with its world extents. */
 interface PlacedRow {
   cylinders: PlacedCylinder[];
@@ -1004,9 +1027,16 @@ function placeSideBySide(
  * Two multi-cylinder engines placed left to right force the camera to fit a
  * dozen cylinders across, shrinking both, and they push cylinder 1 of A as far
  * as possible from cylinder 1 of B — the comparison a viewer actually wants.
- * Stacking fixes both, and the two rows are anchored to each other at their
- * **slot-0 crank center**, so the comparison has a clear left-hand datum: the
- * engines start together, cylinder 1 over cylinder 1.
+ * Stacking fixes both.
+ *
+ * **Each row is centered on the stack's own center line** by the midpoint of
+ * its crank span — first crank center to last — so two rows of unequal length
+ * sit squarely one above the other. An earlier version anchored both rows at
+ * their slot-0 crank center instead, for a left-hand cylinder-1-over-cylinder-1
+ * datum; with unequal row lengths that left the shorter row visibly trailing
+ * off to one side of the frame, and the balanced composition is worth more than
+ * the datum. See `firstCenterForCrankSpanCenteredAt` for why the span is
+ * measured from crank centers rather than from the drawn bounds.
  *
  * **Each row keeps its own slot spacing** — exactly the one `measureRow`
  * derived from that engine's own throws, and exactly the one it would have on
@@ -1038,16 +1068,12 @@ function placeStacked(
   rowB: MeasuredRow,
   showLabels: boolean,
 ): StagePlacement {
-  // Shared slot-0 crank center, chosen so the union of the two rows is
-  // centered on x = 0 — the same centering the side-by-side pair gets. Each
-  // row reaches out from that shared center by its own extents, measured at
-  // its own spacing.
-  const unionLeft = Math.min(rowA.leftReachMm, rowB.leftReachMm);
-  const unionRight = Math.max(
-    rowA.leftReachMm + rowA.widthMm,
-    rowB.leftReachMm + rowB.widthMm,
-  );
-  const firstCenterXMm = -(unionLeft + unionRight) / 2;
+  // Each row is centered on the stack's own center line, x = 0, by the
+  // midpoint of its crank span — never anchored to the other row. Rows of
+  // unequal length then sit squarely one above the other instead of the
+  // shorter one trailing off to one side.
+  const firstCenterXA = firstCenterForCrankSpanCenteredAt(rowA, 0);
+  const firstCenterXB = firstCenterForCrankSpanCenteredAt(rowB, 0);
 
   const heightA = rowA.maxYMm - rowA.minYMm;
   const heightB = rowB.maxYMm - rowB.minYMm;
@@ -1064,8 +1090,8 @@ function placeStacked(
   // engine A's own label needs.
   const centerYB = rowA.minYMm - verticalGap - labelReserve - rowB.maxYMm;
 
-  const placedA = placeRow(rowA, firstCenterXMm + rowA.leftReachMm, 0);
-  const placedB = placeRow(rowB, firstCenterXMm + rowB.leftReachMm, centerYB);
+  const placedA = placeRow(rowA, firstCenterXA + rowA.leftReachMm, 0);
+  const placedB = placeRow(rowB, firstCenterXB + rowB.leftReachMm, centerYB);
 
   const content: SceneBounds = {
     minX: Math.min(placedA.bounds.minX, placedB.bounds.minX),

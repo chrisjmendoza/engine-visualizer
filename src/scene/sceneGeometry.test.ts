@@ -15,7 +15,11 @@ import { calculateMechanismState } from "../engine/kinematics";
 import type { CrankMechanismConfig } from "../engine/types";
 import { ENGINE_PRESETS } from "../engine/presets";
 import { CUSTOM_ENGINE_LABEL } from "./mechanismLabels";
-import { createEngineLayout, sharesCrankpin } from "../engine/engineLayout";
+import {
+  ENGINE_LAYOUT_IDS,
+  createEngineLayout,
+  sharesCrankpin,
+} from "../engine/engineLayout";
 import type { EngineLayoutId } from "../engine/engineLayout";
 import {
   COMPARISON_GAP_FRACTION,
@@ -834,16 +838,21 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
     ).toBe("single");
   });
 
-  it("anchors the stacked rows to each other at their first throw", () => {
+  it("centers each stacked row on the midpoint of its own crank span", () => {
     const layout = deriveLayout(LS7, B6_1_6, false, "v8-cross", "inline-6");
     const a = throwSlots(layout.primary);
     const b = throwSlots(layout.secondary!);
 
     expect(a).toHaveLength(4);
     expect(b).toHaveLength(6);
-    // One shared left-hand datum: throw 0 over throw 0. Beyond it the two
-    // rows run at their own spacings and no longer share columns (§24a).
-    expect(a[0].offsetXMm).toBeCloseTo(b[0].offsetXMm, 9);
+    // Rows of unequal length share the stack's center line, not a left-hand
+    // datum: each one's crank span — first crank center to last — is centered
+    // on x = 0 (§24a). Beyond that the two rows run at their own spacings.
+    for (const slots of [a, b]) {
+      expect(
+        (slots[0].offsetXMm + slots[slots.length - 1].offsetXMm) / 2,
+      ).toBeCloseTo(0, 9);
+    }
     // Each engine keeps its own crankshaft order left to right, evenly spaced.
     for (const slots of [a, b]) {
       const spacing = slots[1].offsetXMm - slots[0].offsetXMm;
@@ -1036,11 +1045,18 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
     // The reported regression: a narrow inline row against a wide V one.
     ["inline-6", "v8-cross", false, false],
     ["v8-cross", "inline-6", false, false],
+    // The owner's real comparison: the two GT-R engines.
+    ["inline-6", "v6-60", false, false],
+    ["v6-60", "inline-6", false, false],
     // Matched architectures — the case that used to be the rule's whole point.
     ["inline-4", "inline-4", false, false],
     // Two paired layouts of very different slot widths.
     ["flat-4", "v12-60", false, false],
     ["v12-60", "flat-4", false, false],
+    // A one-cylinder engine against a multi-cylinder one: the degenerate crank
+    // span, whose first and last crank center are the same point.
+    ["single", "inline-6", false, false],
+    ["v12-60", "single", false, false],
     // One cylinder against a whole engine, both ways round.
     ["v8-cross", "inline-6", true, false],
     ["inline-6", "v8-cross", false, true],
@@ -1055,6 +1071,17 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
    * Asserts that a placed row is exactly the row that engine would draw alone,
    * translated — never re-spaced. This is the whole of the fix stated once:
    * the stage may move a row, but it may not stretch it.
+   *
+   * The translation is the property being asserted; the expected *offset* is
+   * checked alongside it, and it is now **zero**. A lone row is centered on
+   * x = 0 by its bounds and a stacked row by its crank span, and for every
+   * layout in the roster those two coincide: each slot of a row is measured
+   * from the same proportions and the same set of bank rotations (a paired
+   * layout's slot is always one bank-0 plus one bank-1 cylinder), so every
+   * slot's footprint is the same box and is symmetric about its own crank
+   * center. A stacked row therefore lands exactly where that engine's lone row
+   * would, which is a stronger guarantee than translation alone — but only
+   * translation is the rule, so both are asserted.
    */
   function expectPureTranslationOfLoneRow(
     placed: PlacedEngine,
@@ -1070,6 +1097,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
 
     expect(staged).toHaveLength(alone.length);
     const shift = staged[0] - alone[0];
+    expect(shift).toBeCloseTo(0, 9);
     for (let i = 0; i < alone.length; i += 1) {
       expect(staged[i]).toBeCloseTo(alone[i] + shift, 9);
     }
@@ -1164,8 +1192,13 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
     expect(a[1] - a[0]).toBeCloseTo(slotSpacingAlone(LS7, "inline-4"), 9);
     expect(b[1] - b[0]).toBeCloseTo(slotSpacingAlone(B6_1_6, "inline-4"), 9);
     expect(b[1] - b[0]).toBeLessThan(a[1] - a[0]);
-    // Still anchored together at the first throw.
-    expect(a[0]).toBeCloseTo(b[0], 9);
+    // Equal slot counts, unequal pitch: the two rows no longer share a first
+    // throw, they share a center line — each row's crank span is centered on
+    // x = 0, so the tighter row sits symmetrically inside the wider one.
+    expect((a[0] + a[a.length - 1]) / 2).toBeCloseTo(0, 9);
+    expect((b[0] + b[b.length - 1]) / 2).toBeCloseTo(0, 9);
+    expect(b[0]).toBeGreaterThan(a[0]);
+    expect(b[b.length - 1]).toBeLessThan(a[a.length - 1]);
   });
 
   it("leaves clear space between throws of a row and between the two rows", () => {
@@ -1335,6 +1368,289 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
           );
         }
       }
+    }
+  });
+});
+
+describe("deriveLayout — each stacked row is centered on its crank span (§24a)", () => {
+  /**
+   * The pairings this rule exists for, each written in both orders so neither
+   * engine gets to be the one that happens to be centered.
+   */
+  const CENTERED_PAIRS: Array<[EngineLayoutId, EngineLayoutId]> = [
+    // A narrow inline row against a wide V one — the unequal-length case.
+    ["inline-6", "v8-cross"],
+    ["v8-cross", "inline-6"],
+    // The owner's real comparison: RB26DETT against VR38DETT.
+    ["inline-6", "v6-60"],
+    ["v6-60", "inline-6"],
+    // Two paired layouts of very different lengths.
+    ["flat-4", "v12-60"],
+    ["v12-60", "flat-4"],
+    // A one-cylinder engine against a multi-cylinder one: the degenerate span.
+    ["single", "inline-6"],
+    ["inline-6", "single"],
+  ];
+
+  /** The two GT-R engines the comparison was reported against. */
+  const RB26DETT = ENGINE_PRESETS.find((p) => p.id === "skyline-gtr-rb26dett")!;
+  const VR38DETT = ENGINE_PRESETS.find((p) => p.id === "gtr-r35-vr38dett")!;
+
+  /**
+   * The midpoint of a placed row's crank span: first crank center to last,
+   * read off the placed slots rather than from anything the source published.
+   *
+   * A one-slot row's first and last crank center are the same point, so this
+   * degenerates to that one center with no special case and nothing divided by
+   * the slot count.
+   */
+  function crankSpanCenterXMm(placed: PlacedEngine): number {
+    const slots = throwSlots(placed);
+    return (slots[0].offsetXMm + slots[slots.length - 1].offsetXMm) / 2;
+  }
+
+  it("puts both rows' crank-span midpoints on the stack's center line", () => {
+    for (const [idA, idB] of CENTERED_PAIRS) {
+      for (const [, geometry] of GEOMETRIES) {
+        const configB = configFor(geometry, 10.5);
+        const layout = deriveLayout(LS7, configB, false, idA, idB);
+
+        expect(layout.arrangement).toBe("stacked");
+        expect(crankSpanCenterXMm(layout.primary)).toBeCloseTo(0, 9);
+        expect(crankSpanCenterXMm(layout.secondary!)).toBeCloseTo(0, 9);
+      }
+    }
+  });
+
+  it("centers the two GT-R engines against each other", () => {
+    // The comparison the change was made for: a 2.6 inline-6 stacked with a
+    // 3.8 60° V6, whose rows are six narrow slots and three wide ones.
+    const layout = deriveLayout(
+      RB26DETT.config,
+      VR38DETT.config,
+      false,
+      "inline-6",
+      "v6-60",
+    );
+    const inline = throwSlots(layout.primary);
+    const vee = throwSlots(layout.secondary!);
+
+    expect(layout.arrangement).toBe("stacked");
+    expect(inline).toHaveLength(6);
+    expect(vee).toHaveLength(3);
+    expect(crankSpanCenterXMm(layout.primary)).toBeCloseTo(0, 9);
+    expect(crankSpanCenterXMm(layout.secondary!)).toBeCloseTo(0, 9);
+
+    // The shorter row is the inline-6 here — six narrow cylinders span less
+    // than three wide V throws — and it now sits symmetrically inside the V's
+    // row rather than trailing off its left end.
+    const a = worldBounds(layout.primary);
+    const b = worldBounds(layout.secondary!);
+    expect(a.maxX - a.minX).toBeLessThan(b.maxX - b.minX);
+    expect(a.minX).toBeGreaterThan(b.minX);
+    expect(a.maxX).toBeLessThan(b.maxX);
+    expect(b.minX - a.minX).toBeCloseTo(a.maxX - b.maxX, 9);
+  });
+
+  it("centers a single-cylinder row on its own crank center", () => {
+    // A degenerate crank span: one slot, so first and last crank center are
+    // the same point and the row simply sits on the center line. Covered both
+    // as a one-cylinder architecture and as a single-cylinder view of a V8.
+    for (const [id, view] of [
+      ["single", false],
+      ["v8-cross", true],
+    ] as const) {
+      for (const [primaryFirst, layoutFor] of [
+        [true, () => deriveLayout(LS7, B6_1_6, false, id, "inline-6", view)],
+        [
+          false,
+          () => deriveLayout(LS7, B6_1_6, false, "inline-6", id, false, view),
+        ],
+      ] as const) {
+        const layout = layoutFor();
+        const lone = primaryFirst ? layout.primary : layout.secondary!;
+
+        expect(layout.arrangement).toBe("stacked");
+        expect(lone.cylinders).toHaveLength(1);
+        expect(lone.cylinders[0].offsetXMm).toBeCloseTo(0, 9);
+        expect(Number.isFinite(lone.cylinders[0].offsetXMm)).toBe(true);
+      }
+    }
+  });
+
+  /**
+   * The superseded anchor, written out independently: both rows placed from
+   * one shared slot-0 crank center, chosen so the union is centered on x = 0.
+   * Kept only to measure what centering bought — it is never what the source
+   * does now.
+   */
+  function crankSpanCenterAtSharedFirstThrow(
+    configA: CrankMechanismConfig,
+    idA: EngineLayoutId,
+    configB: CrankMechanismConfig,
+    idB: EngineLayoutId,
+  ): [number, number] {
+    const rows = [
+      [configA, idA],
+      [configB, idB],
+    ].map(([config, id]) => {
+      const placed = deriveLayout(
+        config as CrankMechanismConfig,
+        null,
+        false,
+        id as EngineLayoutId,
+      ).primary;
+      const slots = throwSlots(placed);
+      const world = worldBounds(placed);
+      // Relative to that row's own slot-0 crank center.
+      return {
+        leftReach: world.minX - slots[0].offsetXMm,
+        rightReach: world.maxX - slots[0].offsetXMm,
+        spanCenter:
+          (slots[slots.length - 1].offsetXMm - slots[0].offsetXMm) / 2,
+      };
+    });
+    const firstCenter =
+      -(
+        Math.min(...rows.map((r) => r.leftReach)) +
+        Math.max(...rows.map((r) => r.rightReach))
+      ) / 2;
+
+    return [firstCenter + rows[0].spanCenter, firstCenter + rows[1].spanCenter];
+  }
+
+  it("pulls the shorter row back onto the center line the old anchor left it off", () => {
+    for (const [configA, idA, configB, idB] of [
+      [RB26DETT.config, "inline-6", VR38DETT.config, "v6-60"],
+      [LS7, "inline-6", LS7, "v8-cross"],
+    ] as const) {
+      const before = crankSpanCenterAtSharedFirstThrow(
+        configA,
+        idA,
+        configB,
+        idB,
+      );
+      const layout = deriveLayout(configA, configB, false, idA, idB);
+      const after = [
+        crankSpanCenterXMm(layout.primary),
+        crankSpanCenterXMm(layout.secondary!),
+      ];
+
+      // The premise: under the superseded anchor exactly one of the two rows
+      // — the shorter — sat measurably off the frame's center line.
+      const worstBefore = Math.max(...before.map(Math.abs));
+      expect(worstBefore).toBeGreaterThan(20);
+      // And now neither does.
+      expect(Math.max(...after.map(Math.abs))).toBeLessThan(1e-9);
+    }
+  });
+
+  it("keeps the shared zoom: centering moves rows, it never rescales one", () => {
+    for (const [idA, idB] of CENTERED_PAIRS) {
+      const layout = deriveLayout(LS7, B6_1_6, false, idA, idB);
+
+      expect(layout.primary.proportions).toEqual(deriveProportions(LS7));
+      expect(layout.secondary!.proportions).toEqual(deriveProportions(B6_1_6));
+    }
+  });
+
+  it("frames the centered union exactly, and keeps both labels under their own row", () => {
+    for (const [idA, idB] of CENTERED_PAIRS) {
+      const layout = deriveLayout(
+        RB26DETT.config,
+        VR38DETT.config,
+        true,
+        idA,
+        idB,
+      );
+      const a = worldBounds(layout.primary);
+      const b = worldBounds(layout.secondary!);
+      const labelA = layout.primary.label!;
+      const labelB = layout.secondary!.label!;
+
+      // Framing is recomputed from where the rows actually ended up.
+      expect(layout.bounds.minX).toBeCloseTo(Math.min(a.minX, b.minX), 9);
+      expect(layout.bounds.maxX).toBeCloseTo(Math.max(a.maxX, b.maxX), 9);
+      expect(layout.bounds.maxY).toBeCloseTo(a.maxY, 9);
+      expect(layout.bounds.minY).toBeLessThan(b.minY);
+      expect((layout.bounds.minX + layout.bounds.maxX) / 2).toBeCloseTo(0, 9);
+
+      // Each label is centered under its own engine, and inside the frame.
+      expect(labelA.anchorXMm).toBeCloseTo((a.minX + a.maxX) / 2, 9);
+      expect(labelB.anchorXMm).toBeCloseTo((b.minX + b.maxX) / 2, 9);
+      for (const label of [labelA, labelB]) {
+        expect(label.anchorXMm).toBeGreaterThanOrEqual(layout.bounds.minX);
+        expect(label.anchorXMm).toBeLessThanOrEqual(layout.bounds.maxX);
+        expect(label.anchorYMm).toBeGreaterThan(layout.bounds.minY);
+        expect(label.anchorYMm).toBeLessThan(layout.bounds.maxY);
+      }
+      // A's label still sits in the gap between the engines, B's below.
+      expect(labelA.anchorYMm).toBeLessThan(a.minY);
+      expect(labelA.anchorYMm).toBeGreaterThan(b.maxY);
+      expect(labelB.anchorYMm).toBeLessThan(b.minY);
+    }
+  });
+
+  it("leaves the single-engine and side-by-side paths exactly where they were", () => {
+    // Only `placeStacked` changed, so nothing that does not go through it may
+    // move at all. Both other paths are checked against their arithmetic
+    // written out independently here, not against anything the source
+    // publishes: a lone row's left edge is `-width / 2`, and a side-by-side
+    // pair's two left edges come from the unchanged comparison gap.
+    for (const id of ENGINE_LAYOUT_IDS) {
+      for (const singleCylinderView of [true, false]) {
+        const lone = deriveLayout(
+          LS7,
+          null,
+          false,
+          id,
+          "single",
+          singleCylinderView,
+        );
+        expect(lone.arrangement).toBe("single");
+        expect(lone.secondary).toBeNull();
+
+        const slots = throwSlots(lone.primary);
+        const spacing =
+          slots.length > 1 ? slots[1].offsetXMm - slots[0].offsetXMm : 0;
+        const leftReach = Math.min(
+          ...slots.map((s, i) => i * spacing + s.bounds.minX),
+        );
+        const width =
+          Math.max(...slots.map((s, i) => i * spacing + s.bounds.maxX)) -
+          leftReach;
+        // Left edge on `-width / 2`, so slot 0's crank center is exactly here.
+        const firstCenterXMm = -width / 2 - leftReach;
+
+        slots.forEach((slot, i) => {
+          expect(slot.offsetXMm).toBeCloseTo(firstCenterXMm + i * spacing, 9);
+          expect(slot.offsetYMm).toBe(0);
+        });
+        expect(lone.bounds).toEqual(lone.primary.bounds);
+      }
+
+      // Both engines showing one cylinder: still side by side, still the
+      // pre-multi-cylinder arithmetic, untouched by the stacked rule.
+      const pair = deriveLayout(LS7, B6_1_6, false, id, id, true, true);
+      const boundsA = deriveProportions(LS7).bounds;
+      const boundsB = deriveProportions(B6_1_6).bounds;
+      const widthA = boundsA.maxX - boundsA.minX;
+      const widthB = boundsB.maxX - boundsB.minX;
+      const gap = (COMPARISON_GAP_FRACTION * (widthA + widthB)) / 2;
+      const leftA = -(widthA + gap + widthB) / 2;
+      const leftB = leftA + widthA + gap;
+
+      expect(pair.arrangement).toBe("side-by-side");
+      expect(pair.primary.cylinders[0].offsetXMm).toBeCloseTo(
+        leftA - boundsA.minX,
+        9,
+      );
+      expect(pair.secondary!.cylinders[0].offsetXMm).toBeCloseTo(
+        leftB - boundsB.minX,
+        9,
+      );
+      expect(pair.primary.cylinders[0].offsetYMm).toBe(0);
+      expect(pair.secondary!.cylinders[0].offsetYMm).toBe(0);
     }
   });
 });
@@ -1947,8 +2263,8 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
   });
 
   it("keeps the stacked comparison arranged in throw rows", () => {
-    // A V8 over a flat-6: four slots against three, anchored at one shared
-    // throw-0 crank center, each row at its own spacing (§24a).
+    // A V8 over a flat-6: four slots against three, each row at its own
+    // spacing and centered on its own crank span (§24a).
     const layout = deriveLayout(LS7, B6_1_6, false, "v8-cross", "flat-6");
     const a = throwSlots(layout.primary);
     const b = throwSlots(layout.secondary!);
@@ -1956,7 +2272,11 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
     expect(layout.arrangement).toBe("stacked");
     expect(a).toHaveLength(4);
     expect(b).toHaveLength(3);
-    expect(a[0].offsetXMm).toBeCloseTo(b[0].offsetXMm, 9);
+    for (const slots of [a, b]) {
+      expect(
+        (slots[0].offsetXMm + slots[slots.length - 1].offsetXMm) / 2,
+      ).toBeCloseTo(0, 9);
+    }
 
     // Both rows here are paired layouts of different bore, so their natural
     // spacings genuinely differ and neither is stretched to the other's.
