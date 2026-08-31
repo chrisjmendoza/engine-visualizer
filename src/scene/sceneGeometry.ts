@@ -452,7 +452,8 @@ export interface PlacedCylinder extends CylinderDefinition {
   /**
    * Y of this cylinder's crankshaft center on the stage, scene millimeters.
    * Always 0 except for the lower engine of a stacked comparison (§24a), which
-   * is what lets two multi-cylinder engines be compared column by column.
+   * is what lets two multi-cylinder engines be compared one above the other
+   * rather than shrunk to fit side by side.
    */
   offsetYMm: number;
   /**
@@ -729,12 +730,12 @@ interface RowExtents {
 }
 
 /**
- * A row's horizontal extents at an arbitrary slot spacing, relative to slot 0's
+ * A row's horizontal extents at its slot spacing, relative to slot 0's
  * crankshaft center.
  *
- * Spacing is normally the row's own (`MeasuredRow.spacingMm`), but a stacked
- * comparison drives both rows at one shared spacing so corresponding slots line
- * up in columns, and then neither row's own extents apply.
+ * Every row on stage — lone or compared, stacked or side by side — is laid out
+ * at its own `MeasuredRow.spacingMm`, so these extents are computed once in
+ * `measureRow` and are the only ones any placement uses (§24a).
  */
 function rowExtentsAt(
   throws: readonly MeasuredThrow[],
@@ -897,19 +898,13 @@ interface PlacedRow {
  * spacing further right. Both cylinders of a throw pair take that one X, which
  * is what draws them around a single crank center.
  *
- * `spacingMm` is normally the row's own; a stacked comparison passes one
- * shared spacing for both rows so that slot *i* of each engine lands on the
- * same X (see `deriveLayout`), and `extents` must then be measured at that
- * spacing rather than read off the row.
+ * The spacing is always the row's own — the one `measureRow` derived from this
+ * engine's own throws. Nothing on the stage ever re-spaces a row to suit
+ * another engine (§24a); a stacked comparison only moves rows, never stretches
+ * them.
  */
-function placeRow(
-  row: MeasuredRow,
-  leftXMm: number,
-  spacingMm: number = row.spacingMm,
-  centerYMm = 0,
-  extents: RowExtents = row,
-): PlacedRow {
-  const firstCenterX = leftXMm - extents.leftReachMm;
+function placeRow(row: MeasuredRow, leftXMm: number, centerYMm = 0): PlacedRow {
+  const firstCenterX = leftXMm - row.leftReachMm;
   // Half a rod thickness per step behind the slot's first cylinder: enough to
   // break every coincident face, small enough to leave the depth order of the
   // drawn parts alone. See `PlacedCylinder.offsetZMm`.
@@ -923,7 +918,7 @@ function placeRow(
         bounds: cylinder.bounds,
         drawnRotationRad: cylinder.drawnRotationRad,
         drawsCrank: cylinder.drawsCrank,
-        offsetXMm: firstCenterX + throwIndex * spacingMm,
+        offsetXMm: firstCenterX + throwIndex * row.spacingMm,
         offsetYMm: centerYMm,
         // Spelled out rather than multiplied, so the untouched first cylinder
         // of every slot gets a plain +0 and an inline row stays byte-identical.
@@ -933,7 +928,7 @@ function placeRow(
     ),
     bounds: {
       minX: leftXMm,
-      maxX: leftXMm + extents.widthMm,
+      maxX: leftXMm + row.widthMm,
       minY: centerYMm + row.minYMm,
       maxY: centerYMm + row.maxYMm,
     },
@@ -1009,11 +1004,23 @@ function placeSideBySide(
  * Two multi-cylinder engines placed left to right force the camera to fit a
  * dozen cylinders across, shrinking both, and they push cylinder 1 of A as far
  * as possible from cylinder 1 of B — the comparison a viewer actually wants.
- * Stacking fixes both: the rows are driven at **one shared slot spacing** (the
- * wider of the two, so neither engine's slots can collide) and share one slot-0
- * crank center, which puts corresponding slots in vertical columns. The columns
- * are throws, not cylinders (§24a), so a V8 stacked over an inline-6 lines its
- * four V units up with the first four of the six.
+ * Stacking fixes both, and the two rows are anchored to each other at their
+ * **slot-0 crank center**, so the comparison has a clear left-hand datum: the
+ * engines start together, cylinder 1 over cylinder 1.
+ *
+ * **Each row keeps its own slot spacing** — exactly the one `measureRow`
+ * derived from that engine's own throws, and exactly the one it would have on
+ * stage alone. An earlier version drove both rows at the wider of the two
+ * spacings so corresponding slots landed in vertical columns, but a V's throw
+ * plane is wide (two tilted cylinders sharing one plane) and an inline
+ * cylinder's is narrow, so an inline-6 compared against a V8 was stretched
+ * across spacing sized for the V's throws and stopped reading as one crankcase.
+ * The alignment that bought was only ever meaningful between engines that share
+ * a layout — throw 4 of a V8 is not the counterpart of cylinder 4 of an
+ * inline-6 — and it comes back for free where it *is* meaningful: two engines
+ * of the same layout and the same bore, stroke and rod measure the same
+ * spacing, so their columns still line up exactly. Rows can no longer collide
+ * either, since every row is spaced by its own widest slot.
  *
  * The zoom is still shared and no engine is ever rescaled (§12.2) — only the
  * axis of arrangement changes, so a big engine still visibly towers over a
@@ -1031,18 +1038,14 @@ function placeStacked(
   rowB: MeasuredRow,
   showLabels: boolean,
 ): StagePlacement {
-  // One spacing for both rows, wide enough for whichever engine needs more
-  // room, so column i of A sits directly above column i of B.
-  const spacingMm = Math.max(rowA.spacingMm, rowB.spacingMm);
-  const extentsA = rowExtentsAt(rowA.throws, spacingMm);
-  const extentsB = rowExtentsAt(rowB.throws, spacingMm);
-
   // Shared slot-0 crank center, chosen so the union of the two rows is
-  // centered on x = 0 — the same centering the side-by-side pair gets.
-  const unionLeft = Math.min(extentsA.leftReachMm, extentsB.leftReachMm);
+  // centered on x = 0 — the same centering the side-by-side pair gets. Each
+  // row reaches out from that shared center by its own extents, measured at
+  // its own spacing.
+  const unionLeft = Math.min(rowA.leftReachMm, rowB.leftReachMm);
   const unionRight = Math.max(
-    extentsA.leftReachMm + extentsA.widthMm,
-    extentsB.leftReachMm + extentsB.widthMm,
+    rowA.leftReachMm + rowA.widthMm,
+    rowB.leftReachMm + rowB.widthMm,
   );
   const firstCenterXMm = -(unionLeft + unionRight) / 2;
 
@@ -1061,20 +1064,8 @@ function placeStacked(
   // engine A's own label needs.
   const centerYB = rowA.minYMm - verticalGap - labelReserve - rowB.maxYMm;
 
-  const placedA = placeRow(
-    rowA,
-    firstCenterXMm + extentsA.leftReachMm,
-    spacingMm,
-    0,
-    extentsA,
-  );
-  const placedB = placeRow(
-    rowB,
-    firstCenterXMm + extentsB.leftReachMm,
-    spacingMm,
-    centerYB,
-    extentsB,
-  );
+  const placedA = placeRow(rowA, firstCenterXMm + rowA.leftReachMm, 0);
+  const placedB = placeRow(rowB, firstCenterXMm + rowB.leftReachMm, centerYB);
 
   const content: SceneBounds = {
     minX: Math.min(placedA.bounds.minX, placedB.bounds.minX),

@@ -306,6 +306,26 @@ function throwSlots(placed: PlacedEngine): ThrowSlot[] {
   return slots;
 }
 
+/**
+ * The slot spacing an engine measures for itself, taken from the one place it
+ * is unambiguous: that engine alone on the stage, with no comparison at all.
+ *
+ * This is the yardstick the stacked comparison must now match (§24a) — each
+ * row is laid out at exactly the spacing it would have alone, never stretched
+ * to a partner's.
+ */
+function slotSpacingAlone(
+  config: CrankMechanismConfig,
+  id: EngineLayoutId,
+  singleCylinderView = false,
+): number {
+  const slots = throwSlots(
+    deriveLayout(config, null, false, id, "single", singleCylinderView).primary,
+  );
+  expect(slots.length).toBeGreaterThan(1);
+  return slots[1].offsetXMm - slots[0].offsetXMm;
+}
+
 describe("deriveLayout — single engine", () => {
   it("places one mechanism at the origin and frames its own bounds", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null);
@@ -814,22 +834,26 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
     ).toBe("single");
   });
 
-  it("puts corresponding throws in shared vertical columns when stacked", () => {
+  it("anchors the stacked rows to each other at their first throw", () => {
     const layout = deriveLayout(LS7, B6_1_6, false, "v8-cross", "inline-6");
-    // Columns are throws, not cylinders (§24a): the V8's four V-shaped units
-    // line up with the first four of the inline-6's six cylinders.
     const a = throwSlots(layout.primary);
     const b = throwSlots(layout.secondary!);
 
     expect(a).toHaveLength(4);
     expect(b).toHaveLength(6);
-    for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
-      expect(a[i].offsetXMm).toBeCloseTo(b[i].offsetXMm, 9);
-    }
-    // The columns are evenly spaced, and each engine keeps its own crankshaft
-    // order left to right.
-    for (let i = 1; i < a.length; i += 1) {
-      expect(a[i].offsetXMm).toBeGreaterThan(a[i - 1].offsetXMm);
+    // One shared left-hand datum: throw 0 over throw 0. Beyond it the two
+    // rows run at their own spacings and no longer share columns (§24a).
+    expect(a[0].offsetXMm).toBeCloseTo(b[0].offsetXMm, 9);
+    // Each engine keeps its own crankshaft order left to right, evenly spaced.
+    for (const slots of [a, b]) {
+      const spacing = slots[1].offsetXMm - slots[0].offsetXMm;
+      expect(spacing).toBeGreaterThan(0);
+      for (let i = 1; i < slots.length; i += 1) {
+        expect(slots[i].offsetXMm - slots[i - 1].offsetXMm).toBeCloseTo(
+          spacing,
+          9,
+        );
+      }
     }
   });
 
@@ -995,6 +1019,321 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
         );
         expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 10);
         expect(layout.bounds.maxY).toBeCloseTo(world.maxY, 10);
+      }
+    }
+  });
+});
+
+describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () => {
+  /**
+   * The comparisons this rule exists for. Each entry is the pair of
+   * architectures and the two single-cylinder-view flags, so a lone mechanism
+   * compared against a whole engine is covered by the same table.
+   */
+  const STACKED_PAIRS: Array<
+    [EngineLayoutId, EngineLayoutId, boolean, boolean]
+  > = [
+    // The reported regression: a narrow inline row against a wide V one.
+    ["inline-6", "v8-cross", false, false],
+    ["v8-cross", "inline-6", false, false],
+    // Matched architectures — the case that used to be the rule's whole point.
+    ["inline-4", "inline-4", false, false],
+    // Two paired layouts of very different slot widths.
+    ["flat-4", "v12-60", false, false],
+    ["v12-60", "flat-4", false, false],
+    // One cylinder against a whole engine, both ways round.
+    ["v8-cross", "inline-6", true, false],
+    ["inline-6", "v8-cross", false, true],
+  ];
+
+  /** Slot X positions of a placed row, left to right. */
+  function slotXs(placed: PlacedEngine): number[] {
+    return throwSlots(placed).map((s) => s.offsetXMm);
+  }
+
+  /**
+   * Asserts that a placed row is exactly the row that engine would draw alone,
+   * translated — never re-spaced. This is the whole of the fix stated once:
+   * the stage may move a row, but it may not stretch it.
+   */
+  function expectPureTranslationOfLoneRow(
+    placed: PlacedEngine,
+    config: CrankMechanismConfig,
+    id: EngineLayoutId,
+    singleCylinderView: boolean,
+  ) {
+    const alone = slotXs(
+      deriveLayout(config, null, false, id, "single", singleCylinderView)
+        .primary,
+    );
+    const staged = slotXs(placed);
+
+    expect(staged).toHaveLength(alone.length);
+    const shift = staged[0] - alone[0];
+    for (let i = 0; i < alone.length; i += 1) {
+      expect(staged[i]).toBeCloseTo(alone[i] + shift, 9);
+    }
+  }
+
+  it("keeps an inline-6 at its own cylinder pitch beside a V8", () => {
+    // The regression this change fixes: the inline-6's six cylinders used to
+    // be spread across spacing sized for the V8's much wider throw planes.
+    const own = slotSpacingAlone(LS7, "inline-6");
+    const v8Own = slotSpacingAlone(LS7, "v8-cross");
+    // The premise — the V8's throw plane really is much the wider of the two,
+    // so a shared spacing would have stretched the inline row substantially.
+    expect(v8Own).toBeGreaterThan(2 * own);
+
+    for (const [a, b] of [
+      ["inline-6", "v8-cross"],
+      ["v8-cross", "inline-6"],
+    ] as const) {
+      const layout = deriveLayout(LS7, LS7, false, a, b);
+      expect(layout.arrangement).toBe("stacked");
+
+      const inlineRow = a === "inline-6" ? layout.primary : layout.secondary!;
+      const vRow = a === "inline-6" ? layout.secondary! : layout.primary;
+      const inlineSlots = slotXs(inlineRow);
+      const vSlots = slotXs(vRow);
+
+      expect(inlineSlots[1] - inlineSlots[0]).toBeCloseTo(own, 9);
+      expect(vSlots[1] - vSlots[0]).toBeCloseTo(v8Own, 9);
+      // And the row really is shorter than it used to be: six cylinders at
+      // their own pitch cannot span what six at the V8's pitch would.
+      expect(inlineRow.bounds.maxX - inlineRow.bounds.minX).toBeLessThan(
+        5 * v8Own,
+      );
+    }
+  });
+
+  it("lays every stacked row out exactly as that engine would alone", () => {
+    for (const [idA, idB, viewA, viewB] of STACKED_PAIRS) {
+      for (const [, geometry] of GEOMETRIES) {
+        const configB = configFor(geometry, 10.5);
+        const layout = deriveLayout(
+          LS7,
+          configB,
+          false,
+          idA,
+          idB,
+          viewA,
+          viewB,
+        );
+
+        expect(layout.arrangement).toBe("stacked");
+        expectPureTranslationOfLoneRow(layout.primary, LS7, idA, viewA);
+        expectPureTranslationOfLoneRow(layout.secondary!, configB, idB, viewB);
+      }
+    }
+  });
+
+  it("still shares one spacing, and one set of columns, for matched engines", () => {
+    // The desirable consequence of the rule: two engines of the same layout
+    // and the same dimensions measure the same spacing for themselves, so
+    // their columns line up exactly as the old shared spacing made them.
+    for (const id of ["inline-4", "inline-6", "v8-cross", "flat-4"] as const) {
+      const layout = deriveLayout(LS7, LS7, false, id, id);
+      const a = slotXs(layout.primary);
+      const b = slotXs(layout.secondary!);
+
+      expect(a).toHaveLength(b.length);
+      for (let i = 0; i < a.length; i += 1) {
+        expect(a[i]).toBeCloseTo(b[i], 9);
+      }
+      // Both rows are also identical to that engine's lone row, and the pair
+      // is centered, so the two sit squarely one above the other.
+      expect(layout.primary.bounds.minX).toBeCloseTo(
+        layout.secondary!.bounds.minX,
+        9,
+      );
+      expect(layout.primary.bounds.maxX).toBeCloseTo(
+        layout.secondary!.bounds.maxX,
+        9,
+      );
+    }
+  });
+
+  it("sizes each row to its own engine when the two differ in size", () => {
+    // Same architecture, different dimensions: spacing is a fraction of the
+    // engine's own size, so the smaller engine draws a tighter row rather
+    // than being stretched to the larger one's pitch.
+    const layout = deriveLayout(LS7, B6_1_6, false, "inline-4", "inline-4");
+    const a = slotXs(layout.primary);
+    const b = slotXs(layout.secondary!);
+
+    expect(a[1] - a[0]).toBeCloseTo(slotSpacingAlone(LS7, "inline-4"), 9);
+    expect(b[1] - b[0]).toBeCloseTo(slotSpacingAlone(B6_1_6, "inline-4"), 9);
+    expect(b[1] - b[0]).toBeLessThan(a[1] - a[0]);
+    // Still anchored together at the first throw.
+    expect(a[0]).toBeCloseTo(b[0], 9);
+  });
+
+  it("leaves clear space between throws of a row and between the two rows", () => {
+    for (const [idA, idB, viewA, viewB] of STACKED_PAIRS) {
+      for (const [, geometry] of GEOMETRIES) {
+        const configB = configFor(geometry, INPUT_RANGES.compressionRatio.max);
+        const layout = deriveLayout(
+          LS7,
+          configB,
+          false,
+          idA,
+          idB,
+          viewA,
+          viewB,
+        );
+
+        // Within each row, no slot's footprint may touch its neighbour's.
+        for (const placed of [layout.primary, layout.secondary!]) {
+          const slots = throwSlots(placed);
+          for (let i = 1; i < slots.length; i += 1) {
+            const gap =
+              slots[i].offsetXMm +
+              slots[i].bounds.minX -
+              (slots[i - 1].offsetXMm + slots[i - 1].bounds.maxX);
+            expect(gap).toBeGreaterThan(0);
+          }
+        }
+
+        // And nothing drawn for A may touch anything drawn for B.
+        const a = worldBounds(layout.primary);
+        const b = worldBounds(layout.secondary!);
+        expect(b.maxY).toBeLessThan(a.minY);
+      }
+    }
+  });
+
+  it("frames the union of the two rows exactly, centered on x = 0", () => {
+    for (const [idA, idB, viewA, viewB] of STACKED_PAIRS) {
+      const layout = deriveLayout(LS7, B6_1_6, false, idA, idB, viewA, viewB);
+      const a = worldBounds(layout.primary);
+      const b = worldBounds(layout.secondary!);
+
+      expect(layout.bounds.minX).toBeCloseTo(Math.min(a.minX, b.minX), 9);
+      expect(layout.bounds.maxX).toBeCloseTo(Math.max(a.maxX, b.maxX), 9);
+      expect(layout.bounds.minY).toBeCloseTo(b.minY, 9);
+      expect(layout.bounds.maxY).toBeCloseTo(a.maxY, 9);
+      expect((layout.bounds.minX + layout.bounds.maxX) / 2).toBeCloseTo(0, 9);
+
+      // Each engine's published row bounds still describe its own cylinders.
+      expect(layout.primary.bounds.minX).toBeCloseTo(a.minX, 9);
+      expect(layout.primary.bounds.maxX).toBeCloseTo(a.maxX, 9);
+      expect(layout.secondary!.bounds.minX).toBeCloseTo(b.minX, 9);
+      expect(layout.secondary!.bounds.maxX).toBeCloseTo(b.maxX, 9);
+    }
+  });
+
+  /**
+   * The superseded rule, written out independently: both rows driven at the
+   * wider of the two spacings, anchored at one slot-0 crank center. Kept only
+   * to measure what the change bought — it is never what the source does now.
+   */
+  function unionWidthAtSharedSpacing(
+    configA: CrankMechanismConfig,
+    idA: EngineLayoutId,
+    configB: CrankMechanismConfig,
+    idB: EngineLayoutId,
+  ): number {
+    const rows = [
+      throwSlots(deriveLayout(configA, null, false, idA).primary),
+      throwSlots(deriveLayout(configB, null, false, idB).primary),
+    ];
+    const spacing = Math.max(
+      ...rows.map((slots) => slots[1].offsetXMm - slots[0].offsetXMm),
+    );
+    const reaches = rows.map((slots) => ({
+      left: Math.min(...slots.map((s, i) => i * spacing + s.bounds.minX)),
+      right: Math.max(...slots.map((s, i) => i * spacing + s.bounds.maxX)),
+    }));
+
+    return (
+      Math.max(...reaches.map((r) => r.right)) -
+      Math.min(...reaches.map((r) => r.left))
+    );
+  }
+
+  it("frames a mismatched pair tighter than the shared spacing did", () => {
+    // The other half of the payoff: with neither row stretched, the union the
+    // one shared zoom has to fit is narrower, so both engines are drawn
+    // larger. Matched engines are unaffected — their spacings were already
+    // equal — so the union comes out identical there.
+    const widthOf = (b: SceneBounds) => b.maxX - b.minX;
+
+    for (const [idA, idB] of [
+      ["inline-6", "v8-cross"],
+      ["v8-cross", "inline-6"],
+      ["flat-4", "v12-60"],
+    ] as const) {
+      const layout = deriveLayout(LS7, B6_1_6, false, idA, idB);
+      expect(widthOf(layout.bounds)).toBeLessThan(
+        unionWidthAtSharedSpacing(LS7, idA, B6_1_6, idB),
+      );
+    }
+
+    for (const id of ["inline-4", "v8-cross"] as const) {
+      const layout = deriveLayout(LS7, LS7, false, id, id);
+      expect(widthOf(layout.bounds)).toBeCloseTo(
+        unionWidthAtSharedSpacing(LS7, id, LS7, id),
+        9,
+      );
+    }
+  });
+
+  it("leaves every single-engine layout exactly as it was", () => {
+    // Nothing outside the stacked path may move. A lone row is still spaced by
+    // its own widest slot, centered on x = 0, and framed exactly — the rule
+    // recomputed here from the placed slots rather than read off the source.
+    for (const id of [
+      "single",
+      "inline-3",
+      "inline-4",
+      "inline-5",
+      "inline-6",
+      "v6-60",
+      "v6-90-odd",
+      "v8-cross",
+      "v8-flat",
+      "v10-72",
+      "v12-60",
+      "flat-4",
+      "flat-6",
+    ] as const) {
+      for (const singleCylinderView of [true, false]) {
+        for (const [, geometry] of GEOMETRIES) {
+          const config = configFor(geometry, 10.5);
+          const layout = deriveLayout(
+            config,
+            null,
+            false,
+            id,
+            "single",
+            singleCylinderView,
+          );
+          const slots = throwSlots(layout.primary);
+          const world = worldBounds(layout.primary);
+
+          expect(layout.secondary).toBeNull();
+          expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 9);
+          expect(layout.bounds).toEqual(layout.primary.bounds);
+          expect(layout.primary.bounds.minX).toBeCloseTo(world.minX, 9);
+          expect(layout.primary.bounds.maxX).toBeCloseTo(world.maxX, 9);
+
+          if (slots.length < 2) {
+            continue;
+          }
+          const expected =
+            (Math.max(...slots.map((s) => s.bounds.maxX)) +
+              Math.max(...slots.map((s) => -s.bounds.minX))) *
+            (1 + INLINE_GAP_FRACTION);
+          for (let i = 1; i < slots.length; i += 1) {
+            expect(slots[i].offsetXMm - slots[i - 1].offsetXMm).toBeCloseTo(
+              expected,
+              9,
+            );
+          }
+          expect(layout.primary.cylinders.every((c) => c.offsetYMm === 0)).toBe(
+            true,
+          );
+        }
       }
     }
   });
@@ -1607,9 +1946,9 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
     }
   });
 
-  it("keeps the stacked comparison arranged in throw columns", () => {
-    // A V8 over a flat-6: four columns against three, sharing one spacing and
-    // one column-0 crank center, exactly as cylinder columns used to.
+  it("keeps the stacked comparison arranged in throw rows", () => {
+    // A V8 over a flat-6: four slots against three, anchored at one shared
+    // throw-0 crank center, each row at its own spacing (§24a).
     const layout = deriveLayout(LS7, B6_1_6, false, "v8-cross", "flat-6");
     const a = throwSlots(layout.primary);
     const b = throwSlots(layout.secondary!);
@@ -1617,13 +1956,14 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
     expect(layout.arrangement).toBe("stacked");
     expect(a).toHaveLength(4);
     expect(b).toHaveLength(3);
-    for (let i = 0; i < b.length; i += 1) {
-      expect(a[i].offsetXMm).toBeCloseTo(b[i].offsetXMm, 9);
-    }
+    expect(a[0].offsetXMm).toBeCloseTo(b[0].offsetXMm, 9);
 
+    // Both rows here are paired layouts of different bore, so their natural
+    // spacings genuinely differ and neither is stretched to the other's.
     const spacingA = a[1].offsetXMm - a[0].offsetXMm;
     const spacingB = b[1].offsetXMm - b[0].offsetXMm;
-    expect(spacingA).toBeCloseTo(spacingB, 9);
+    expect(spacingA).toBeCloseTo(slotSpacingAlone(LS7, "v8-cross"), 9);
+    expect(spacingB).toBeCloseTo(slotSpacingAlone(B6_1_6, "flat-6"), 9);
 
     // Engine A still sits above engine B, with every cylinder of each row on
     // its own engine's crankshaft height.

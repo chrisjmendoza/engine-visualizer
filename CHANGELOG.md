@@ -8,6 +8,14 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### fix: a stacked row is never re-spaced to suit the other engine
+
+- Comparing an inline-6 against a V engine stretched the inline-6 badly: both rows were forced to one shared slot spacing, the wider of the two, and a V's throw plane is wide because it holds two tilted cylinders. Measured on an inline-6 against a cross-plane V8, the six cylinders were being driven at **3.01×** their natural pitch — far enough apart to stop reading as one crankcase.
+- Each row now keeps its own spacing. The stage may move a row; it may not stretch one, and that is asserted directly: every stacked row is a pure translation of the same engine's lone row, across seven layout pairings and six geometries.
+- **Both engines also get bigger.** The old rule widened the framed union to fit spacing only one engine wanted, so the shared zoom shrank both. On the same pairing the union falls from 3,091 mm to 2,166 mm — a 1.43× zoom gain on every mismatched comparison.
+- Column alignment survives where it means something: two engines of the same layout _and_ the same dimensions still line up exactly. Two same-layout engines of different sizes now drift, which is deliberate — spacing scales with each engine's own size everywhere else in the scene, and forcing the smaller to the larger's pitch is the stretch this fixes.
+- Known trade: with rows of unequal length anchored at their first crank center, the shorter row no longer fills the frame, leaving space at one end. The alternative is centering each row, which would cost the throw-0 datum — cylinder 1 against cylinder 1 being the one correspondence that survives across different architectures. Full suite: 1,215 tests.
+
 ### feat: cylinders light up in their real firing order
 
 - **Red while firing, blue on the exhaust stroke**, per cylinder, under the existing "Four-stroke cycle" option. An inline-6 and a cross-plane V8 now visibly differ in something you could previously only read about: the firing sequence travelling down the engine, at that engine's real intervals.

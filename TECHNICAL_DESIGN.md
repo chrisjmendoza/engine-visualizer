@@ -1056,6 +1056,24 @@ cylinderCycleAngleRad(cyl) = engineCycleAngle − cylinderFiringAngleRad(cyl)   
 
 **Gating.** The existing **"Four-stroke cycle"** preference (`showCycle`) covers both halves of the overlay rather than gaining a second checkbox — same pedagogy, one switch — and its label now names both ("Four-stroke cycle (badge and firing tint)"). With it off the loop hands every cylinder `null` and no material is ever written, so the scene is exactly what it was before the tint existed; switching it off after it has been on restores the declared clearance color. Both are asserted in `chamberTint.test.ts`. The badge continues to describe cylinder 1 only, which is now a division of labor rather than a limitation: the per-cylinder story is told by the scene, which is where a firing order can actually be seen. The single-cylinder view needs no special case — it draws cylinder 0, which tints on its own cycle.
 
+### Amendment — a stacked row is never re-spaced to suit the other engine
+
+_Added 2026-08-31. Supersedes the "one shared cylinder spacing" of the stacked-comparison paragraphs above, and the reference to "the stacked comparison's shared spacing" in the one-plane-per-throw amendment; everything else about stacking stands._
+
+**Each row is laid out at its own slot spacing** — exactly the one `measureRow` derives from that engine's own throws, and exactly the one it would have on stage alone. The stacked comparison may move a row; it may not stretch one.
+
+The superseded rule drove both rows at the wider of the two spacings so corresponding slots landed in vertical columns. The trouble is what a "slot" is worth across architectures: a V's throw plane holds two tilted cylinders and is wide, an inline cylinder's plane is narrow, so an inline-6 compared against a V8 was spread across spacing sized for the V's throws — measured on an LS7-sized pair, 549mm of pitch for a row whose own pitch is 182mm, a **3.0× stretch**. Six cylinders that far apart stop reading as one crankcase, which is what prompted the change. And the column alignment it bought was a false correspondence anyway: throw 4 of a V8 is not the counterpart of cylinder 4 of an inline-6, so the arrangement was paying a real visual cost to align things that are not counterparts.
+
+**The alignment survives exactly where it means something.** Two engines of the same layout and the same bore, stroke, and rod measure the same spacing for themselves, so their columns still line up precisely, for free and without a rule to enforce it. Two engines of the same layout but different dimensions now differ in pitch by their size ratio — the smaller engine draws the tighter row, as it does alone — which is the same "scaled to the engine's own size" principle `INLINE_GAP_FRACTION` already encodes, applied consistently rather than only when an engine is on stage by itself.
+
+**A second, quieter win: the shared zoom.** Because the union the one camera fit has to cover can no longer be widened by a stretched row, it is narrower for every mismatched pair, so both engines are drawn larger. On the LS7-dimensioned inline-6 / V8 comparison the framed union falls from 3091mm to 2166mm — a **1.43× zoom gain**, width-constrained, on top of the un-stretched row.
+
+**What is unchanged.** The two rows are still anchored to each other at their **slot-0 crank center**, so the pair keeps a clear left-hand datum — cylinder 1 over cylinder 1, which is a genuine correspondence between any two engines — and the union is still centered on x = 0. One shared zoom, no mechanism ever rescaled (§12.2). The vertical gap, the label bands, the stacked-vs-side-by-side rule, and the whole single-engine path are all untouched; the last of those is asserted directly, layout by layout and geometry by geometry, in `sceneGeometry.test.ts`.
+
+**The cost, stated plainly.** With unequal row lengths and a shared left datum, the shorter row sits off-center against the longer one: an LS7-dimensioned inline-6 stacked with a V8 spans x ∈ [−910, 173] of a framed union of [−1083, 1083], so its row center sits 368mm left of the frame's and the right third of the stack is empty above or below it. Centering each row on x = 0 instead would balance the composition, but it would break the throw-0 datum — the one correspondence that _is_ real across architectures — and it would also break the same-layout column alignment the rule just recovered, because two rows of unequal length centered on a common axis share no slot at all. The datum is worth more than the symmetry, so the anchor stays.
+
+**In the code.** `placeRow` no longer takes a spacing or an extents override; it always uses `MeasuredRow.spacingMm` and the extents `measureRow` computed at that spacing. `rowExtentsAt` is now called only from `measureRow`. `placeStacked` computes only the shared throw-0 crank center from the two rows' own extents.
+
 ---
 
 ## 25. Key Technical Decisions
