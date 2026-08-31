@@ -780,6 +780,8 @@ The interface will:
 
 The 3D canvas itself will not be the only source of important information.
 
+> **Amendment (2026-08-30):** The textual mechanism state is provided by the calculated-results panel and comparison table, where every live value — crank angle, piston displacement from top dead center, connecting-rod angle — is a labeled row with proper `dl`/`table` semantics. A prose sentence restating those same values was removed: it duplicated the rows, and reflowing it on every readout update made the layout jump during playback. Structured rows serve assistive technology better than the paragraph did, so this requirement remains satisfied.
+
 ---
 
 ## 20. Error Handling
@@ -944,6 +946,37 @@ This model is intentionally deferred. The initial release should prove the reusa
 8. Frame-by-frame animation will not drive full React rerenders.
 9. No backend or persistent storage will be introduced in version 1.
 10. Multi-cylinder layouts will be built by composing the proven single-cylinder mechanism.
+
+---
+
+## 25a. Shareable Links
+
+_Added 2026-08-30, implementing the "shareable engine configurations" goal from §2.2._
+
+Application state is serialized into the URL query string by `src/engine/shareLink.ts`, so a configured comparison can be sent as a link.
+
+**The URL format is a public contract.** Shared links outlive releases, so the format is append-only: new optional parameters may be added, but existing parameters must never be repurposed, removed, or reparsed differently.
+
+| Param   | Meaning                                                | Omitted when  |
+| ------- | ------------------------------------------------------ | ------------- |
+| `a`     | Engine A: a preset id, or `bore-stroke-rod-cr-redline` | never         |
+| `b`     | Engine B; its presence enables comparison mode         | not comparing |
+| `rpm`   | Engine speed                                           | at default    |
+| `u`     | `in` for inch display                                  | millimeters   |
+| `sp`    | Playback speed multiplier                              | at default    |
+| `angle` | Crank angle in degrees; implies paused                 | playing       |
+
+A configuration is written as its preset id when it matches one exactly (`?a=s2000-ap1` stays readable and keeps its meaning if that preset's researched data is later corrected); otherwise as five hyphen-separated numbers in canonical units. The two forms are distinguished by content, since preset ids always contain a letter and numeric configurations never do.
+
+Decoding is deliberately forgiving: unknown, malformed, or out-of-range parameters are ignored rather than throwing, so a truncated or hand-edited link still opens. Every decoded configuration passes `validateConfig`, so no link can push invalid geometry into the simulation.
+
+The live crank angle is included only while paused, making a paused link a link to one exact crank position; while playing it would be stale before anyone opened it.
+
+---
+
+## 25b. Scene Labels
+
+Each rendered mechanism carries a text label naming the matching preset (or "Custom engine"), with an `A`/`B` chip identifying the slot in comparison mode. Labels are DOM text rather than 3D-rendered glyphs, so they need no font download and are available to screen readers, reinforcing §19's rule that the canvas is never the only source of information. They are controlled by the `showLabels` preference, and the space they occupy is reserved in the camera framing only when they are shown.
 
 ---
 

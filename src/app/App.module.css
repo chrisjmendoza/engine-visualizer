@@ -1,0 +1,9 @@
+/* ComparisonToggle and ShareLinkButton sit in one row (each still owns its
+   own spacing/appearance; this just lets them sit side by side and wrap
+   sensibly on narrow screens instead of always stacking full-width). */
+.actionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem;
+}

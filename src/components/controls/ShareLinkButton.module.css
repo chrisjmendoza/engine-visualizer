@@ -1,0 +1,72 @@
+/* This component renders inside App.module.css's `.actionsRow` (a flex
+   row alongside ComparisonToggle), so its own wrapper contributes no box
+   of its own — its children become direct items of that row instead. */
+.container {
+  display: contents;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.4rem 1rem;
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.status {
+  margin: 0;
+  align-self: center;
+  color: var(--color-accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Forced onto its own full-width row within the wrapping flex row above,
+   same trick PresetSelector uses for its brand-vs-preset-grid split. */
+.fallback {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0 0 0.6rem;
+}
+
+.fallbackLabel {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.fallbackInput {
+  min-height: 44px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.fallbackInput:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+@media (min-width: 600px) {
+  .button,
+  .fallback {
+    margin: 0 0 1rem;
+  }
+}

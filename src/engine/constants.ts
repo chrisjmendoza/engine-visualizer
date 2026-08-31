@@ -10,7 +10,9 @@ export const DEFAULT_CONFIG: CrankMechanismConfig = {
 };
 
 export const DEFAULT_ANIMATION: AnimationControls = {
-  rpm: 600,
+  // A low default speed, further slowed by DEFAULT_PLAYBACK_SPEED, so the
+  // mechanism's motion is legible the moment the page opens.
+  rpm: 60,
   isPlaying: true,
   crankAngleRad: 0,
 };
@@ -38,11 +40,27 @@ export const READOUT_SYNC_HZ = 10;
 /**
  * Visual playback-speed multipliers. Rendered motion advances at
  * `rpm × playbackSpeed`; every calculated readout keeps using the true RPM.
- * Even idle speeds (600 RPM = 10 rev/s) strobe at 60 fps, so the default
- * slows rendering to one-tenth of real time.
+ * Even idle speeds (600 RPM = 10 rev/s) strobe at 60 fps, so rendering is
+ * slowed by default (see DEFAULT_PLAYBACK_SPEED).
  */
-export const PLAYBACK_SPEEDS = [1, 0.5, 0.25, 0.1, 0.02] as const;
+export const PLAYBACK_SPEEDS = [1, 0.5, 0.25, 0.1, 0.02, 0.01, 0.004] as const;
 
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
 
-export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 0.1;
+/**
+ * Display labels for each multiplier, kept beside the values so the two
+ * cannot drift apart. The slowest settings exist for high-revving engines:
+ * a 9,000 rpm redline is 150 revolutions per second, which needs roughly
+ * 1/250x before a full revolution is watchable.
+ */
+export const PLAYBACK_SPEED_LABELS: Record<PlaybackSpeed, string> = {
+  1: "1×",
+  0.5: "1/2×",
+  0.25: "1/4×",
+  0.1: "1/10×",
+  0.02: "1/50×",
+  0.01: "1/100×",
+  0.004: "1/250×",
+};
+
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 0.5;

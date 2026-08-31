@@ -12,8 +12,12 @@ import { describe, expect, it } from "vitest";
 import { calculateClearanceHeightMm } from "../engine/calculations";
 import { DEFAULT_CONFIG, INPUT_RANGES } from "../engine/constants";
 import type { CrankMechanismConfig } from "../engine/types";
+import { ENGINE_PRESETS } from "../engine/presets";
+import { CUSTOM_ENGINE_LABEL } from "./mechanismLabels";
 import {
   COMPARISON_GAP_FRACTION,
+  LABEL_BAND_FRACTION,
+  LABEL_GAP_FRACTION,
   deriveLayout,
   deriveProportions,
 } from "./sceneGeometry";
@@ -340,5 +344,155 @@ describe("deriveLayout — comparison pair", () => {
     const pairWidth = pair.bounds.maxX - pair.bounds.minX;
 
     expect(pairWidth).toBeGreaterThan(soloWidth);
+  });
+});
+
+describe("deriveLayout — mechanism labels", () => {
+  const CUSTOM: CrankMechanismConfig = {
+    boreMm: 61,
+    strokeMm: 57,
+    rodLengthMm: 99,
+    compressionRatio: 12.25,
+    redlineRpm: 12_000,
+  };
+
+  it("omits labels and reserves no space when they are hidden", () => {
+    const hidden = deriveLayout(DEFAULT_CONFIG, null, false);
+    const shown = deriveLayout(DEFAULT_CONFIG, null, true);
+
+    expect(hidden.primary.label).toBeNull();
+    expect(hidden.bounds).toEqual(deriveProportions(DEFAULT_CONFIG).bounds);
+    // Showing labels is the only difference, and it only extends downward.
+    expect(shown.bounds.minY).toBeLessThan(hidden.bounds.minY);
+    expect(shown.bounds.maxY).toBeCloseTo(hidden.bounds.maxY, 10);
+    expect(shown.bounds.minX).toBeCloseTo(hidden.bounds.minX, 10);
+    expect(shown.bounds.maxX).toBeCloseTo(hidden.bounds.maxX, 10);
+  });
+
+  it("hides both labels in comparison mode when the preference is off", () => {
+    const layout = deriveLayout(LS7, B6_1_6, false);
+    expect(layout.primary.label).toBeNull();
+    expect(layout.secondary?.label).toBeNull();
+  });
+
+  it("labels a single engine with no slot prefix", () => {
+    const preset = ENGINE_PRESETS[0];
+    const layout = deriveLayout(preset.config, null, true);
+
+    expect(layout.primary.label).not.toBeNull();
+    expect(layout.primary.label?.slot).toBeNull();
+    expect(layout.primary.label?.name).toBe(preset.name);
+  });
+
+  it("marks the compared engines as A and B, left to right", () => {
+    const layout = deriveLayout(LS7, B6_1_6, true);
+
+    expect(layout.primary.label?.slot).toBe("A");
+    expect(layout.secondary?.label?.slot).toBe("B");
+    expect(layout.primary.label!.anchorXMm).toBeLessThan(
+      layout.secondary!.label!.anchorXMm,
+    );
+  });
+
+  it("names each engine from its own configuration", () => {
+    const z06 = ENGINE_PRESETS.find((p) => p.id === "corvette-z06-c6-ls7")!;
+    const layout = deriveLayout(z06.config, CUSTOM, true);
+
+    expect(layout.primary.label?.name).toBe(z06.name);
+    expect(layout.secondary?.label?.name).toBe(CUSTOM_ENGINE_LABEL);
+  });
+
+  it("centers each label under its own mechanism", () => {
+    const layout = deriveLayout(LS7, B6_1_6, true);
+
+    for (const placed of [layout.primary, layout.secondary!]) {
+      const world = worldBounds(placed);
+      const center = (world.minX + world.maxX) / 2;
+
+      expect(placed.label!.anchorXMm).toBeCloseTo(center, 10);
+      // And therefore inside that mechanism's own footprint.
+      expect(placed.label!.anchorXMm).toBeGreaterThan(world.minX);
+      expect(placed.label!.anchorXMm).toBeLessThan(world.maxX);
+    }
+  });
+
+  it("puts both labels on one baseline even for unequal engines", () => {
+    const layout = deriveLayout(LS7, B6_1_6, true);
+
+    expect(layout.primary.label!.anchorYMm).toBeCloseTo(
+      layout.secondary!.label!.anchorYMm,
+      10,
+    );
+  });
+
+  for (const [geometryName, geometry] of GEOMETRIES) {
+    for (const compressionRatio of COMPRESSION_RATIOS) {
+      it(`keeps the label clear of the mechanism and inside the bounds (${geometryName}, ${compressionRatio}:1)`, () => {
+        const config = configFor(geometry, compressionRatio);
+        const layout = deriveLayout(config, null, true);
+        const content = deriveProportions(config).bounds;
+        const label = layout.primary.label!;
+
+        const contentHeight = content.maxY - content.minY;
+        const gap = LABEL_GAP_FRACTION * contentHeight;
+        const band = LABEL_BAND_FRACTION * contentHeight;
+
+        // Below everything the mechanism draws, including the counterweight
+        // sweep, with clear space in between.
+        expect(label.anchorYMm).toBeLessThan(content.minY);
+        expect(content.minY - label.anchorYMm).toBeGreaterThanOrEqual(gap);
+
+        // The whole band the label is centered in is inside the framed
+        // bounds: its lower edge is exactly the framed bottom.
+        expect(layout.bounds.minY).toBeCloseTo(label.anchorYMm - band / 2, 9);
+        expect(label.anchorYMm + band / 2).toBeLessThanOrEqual(content.minY);
+        expect(Number.isFinite(layout.bounds.minY)).toBe(true);
+
+        // Reserved space is exactly the gap plus the band.
+        expect(content.minY - layout.bounds.minY).toBeCloseTo(gap + band, 10);
+      });
+    }
+  }
+
+  for (const [nameA, geometryA] of GEOMETRIES) {
+    for (const [nameB, geometryB] of GEOMETRIES) {
+      it(`frames both labels of a comparison pair (${nameA} vs ${nameB})`, () => {
+        const configA = configFor(geometryA, INPUT_RANGES.compressionRatio.min);
+        const configB = configFor(geometryB, INPUT_RANGES.compressionRatio.max);
+        const layout = deriveLayout(configA, configB, true);
+        const labelA = layout.primary.label!;
+        const labelB = layout.secondary!.label!;
+
+        for (const label of [labelA, labelB]) {
+          expect(Number.isFinite(label.anchorXMm)).toBe(true);
+          expect(label.anchorYMm).toBeLessThan(
+            Math.min(
+              layout.primary.proportions.bounds.minY,
+              layout.secondary!.proportions.bounds.minY,
+            ),
+          );
+          expect(label.anchorYMm).toBeGreaterThan(layout.bounds.minY);
+          expect(label.anchorXMm).toBeGreaterThan(layout.bounds.minX);
+          expect(label.anchorXMm).toBeLessThan(layout.bounds.maxX);
+        }
+
+        // Each label sits under its own engine, never over the other's.
+        const worldA = worldBounds(layout.primary);
+        const worldB = worldBounds(layout.secondary!);
+        expect(labelA.anchorXMm).toBeLessThan(worldB.minX);
+        expect(labelB.anchorXMm).toBeGreaterThan(worldA.maxX);
+      });
+    }
+  }
+
+  it("moves the label anchor with the configuration", () => {
+    const small = deriveLayout(configFor(GEOMETRIES[1][1], 10.5), null, true);
+    const large = deriveLayout(configFor(GEOMETRIES[2][1], 10.5), null, true);
+
+    // A physically larger engine reaches further below the crank, so its
+    // label anchor sits lower in scene millimeters.
+    expect(large.primary.label!.anchorYMm).toBeLessThan(
+      small.primary.label!.anchorYMm,
+    );
   });
 });

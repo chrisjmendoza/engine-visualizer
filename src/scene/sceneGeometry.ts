@@ -19,6 +19,7 @@ import { useMemo } from "react";
 import { calculateClearanceHeightMm } from "../engine/calculations";
 import type { CrankMechanismConfig } from "../engine/types";
 import { useEngineStore } from "../state/engineStore";
+import { describeConfig } from "./mechanismLabels";
 
 /**
  * Scene palette. Three.js cannot read the CSS custom properties in
@@ -55,6 +56,21 @@ export const FRAME_PADDING = 1.1;
  * comparison is two small motorcycle singles or two large-bore V8 cylinders.
  */
 export const COMPARISON_GAP_FRACTION = 0.18;
+
+/**
+ * Clear space between the bottom of the mechanisms and the label band, as a
+ * fraction of the staged content's height.
+ */
+export const LABEL_GAP_FRACTION = 0.035;
+
+/**
+ * Height reserved for the label band, as a fraction of the staged content's
+ * height. The labels themselves are DOM text at a fixed pixel size, so the
+ * band cannot be sized in millimeters from the text; taking a fraction of the
+ * content instead means the reserved band is a roughly constant share of the
+ * viewport once the camera has fitted everything, whatever the engine size.
+ */
+export const LABEL_BAND_FRACTION = 0.075;
 
 /** Cosmetic part sizes, all derived from the configured engine dimensions. */
 export interface MechanismProportions {
@@ -256,12 +272,25 @@ export interface SceneBounds {
   maxY: number;
 }
 
+/** Where and what to draw for one mechanism's name label. */
+export interface LabelPlacement {
+  /** "A" or "B" while comparing; null when a single engine is on stage. */
+  slot: "A" | "B" | null;
+  /** The engine's preset name, or "Custom engine". */
+  name: string;
+  /** Anchor point, centered under the mechanism, in scene millimeters. */
+  anchorXMm: number;
+  anchorYMm: number;
+}
+
 /** One mechanism placed on the stage. */
 export interface PlacedMechanism {
   config: CrankMechanismConfig;
   proportions: MechanismProportions;
   /** X offset of this mechanism's crankshaft center, in scene millimeters. */
   offsetXMm: number;
+  /** Its name label, or null when labels are hidden. */
+  label: LabelPlacement | null;
 }
 
 /**
@@ -284,6 +313,11 @@ function widthOf(bounds: SceneBounds): number {
   return bounds.maxX - bounds.minX;
 }
 
+/** Horizontal center of a mechanism's own bounds, once offset onto the stage. */
+function centerXOf(proportions: MechanismProportions, offsetXMm: number) {
+  return offsetXMm + (proportions.bounds.minX + proportions.bounds.maxX) / 2;
+}
+
 /**
  * Places one or two mechanisms side by side and returns the union of their
  * extents for auto-framing.
@@ -291,42 +325,40 @@ function widthOf(bounds: SceneBounds): number {
  * With a comparison engine, the pair is laid out left to right — A then a gap
  * proportional to their mean width, then B — and centered on x = 0, so the
  * camera position does not have to move laterally when comparison toggles.
+ *
+ * When `showLabels` is set, a band is reserved below the mechanisms for their
+ * name labels and included in the returned bounds, so auto-framing keeps the
+ * labels on screen at every configuration. Both labels share one baseline —
+ * taken from the union, not from each engine separately — so a tall engine
+ * beside a short one still gets labels that line up.
  */
 export function deriveLayout(
   config: CrankMechanismConfig,
   comparisonConfig: CrankMechanismConfig | null,
+  showLabels = false,
 ): SceneLayout {
   const proportions = deriveProportions(config);
+  const comparisonProportions = comparisonConfig
+    ? deriveProportions(comparisonConfig)
+    : null;
 
-  if (!comparisonConfig) {
-    return {
-      primary: { config, proportions, offsetXMm: 0 },
-      secondary: null,
-      bounds: proportions.bounds,
-    };
-  }
+  let offsetA = 0;
+  let offsetB = 0;
+  let content: SceneBounds = proportions.bounds;
 
-  const comparisonProportions = deriveProportions(comparisonConfig);
+  if (comparisonProportions) {
+    const widthA = widthOf(proportions.bounds);
+    const widthB = widthOf(comparisonProportions.bounds);
+    const gap = (COMPARISON_GAP_FRACTION * (widthA + widthB)) / 2;
+    const total = widthA + gap + widthB;
+    const left = -total / 2;
 
-  const widthA = widthOf(proportions.bounds);
-  const widthB = widthOf(comparisonProportions.bounds);
-  const gap = (COMPARISON_GAP_FRACTION * (widthA + widthB)) / 2;
-  const total = widthA + gap + widthB;
-  const left = -total / 2;
+    // Each mechanism's own bounds are relative to its crankshaft center, so
+    // the offset is whatever puts its left edge at the intended position.
+    offsetA = left - proportions.bounds.minX;
+    offsetB = left + widthA + gap - comparisonProportions.bounds.minX;
 
-  // Each mechanism's own bounds are relative to its crankshaft center, so the
-  // offset is whatever puts its left edge at the intended position.
-  const offsetA = left - proportions.bounds.minX;
-  const offsetB = left + widthA + gap - comparisonProportions.bounds.minX;
-
-  return {
-    primary: { config, proportions, offsetXMm: offsetA },
-    secondary: {
-      config: comparisonConfig,
-      proportions: comparisonProportions,
-      offsetXMm: offsetB,
-    },
-    bounds: {
+    content = {
       minX: left,
       maxX: left + total,
       minY: Math.min(
@@ -337,19 +369,75 @@ export function deriveLayout(
         proportions.bounds.maxY,
         comparisonProportions.bounds.maxY,
       ),
+    };
+  }
+
+  const placedSecondary =
+    comparisonConfig && comparisonProportions
+      ? {
+          config: comparisonConfig,
+          proportions: comparisonProportions,
+          offsetXMm: offsetB,
+        }
+      : null;
+
+  if (!showLabels) {
+    return {
+      primary: { config, proportions, offsetXMm: offsetA, label: null },
+      secondary: placedSecondary ? { ...placedSecondary, label: null } : null,
+      bounds: content,
+    };
+  }
+
+  const contentHeight = content.maxY - content.minY;
+  const labelGap = LABEL_GAP_FRACTION * contentHeight;
+  const labelBand = LABEL_BAND_FRACTION * contentHeight;
+  // Labels are centered on this anchor, so the band spans half above and half
+  // below it and the reserved space is exactly the band.
+  const anchorY = content.minY - labelGap - labelBand / 2;
+  const comparing = comparisonProportions !== null;
+
+  return {
+    primary: {
+      config,
+      proportions,
+      offsetXMm: offsetA,
+      label: {
+        slot: comparing ? "A" : null,
+        name: describeConfig(config),
+        anchorXMm: centerXOf(proportions, offsetA),
+        anchorYMm: anchorY,
+      },
+    },
+    secondary: placedSecondary
+      ? {
+          ...placedSecondary,
+          label: {
+            slot: "B",
+            name: describeConfig(placedSecondary.config),
+            anchorXMm: centerXOf(placedSecondary.proportions, offsetB),
+            anchorYMm: anchorY,
+          },
+        }
+      : null,
+    bounds: {
+      ...content,
+      minY: content.minY - labelGap - labelBand,
     },
   };
 }
 
 /**
- * Subscribes to both engine configurations and memoizes the stage layout.
- * Recomputed only when a configuration changes or comparison is toggled.
+ * Subscribes to both engine configurations and the label preference, and
+ * memoizes the stage layout. Recomputed only when a configuration changes,
+ * comparison is toggled, or labels are shown or hidden — never per frame.
  */
 export function useSceneLayout(): SceneLayout {
   const config = useEngineStore((s) => s.config);
   const comparisonConfig = useEngineStore((s) => s.comparisonConfig);
+  const showLabels = useEngineStore((s) => s.preferences.showLabels);
   return useMemo(
-    () => deriveLayout(config, comparisonConfig),
-    [config, comparisonConfig],
+    () => deriveLayout(config, comparisonConfig, showLabels),
+    [config, comparisonConfig, showLabels],
   );
 }

@@ -78,6 +78,16 @@ export const METRIC_INFO: readonly MetricInfo[] = [
     body: "The engine's rated maximum speed. It isn't arbitrary: it's set by what the reciprocating parts survive — chiefly piston speed (stroke × rpm) and valvetrain control. That's why short-stroke engines like the S2000's F20C can be rated to 9,000 rpm while the long-stroke LS7 is done at 7,000, yet both reach similar piston speeds at their limits.",
   },
   {
+    id: "peakPower",
+    label: "Peak power",
+    body: "The engine's maximum power output and the rpm where it happens — a whole-engine figure for all cylinders, unlike the per-cylinder geometry elsewhere in this panel. Power is torque multiplied by rpm, so it peaks well after peak torque: the engine is making somewhat less twist per revolution but doing it far more often. This is why high-revving engines like the F20C can out-power a larger engine that makes more torque.",
+  },
+  {
+    id: "peakTorque",
+    label: "Peak torque",
+    body: "The maximum twisting force the engine produces and the rpm where it happens — again a whole-engine figure. Torque peaks where the cylinders fill with air most effectively, which is why big-displacement engines make their peak low and small turbocharged engines make theirs wherever the turbo comes on song. The gap between the torque peak and the power peak tells you how the car feels: a narrow gap is punchy and relaxed, a wide one rewards revving it out.",
+  },
+  {
     id: "rodAngle",
     label: "Connecting-rod angle",
     body: "How far the rod is tilted from the cylinder's centerline, positive when the crankpin has swung toward the right of the scene. The tilt is what converts rotation into straight-line piston motion, but it also presses the piston sideways into the cylinder wall — the dominant source of piston friction and skirt wear. Engines with short rods relative to stroke swing to larger angles.",

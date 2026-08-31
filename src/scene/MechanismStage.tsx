@@ -5,20 +5,23 @@
  * React subscribes only to the configurations (through the layout passed in),
  * so geometry is rebuilt when a dimension changes or comparison is toggled.
  * Per frame nothing touches React: one loop computes each engine's mechanism
- * state at the same crank angle and mutates its Three.js groups through a
- * reusable carrier (§18).
+ * state at that engine's own crank angle and mutates its Three.js groups
+ * through a reusable carrier (§18).
  *
- * Both engines share the crank angle, RPM, and playback state, so any visible
- * difference between them is purely geometric.
+ * Both engines always share the playback state. They also share a speed and an
+ * exact crank angle while `rpmLinked` is set, so differences between them are
+ * purely geometric; unlinked, each runs at its own rpm and the angles diverge,
+ * which is how two different redlines can be watched side by side.
  */
 
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { calculateMechanismState } from "../engine/kinematics";
 import { CrankMechanism } from "./CrankMechanism";
+import { MechanismLabel } from "./MechanismLabel";
 import type { MechanismObjects } from "./mechanismTransforms";
 import { applyMechanismState, useMechanismRefs } from "./mechanismTransforms";
 import type { SceneLayout } from "./sceneGeometry";
-import type { EngineStoreState } from "./useMechanismAnimation";
+import type { EngineStoreState, FrameAngles } from "./useMechanismAnimation";
 import { useMechanismAnimation } from "./useMechanismAnimation";
 
 interface MechanismStageProps {
@@ -43,7 +46,9 @@ export function MechanismStage({ layout }: MechanismStageProps) {
   });
 
   /**
-   * Drives every mechanism from one crank angle.
+   * Drives each mechanism from its own crank angle. The two are identical
+   * while the engines' speeds are linked and diverge once they are not, so a
+   * faster-revving engine visibly outruns a slower one.
    *
    * The comparison engine is read from the store snapshot rather than from
    * props, so a frame landing between the store change and React's rerender
@@ -52,11 +57,11 @@ export function MechanismStage({ layout }: MechanismStageProps) {
    * has already cleared them. Either way the transforms are a no-op.
    */
   const applyFrame = useCallback(
-    (crankAngleRad: number, store: EngineStoreState) => {
+    (angles: FrameAngles, store: EngineStoreState) => {
       applyMechanismState(
         primaryObjects.current,
         primaryRefs,
-        calculateMechanismState(store.config, crankAngleRad),
+        calculateMechanismState(store.config, angles.crankAngleRad),
       );
 
       const comparison = store.comparisonConfig;
@@ -64,7 +69,7 @@ export function MechanismStage({ layout }: MechanismStageProps) {
         applyMechanismState(
           secondaryObjects.current,
           secondaryRefs,
-          calculateMechanismState(comparison, crankAngleRad),
+          calculateMechanismState(comparison, angles.comparisonCrankAngleRad),
         );
       }
     },
@@ -96,6 +101,16 @@ export function MechanismStage({ layout }: MechanismStageProps) {
           rodRef={secondaryRefs.rod}
           pistonRef={secondaryRefs.piston}
         />
+      )}
+
+      {/* Labels are anchored in stage coordinates rather than parented to a
+          mechanism, so they share one baseline and stay put while the parts
+          move. The layout omits them entirely when labels are hidden. */}
+      {layout.primary.label && (
+        <MechanismLabel placement={layout.primary.label} />
+      )}
+      {layout.secondary?.label && (
+        <MechanismLabel placement={layout.secondary.label} />
       )}
     </group>
   );

@@ -10,6 +10,7 @@ import type {
   DisplayUnit,
   UserPreferences,
 } from "../engine/types";
+import type { PartialShareState } from "../engine/shareLink";
 
 /**
  * Global application store.
@@ -30,10 +31,28 @@ interface EngineStore {
   comparisonConfig: CrankMechanismConfig | null;
   preferences: UserPreferences;
   rpm: number;
+  /**
+   * Engine B's speed, used only while `rpmLinked` is false. Keeping it in
+   * state even when linked means unlinking restores whatever the user last
+   * chose rather than snapping to engine A's value.
+   */
+  comparisonRpm: number;
+  /**
+   * When true (the default), engine B runs at engine A's `rpm` and shares
+   * its crank angle exactly. When false, each engine advances at its own
+   * speed — the point being to watch two redlines side by side — so their
+   * crank angles drift apart and `comparisonCrankAngleRad` becomes live.
+   */
+  rpmLinked: boolean;
   /** Visual time scale for rendered motion only; readouts use true rpm. */
   playbackSpeed: PlaybackSpeed;
   isPlaying: boolean;
   crankAngleRad: number;
+  /**
+   * Engine B's crank angle. Equal to `crankAngleRad` while linked; once
+   * unlinked the animation loop advances and mirrors it independently.
+   */
+  comparisonCrankAngleRad: number;
 
   setConfig: (partial: Partial<CrankMechanismConfig>) => void;
   /** Turns comparison on, seeding engine B (defaults to a copy of engine A). */
@@ -45,12 +64,35 @@ interface EngineStore {
   setDisplayUnit: (unit: DisplayUnit) => void;
   setShowLabels: (show: boolean) => void;
   setRpm: (rpm: number) => void;
+  setComparisonRpm: (rpm: number) => void;
+  /**
+   * Linking re-synchronizes engine B onto engine A's angle immediately, so
+   * the two mechanisms never sit visibly out of phase while claiming to
+   * share a speed.
+   */
+  setRpmLinked: (linked: boolean) => void;
   play: () => void;
   pause: () => void;
-  /** Sets the crank angle directly and pauses playback (scrubbing rule §11.1). */
+  /**
+   * Sets the crank angle directly and pauses playback (scrubbing rule
+   * §11.1). Both engines are phase-locked to the scrubbed angle, even when
+   * unlinked; resuming lets them diverge again at their own speeds.
+   */
   scrubTo: (angleRad: number) => void;
   /** Throttled mirror from the animation loop; must not pause or resume. */
   syncCrankAngle: (angleRad: number) => void;
+  /** Throttled mirror of engine B's angle; only meaningful while unlinked. */
+  syncComparisonCrankAngle: (angleRad: number) => void;
+  /**
+   * Applies a decoded share link (`decodeShareState`) to the store. Every
+   * field is optional and independent: whatever the link carried is
+   * applied, whatever it didn't keeps its current value — most notably,
+   * `comparisonConfig` is only touched (turning comparison mode on) when
+   * the link actually included engine B, and `isPlaying` is only touched
+   * when the link included a crank angle (a link with no angle must not
+   * override the reduced-motion default's initial paused state).
+   */
+  hydrateFromShareState: (partial: PartialShareState) => void;
 }
 
 /** Reduced-motion users get a paused initial state (§14). */
@@ -68,9 +110,12 @@ export const useEngineStore = create<EngineStore>((set) => ({
   comparisonConfig: null,
   preferences: { displayUnit: "mm", showLabels: true },
   rpm: DEFAULT_ANIMATION.rpm,
+  comparisonRpm: DEFAULT_ANIMATION.rpm,
+  rpmLinked: true,
   playbackSpeed: DEFAULT_PLAYBACK_SPEED,
   isPlaying: initialIsPlaying(),
   crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
+  comparisonCrankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
 
   setConfig: (partial) =>
     set((state) => ({ config: { ...state.config, ...partial } })),
@@ -95,8 +140,42 @@ export const useEngineStore = create<EngineStore>((set) => ({
       preferences: { ...state.preferences, showLabels: show },
     })),
   setRpm: (rpm) => set({ rpm }),
+  setComparisonRpm: (comparisonRpm) => set({ comparisonRpm }),
+  setRpmLinked: (rpmLinked) =>
+    set((state) =>
+      rpmLinked
+        ? { rpmLinked, comparisonCrankAngleRad: state.crankAngleRad }
+        : { rpmLinked },
+    ),
   play: () => set({ isPlaying: true }),
   pause: () => set({ isPlaying: false }),
-  scrubTo: (angleRad) => set({ isPlaying: false, crankAngleRad: angleRad }),
+  scrubTo: (angleRad) =>
+    set({
+      isPlaying: false,
+      crankAngleRad: angleRad,
+      comparisonCrankAngleRad: angleRad,
+    }),
   syncCrankAngle: (angleRad) => set({ crankAngleRad: angleRad }),
+  syncComparisonCrankAngle: (angleRad) =>
+    set({ comparisonCrankAngleRad: angleRad }),
+  hydrateFromShareState: (partial) =>
+    set((state) => ({
+      config: partial.config ?? state.config,
+      // `??` (not `||`): a link can legitimately carry `comparisonConfig`
+      // as any valid config object, but decodeShareState only ever puts a
+      // real config or nothing (never `null`) into a decoded partial, so
+      // "absent" is the only falsy-ish case to guard against here.
+      comparisonConfig: partial.comparisonConfig ?? state.comparisonConfig,
+      preferences:
+        partial.displayUnit !== undefined
+          ? { ...state.preferences, displayUnit: partial.displayUnit }
+          : state.preferences,
+      rpm: partial.rpm ?? state.rpm,
+      playbackSpeed: partial.playbackSpeed ?? state.playbackSpeed,
+      crankAngleRad: partial.crankAngleRad ?? state.crankAngleRad,
+      // `??` preserves an explicit `false` (set together with a decoded
+      // angle) while leaving `isPlaying` untouched when the link had no
+      // angle at all — see the reduced-motion note on this method above.
+      isPlaying: partial.isPlaying ?? state.isPlaying,
+    })),
 }));

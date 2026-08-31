@@ -3,6 +3,28 @@
   flex-direction: column;
 }
 
+/*
+ * The divider between engine A and engine B — meaningful only while they
+ * stack vertically (below). A structural child selector rather than
+ * anything from EnginePanel.module.css: this component styles the
+ * *arrangement* of its children, not their internals, and it works
+ * regardless of what those children are. Explicitly zeroed out inside
+ * both grid-mode media queries below, since `.grid > * + *` still matches
+ * a two-column grid's second child — a stray line above, and mismatched
+ * top padding on, engine B otherwise (it's the same box either way; only
+ * whether B sits below or beside A changes whether a divider belongs).
+ */
+.grid > * + * {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.85rem;
+}
+
+@media (min-width: 600px) {
+  .grid > * + * {
+    padding-top: 1.25rem;
+  }
+}
+
 /* Tablet portrait: the panel is still full device width here (the 900px
    viewport/panel split hasn't kicked in yet), so there's room for engine A
    and B side by side. */
@@ -12,6 +34,11 @@
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
     align-items: start;
+  }
+
+  .grid > * + * {
+    border-top: none;
+    padding-top: 0;
   }
 }
 
@@ -24,5 +51,10 @@
     grid-template-columns: 1fr 1fr;
     gap: 1.25rem;
     align-items: start;
+  }
+
+  .grid > * + * {
+    border-top: none;
+    padding-top: 0;
   }
 }

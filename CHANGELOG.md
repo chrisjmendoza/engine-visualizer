@@ -8,6 +8,17 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### feat: shareable links, engine labels, power figures, independent redlines
+
+- **Shareable links.** The current setup lives in the URL, so a comparison can be sent to someone: `?a=s2000-ap1&b=corvette-z06-c6-ls7&rpm=3000`. Configurations matching a known car are written as preset ids, others as raw numbers; pausing before copying captures the exact crank angle. Malformed or hand-edited links degrade gracefully, and every decoded configuration passes validation, so a link can never inject impossible geometry. The URL format is documented as an append-only contract in the design doc. A Copy-link button falls back to a selectable field if the clipboard is unavailable.
+- **Labels under each mechanism** naming the matching car (or "Custom engine"), with `A`/`B` chips in comparison mode. They finally give the "Show component labels" checkbox something to control, and the camera reserves space for them only when shown.
+- **Power and torque** for all 16 cars, two-source verified against each preset's documented market variant, with their peak rpms. Shown when the configuration matches a real engine, "—" otherwise. The F20C figure was corrected to 240 hp after a cross-check caught a European PS figure mismatched against a US torque number.
+- **Independent engine speeds.** Comparison mode can unlink the two engines so each runs at its own rpm — the point being to watch a 9,000 rpm redline against a 7,000 rpm one in real time. Linked mode assigns rather than integrates engine B's angle, so the two can never drift apart in the low bits. Scrubbing phase-locks both; resuming lets them diverge.
+- **Slower playback**: 1/100× and 1/250× added for high-revving engines, and the default is now 60 rpm at 1/2×, which is legible on load.
+- **Fixed**: the stray divider and heading misalignment above Engine B when the two panels sat side by side — the separator now belongs to the layout that decides stacked-versus-columns.
+- **Removed**: the prose mechanism-description sentences. Every value in them is a labeled row in the results table, and reflowing them on each update made the panel jump during playback.
+- Full suite: 584 tests.
+
 ### feat: naturally aspirated 2.4 presets (KA24DE, K24A2)
 
 - **Nissan 240SX (KA24DE)** — the US-market naturally aspirated twin-cam sibling to the JDM SR20DET Silvia already in the roster, so the two sides of the KA-to-SR swap story can be compared directly. 89 × 96 mm on a 165 mm rod: markedly undersquare, with the longest rod-to-stroke ratio of any four in the roster.

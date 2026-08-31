@@ -2,19 +2,9 @@ import { useId, useState } from "react";
 import { useEngineStore } from "../../state/engineStore";
 import { rpmSchema } from "../../engine/validation";
 import { degToRad, radToDeg } from "../../engine/units";
-import { PLAYBACK_SPEEDS } from "../../engine/constants";
-import type { PlaybackSpeed } from "../../engine/constants";
+import { PLAYBACK_SPEED_LABELS, PLAYBACK_SPEEDS } from "../../engine/constants";
 import { formatRounded } from "../shared/formatting";
 import styles from "./AnimationControls.module.css";
-
-/** Compact multiplier labels shown on the playback-speed control. */
-const PLAYBACK_SPEED_LABELS: Record<PlaybackSpeed, string> = {
-  1: "1×",
-  0.5: "1/2×",
-  0.25: "1/4×",
-  0.1: "1/10×",
-  0.02: "1/50×",
-};
 
 /**
  * Play/pause, RPM, crank-angle scrub, and playback-speed controls

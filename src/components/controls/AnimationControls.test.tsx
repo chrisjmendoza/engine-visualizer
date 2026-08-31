@@ -7,6 +7,8 @@ import {
   DEFAULT_ANIMATION,
   DEFAULT_CONFIG,
   DEFAULT_PLAYBACK_SPEED,
+  PLAYBACK_SPEED_LABELS,
+  PLAYBACK_SPEEDS,
 } from "../../engine/constants";
 
 function resetStore() {
@@ -118,5 +120,28 @@ describe("AnimationControls", () => {
     expect(
       screen.getByText(/slows rendering only/i, { exact: false }),
     ).toBeInTheDocument();
+  });
+
+  it("renders exactly one radio per PLAYBACK_SPEEDS entry, labeled from PLAYBACK_SPEED_LABELS", () => {
+    render(<AnimationControls />);
+
+    const radios = screen.getAllByRole("radio");
+    expect(radios).toHaveLength(PLAYBACK_SPEEDS.length);
+
+    for (const speed of PLAYBACK_SPEEDS) {
+      expect(
+        screen.getByLabelText(PLAYBACK_SPEED_LABELS[speed]),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it("commits the slowest playback speed (added for high-revving engines)", async () => {
+    const user = userEvent.setup();
+    render(<AnimationControls />);
+
+    const slowest = PLAYBACK_SPEEDS[PLAYBACK_SPEEDS.length - 1];
+    await user.click(screen.getByLabelText(PLAYBACK_SPEED_LABELS[slowest]));
+
+    expect(useEngineStore.getState().playbackSpeed).toBe(slowest);
   });
 });

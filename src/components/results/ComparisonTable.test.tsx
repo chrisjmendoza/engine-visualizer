@@ -99,9 +99,11 @@ describe("ComparisonTable", () => {
       "0.96:1 · undersquare",
       "−4.4%",
     ]);
+    // DEFAULT_ANIMATION.rpm is 60: 2 x 0.086 m x 60 / 60 = 0.172 m/s (A),
+    // 2 x 0.090 m x 60 / 60 = 0.18 m/s (B).
     expect(getRow("Mean piston speed")).toEqual([
-      "1.72 m/s",
-      "1.80 m/s",
+      "0.17 m/s",
+      "0.18 m/s",
       "+4.7%",
     ]);
     expect(getRow("Clearance height (TDC)")).toEqual([
@@ -158,18 +160,6 @@ describe("ComparisonTable", () => {
     expect(screen.queryByText(/winner/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/better/i)).not.toBeInTheDocument();
     expect(document.querySelector("[data-winner]")).toBeNull();
-  });
-
-  it("shows both engines' textual mechanism descriptions, labeled", () => {
-    enableComparisonWith(STROKE_90_CONFIG);
-    render(<ComparisonTable />);
-
-    const descriptionA = screen.getByTestId("mechanism-description-a");
-    const descriptionB = screen.getByTestId("mechanism-description-b");
-    expect(descriptionA.textContent).toMatch(/^Engine A\./);
-    expect(descriptionB.textContent).toMatch(/^Engine B\./);
-    expect(descriptionA.textContent).toMatch(/top dead center/);
-    expect(descriptionB.textContent).toMatch(/top dead center/);
   });
 
   it("updates live values when the store's crank angle changes, without new animation logic", () => {

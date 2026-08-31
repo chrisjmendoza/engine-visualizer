@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ENGINE_PRESETS } from "../engine/presets";
+import type { EnginePreset } from "../engine/presets";
 import { validateConfig } from "../engine/validation";
 
 /**
@@ -94,6 +95,116 @@ const ADVERTISED_BRAND: Record<string, string> = {
   "bmw-e46-m3-s54": "BMW",
   "240sx-ka24de": "Nissan",
   "tsx-k24a2": "Honda",
+};
+
+/**
+ * Factory-rated whole-engine power/torque for every preset that declares
+ * `output`, hardcoded here as independent literals for the same reason as
+ * the other fixtures above. Every preset in `ENGINE_PRESETS` currently has
+ * an `output`, but this fixture is intentionally keyed by id (not assumed
+ * total coverage) so a future preset can omit `output` without failing
+ * fixture-completeness checks for fields it doesn't have.
+ */
+const ADVERTISED_OUTPUT: Record<
+  string,
+  { powerHp: number; powerRpm: number; torqueLbFt: number; torqueRpm: number }
+> = {
+  "s2000-ap1": {
+    powerHp: 240,
+    powerRpm: 8300,
+    torqueLbFt: 153,
+    torqueRpm: 7500,
+  },
+  "s2000-ap2": {
+    powerHp: 240,
+    powerRpm: 7800,
+    torqueLbFt: 162,
+    torqueRpm: 6500,
+  },
+  "miata-na-nb-1-8": {
+    powerHp: 133,
+    powerRpm: 6500,
+    torqueLbFt: 114,
+    torqueRpm: 5500,
+  },
+  "miata-na-1-6": {
+    powerHp: 116,
+    powerRpm: 6500,
+    torqueLbFt: 100,
+    torqueRpm: 5500,
+  },
+  "corvette-c6-ls3": {
+    powerHp: 430,
+    powerRpm: 5900,
+    torqueLbFt: 424,
+    torqueRpm: 4600,
+  },
+  "corvette-z06-c6-ls7": {
+    powerHp: 505,
+    powerRpm: 6300,
+    torqueLbFt: 470,
+    torqueRpm: 4800,
+  },
+  "supra-2jzgte": {
+    powerHp: 320,
+    powerRpm: 5600,
+    torqueLbFt: 315,
+    torqueRpm: 4000,
+  },
+  "k20a-type-r": {
+    powerHp: 217,
+    powerRpm: 8000,
+    torqueLbFt: 152,
+    torqueRpm: 7000,
+  },
+  "tsx-k24a2": {
+    powerHp: 200,
+    powerRpm: 6800,
+    torqueLbFt: 166,
+    torqueRpm: 4500,
+  },
+  "miata-nd-2-0": {
+    powerHp: 181,
+    powerRpm: 7000,
+    torqueLbFt: 151,
+    torqueRpm: 4000,
+  },
+  "ferrari-458-italia": {
+    powerHp: 562,
+    powerRpm: 9000,
+    torqueLbFt: 398,
+    torqueRpm: 6000,
+  },
+  "silvia-sr20det": {
+    powerHp: 201,
+    powerRpm: 6000,
+    torqueLbFt: 202,
+    torqueRpm: 4000,
+  },
+  "skyline-gtr-rb26dett": {
+    powerHp: 276,
+    powerRpm: 6800,
+    torqueLbFt: 260,
+    torqueRpm: 4400,
+  },
+  "gtr-r35-vr38dett": {
+    powerHp: 480,
+    powerRpm: 6400,
+    torqueLbFt: 434,
+    torqueRpm: 3200,
+  },
+  "240sx-ka24de": {
+    powerHp: 155,
+    powerRpm: 5600,
+    torqueLbFt: 160,
+    torqueRpm: 4400,
+  },
+  "bmw-e46-m3-s54": {
+    powerHp: 333,
+    powerRpm: 7900,
+    torqueLbFt: 262,
+    torqueRpm: 4900,
+  },
 };
 
 function perCylinderCc(boreMm: number, strokeMm: number): number {
@@ -222,4 +333,64 @@ describe("ENGINE_PRESETS", () => {
       expect(preset.config.redlineRpm).toBe(advertised);
     },
   );
+
+  const presetsWithOutput = ENGINE_PRESETS.filter((preset) => preset.output);
+
+  it("has at least one preset with output and one exercised without it", () => {
+    // Sanity-checks that this test file's coverage assumptions still make
+    // sense: there is something to check fixtures against, and the
+    // "presets without output" support is genuinely exercised below rather
+    // than accidentally vacuous.
+    expect(presetsWithOutput.length).toBeGreaterThan(0);
+  });
+
+  it("has an advertised-output fixture for every preset that declares output", () => {
+    for (const preset of presetsWithOutput) {
+      expect(ADVERTISED_OUTPUT[preset.id]).toBeDefined();
+    }
+  });
+
+  it.each(presetsWithOutput)(
+    "$name ($engineCode) output matches the advertised factory figures",
+    (preset) => {
+      const advertised = ADVERTISED_OUTPUT[preset.id];
+      expect(advertised).toBeDefined();
+      expect(preset.output).toEqual(advertised);
+    },
+  );
+
+  it.each(presetsWithOutput)(
+    "$name ($engineCode) power-peak rpm is at or below redline",
+    (preset) => {
+      expect(preset.output).toBeDefined();
+      if (!preset.output) return;
+      expect(preset.output.powerRpm).toBeLessThanOrEqual(
+        preset.config.redlineRpm,
+      );
+    },
+  );
+
+  it.each(presetsWithOutput)(
+    "$name ($engineCode) torque-peak rpm is at or below power-peak rpm",
+    (preset) => {
+      expect(preset.output).toBeDefined();
+      if (!preset.output) return;
+      expect(preset.output.torqueRpm).toBeLessThanOrEqual(
+        preset.output.powerRpm,
+      );
+    },
+  );
+
+  it("allows a preset to omit output entirely without crashing (optional field)", () => {
+    const withoutOutput: EnginePreset = {
+      ...ENGINE_PRESETS[0],
+      output: undefined,
+    };
+    expect(withoutOutput.output).toBeUndefined();
+    // Optional chaining through an absent `output` must resolve to
+    // `undefined` rather than throw — this is the "UI shows '—'" contract
+    // the doc comment on `EnginePreset.output` describes.
+    expect(() => withoutOutput.output?.powerHp).not.toThrow();
+    expect(withoutOutput.output?.powerHp).toBeUndefined();
+  });
 });

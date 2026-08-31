@@ -22,6 +22,19 @@
  * source despite an extensive search, and rests on a single sourced
  * figure. Sources are noted per engine below.
  *
+ * `output`, where present, is factory-rated power and torque for the WHOLE
+ * engine (all cylinders) — unlike every other field here, which is
+ * per-cylinder geometry. It therefore lives on `EnginePreset` rather than
+ * on `CrankMechanismConfig`: a hand-typed custom configuration has no
+ * associated power figure, and the UI shows "—" in that case. Every
+ * `output` value describes the SAME market/variant already documented in
+ * that preset's `config` comment (e.g. the US/EU F20C, not the higher-output
+ * JDM one) and is corroborated by at least two independent sources, same as
+ * the rest of this file. Where a source reports PS or kW, the comment notes
+ * the original figure and the conversion used (1 PS = 0.9863 hp; 1 kW =
+ * 1.341 hp; 1 Nm = 0.7376 lb-ft). Presets whose output could not clear the
+ * two-source bar for the documented variant simply omit `output`.
+ *
  * This module is pure data: no React, Three.js, or browser imports.
  */
 
@@ -40,6 +53,22 @@ export interface EnginePreset {
   layoutLabel: string;
   /** Per-cylinder stock geometry. */
   config: CrankMechanismConfig;
+  /**
+   * Factory-rated output for the whole engine (all cylinders), for the same
+   * market/variant documented in `config`'s comment. Optional: omitted
+   * where a verifiable, two-source figure for that exact variant could not
+   * be found.
+   */
+  output?: {
+    /** SAE net (or manufacturer-equivalent) horsepower. */
+    powerHp: number;
+    /** Engine speed at which peak power occurs. */
+    powerRpm: number;
+    /** Peak torque, in pound-feet. */
+    torqueLbFt: number;
+    /** Engine speed at which peak torque occurs. */
+    torqueRpm: number;
+  };
 }
 
 export const ENGINE_PRESETS: readonly EnginePreset[] = [
@@ -65,6 +94,23 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 11.0,
       redlineRpm: 9000,
     },
+    // Output 240 hp @ 8300 rpm, 153 lb-ft @ 7500 rpm — the US SAE-net figure
+    // (matching the 11.0:1 CR above and the 153 lb-ft torque figure), which
+    // Honda quoted unchanged for the entire 1999-2003 AP1 run; it was never
+    // re-rated (that only happened to the AP2/F22C1 after the industry-wide
+    // 2005 SAE-certification change, which post-dates AP1 production).
+    // Confirmed by jdmbuysell.com's AP1 buyer's guide (explicitly notes the
+    // rating "remained unchanged throughout the entire AP1 production
+    // cycle... never re-rated") and automobile-catalog.com's North America
+    // spec pages (179 kW / 243 PS / 240 hp). Europe quotes this same tune
+    // in PS rather than hp — 240 PS, which converts to ~237 hp (240 x
+    // 0.9863) — a different unit convention for essentially the same
+    // engine, not a separate lower-power model; that PS-derived ~237 hp is
+    // the source of an earlier, incorrect 234 hp figure here (234 hp was
+    // itself a rounding of 237 PS, mismatched against the US-hp torque
+    // figure it was paired with). The JDM F20C, with its higher 11.7:1 CR,
+    // makes 247 hp instead.
+    output: { powerHp: 240, powerRpm: 8300, torqueLbFt: 153, torqueRpm: 7500 },
   },
   {
     id: "s2000-ap2",
@@ -89,6 +135,10 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 11.1,
       redlineRpm: 8000,
     },
+    // Output 240 hp @ 7800 rpm, 162 lb-ft @ 6500 rpm — US spec, confirmed by
+    // Wikipedia ("Honda F20C engine") and hotcars.com ("1999-2009 Honda
+    // S2000 AP1-AP2: Costs, Facts, And Figures").
+    output: { powerHp: 240, powerRpm: 7800, torqueLbFt: 162, torqueRpm: 6500 },
   },
   {
     id: "miata-na-nb-1-8",
@@ -114,6 +164,13 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 9.0,
       redlineRpm: 7000,
     },
+    // Output 133 hp @ 6500 rpm, 114 lb-ft @ 5500 rpm — the 1996(late)-1997
+    // NA8 figure, matching the "NA/NB" preset's most-cited NA8 CR above;
+    // the earlier 1994-mid96 NA8 made less (128 hp / 110 lb-ft @ 5000 rpm).
+    // Confirmed by kbb.com (1997 spec) and hotcars.com ("1990-1997 Mazda
+    // MX-5 Miata: Costs, Facts, And Figures"); torque rpm cross-checked
+    // against conceptcarz.com's 1996 spec page.
+    output: { powerHp: 133, powerRpm: 6500, torqueLbFt: 114, torqueRpm: 5500 },
   },
   {
     id: "miata-na-1-6",
@@ -139,6 +196,10 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 9.4,
       redlineRpm: 7200,
     },
+    // Output 116 hp @ 6500 rpm, 100 lb-ft @ 5500 rpm — confirmed by
+    // automobile-catalog.com (1990 US-spec review) and enginetechspecs.com
+    // ("Mazda B6ZE Engine").
+    output: { powerHp: 116, powerRpm: 6500, torqueLbFt: 100, torqueRpm: 5500 },
   },
   {
     id: "corvette-c6-ls3",
@@ -161,6 +222,12 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 10.7,
       redlineRpm: 6600,
     },
+    // Output 430 hp @ 5900 rpm, 424 lb-ft @ 4600 rpm — the base LS3 crate
+    // engine figure (the Corvette's optional dual-mode exhaust raises this
+    // to 436 hp / 428 lb-ft, not used here). Confirmed by Chevrolet
+    // Performance's own crate-engine listings (tpsmotorsports.com,
+    // ictbillet.com) and enginetechspecs.com.
+    output: { powerHp: 430, powerRpm: 5900, torqueLbFt: 424, torqueRpm: 4600 },
   },
   {
     id: "corvette-z06-c6-ls7",
@@ -185,6 +252,11 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 11.0,
       redlineRpm: 7000,
     },
+    // Output 505 hp @ 6300 rpm, 470 lb-ft @ 4800 rpm — the SAE-certified
+    // figure GM published for the LS7. Confirmed by GM Authority
+    // ("Chevrolet Corvette Z06 Info, Specs, Pictures, Wiki & More") and
+    // vette-vues.com ("The Corvette LS7 Engine").
+    output: { powerHp: 505, powerRpm: 6300, torqueLbFt: 470, torqueRpm: 4800 },
   },
   {
     id: "supra-2jzgte",
@@ -208,6 +280,13 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 8.5,
       redlineRpm: 6800,
     },
+    // Output 320 hp @ 5600 rpm, 315 lb-ft @ 4000 rpm — the US 6-speed-manual
+    // Supra Turbo figure (1993-97, matching this preset's US-documented
+    // redline); Toyota famously underreported this. Confirmed by
+    // conceptcarz.com ("1994 Toyota Supra Specifications & Dimensions") and
+    // supercars.net ("1993 Toyota Supra Turbo"). The JDM gentleman's-
+    // agreement figure is lower, at 276 hp (280 PS).
+    output: { powerHp: 320, powerRpm: 5600, torqueLbFt: 315, torqueRpm: 4000 },
   },
   {
     id: "k20a-type-r",
@@ -231,6 +310,12 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 11.5,
       redlineRpm: 8400,
     },
+    // Output 217 hp (220 PS) @ 8000 rpm, 152 lb-ft (206 Nm) @ 7000 rpm —
+    // the JDM K20A DC5 Integra Type R figure, matching the CR/redline
+    // above. Confirmed by jdmbuysell.com's K20A guide and
+    // integradc5.com's DC5 Type R spec page. 220 PS converts to 217 hp
+    // (220 x 0.9863); 206 Nm converts to 152 lb-ft (206 x 0.7376).
+    output: { powerHp: 217, powerRpm: 8000, torqueLbFt: 152, torqueRpm: 7000 },
   },
   {
     id: "tsx-k24a2",
@@ -269,6 +354,13 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 10.5,
       redlineRpm: 7100,
     },
+    // Output 200 hp @ 6800 rpm, 166 lb-ft @ 4500 rpm — the 2004-2005 TSX
+    // figure (2006-2008's revised intake raised this to 205 hp @ 7000 rpm;
+    // not used here since a single power/torque pair should match a single
+    // model-year). Confirmed by Acura's own press specifications
+    // (acuranews.com, "2005 Acura TSX Specifications") and
+    // conceptcarz.com's 2004 TSX spec page.
+    output: { powerHp: 200, powerRpm: 6800, torqueLbFt: 166, torqueRpm: 4500 },
   },
   {
     id: "miata-nd-2-0",
@@ -293,6 +385,11 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 13.0,
       redlineRpm: 7500,
     },
+    // Output 181 hp @ 7000 rpm, 151 lb-ft (205 Nm) @ 4000 rpm — the 2019+
+    // US-spec figure matching the CR/redline above. Confirmed by Wikipedia
+    // ("Mazda MX-5 (ND)") and automotivepowertraintechnologyinternational.com
+    // ("Engines on test: 2019 Mazda MX-5 2.0-liter Skyactiv-G").
+    output: { powerHp: 181, powerRpm: 7000, torqueLbFt: 151, torqueRpm: 4000 },
   },
   {
     id: "ferrari-458-italia",
@@ -321,6 +418,13 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 12.5,
       redlineRpm: 9000,
     },
+    // Output 562 hp @ 9000 rpm, 398 lb-ft (540 Nm) @ 6000 rpm — confirmed
+    // by thetorquereport.com ("Ferrari 458 Italia Officially Unveiled")
+    // and encycarpedia.com's 458 Italia spec page. Note the power peak
+    // sits exactly AT the 9000 rpm redline, not below it — unusual among
+    // this file's presets but consistent with how Ferrari itself quotes
+    // the figure.
+    output: { powerHp: 562, powerRpm: 9000, torqueLbFt: 398, torqueRpm: 6000 },
   },
   {
     id: "silvia-sr20det",
@@ -345,6 +449,12 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 8.5,
       redlineRpm: 7500,
     },
+    // Output 201 hp @ 6000 rpm, 202 lb-ft @ 4000 rpm — the "Redtop" figure
+    // matching this preset's CR/redline. Confirmed by drifted.com ("15
+    // SR20DET Specs...") and multiple independent JDM-engine importers'
+    // spec pages (jdmenginedirect.com, redlinejdm.com) quoting the same
+    // Garrett T25G-equipped Redtop figures.
+    output: { powerHp: 201, powerRpm: 6000, torqueLbFt: 202, torqueRpm: 4000 },
   },
   {
     id: "skyline-gtr-rb26dett",
@@ -367,6 +477,13 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 8.5,
       redlineRpm: 8000,
     },
+    // Output 276 hp @ 6800 rpm, 260 lb-ft @ 4400 rpm — the JDM
+    // "gentleman's agreement" figure matching the redline comment above
+    // (widely believed understated; actual output was higher). Confirmed
+    // by autoevolution.com ("Nissan RB26DETT: The Skyline GT-R's Legendary
+    // Turbocharged Inline-Six") and axleaddict.com ("RB26 Engine: Specs,
+    // History & Nissan Skyline GT-R Legacy").
+    output: { powerHp: 276, powerRpm: 6800, torqueLbFt: 260, torqueRpm: 4400 },
   },
   {
     id: "gtr-r35-vr38dett",
@@ -390,6 +507,13 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 9.0,
       redlineRpm: 7100,
     },
+    // Output 480 hp @ 6400 rpm, 434 lb-ft @ 3200 rpm — the 2009 launch-year
+    // figure (later model years raised output considerably; not used
+    // here). Torque is a plateau from 3200-5200 rpm; 3200 rpm (the onset)
+    // is recorded as torqueRpm. Confirmed by autoblog.com ("Nissan GT-R
+    // R35 (2009-2024) collectible buyer's guide") and
+    // automobile-catalog.com's 2009 Nissan GT-R spec review.
+    output: { powerHp: 480, powerRpm: 6400, torqueLbFt: 434, torqueRpm: 3200 },
   },
   {
     id: "240sx-ka24de",
@@ -423,6 +547,11 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 9.5,
       redlineRpm: 6900,
     },
+    // Output 155 hp @ 5600 rpm, 160 lb-ft @ 4400 rpm — consistent across
+    // 1994-98 (matching the CR variant above); confirmed by Wikibooks
+    // ("Nissan 240SX Performance Modification/KA24DE and KA24E") and
+    // drifted.com ("KA24DE - The Ultimate Motor Guide").
+    output: { powerHp: 155, powerRpm: 5600, torqueLbFt: 160, torqueRpm: 4400 },
   },
   {
     id: "bmw-e46-m3-s54",
@@ -445,5 +574,13 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
       compressionRatio: 11.5,
       redlineRpm: 8000,
     },
+    // Output 333 hp @ 7900 rpm, 262 lb-ft (355 Nm) @ 4900 rpm — US SAE-net
+    // spec (US-market cars ran extra catalytic converters that trimmed
+    // output versus Europe's 343 PS/338 hp DIN rating). Confirmed by
+    // bmwtuning.co's S54 engine guide and an e46fanatics.com forum thread
+    // ("Euro M3 vs US M3"). Power peak (7900 rpm) sits only 100 rpm below
+    // the 8000 rpm redline — a tight margin worth flagging, but not an
+    // ordering violation.
+    output: { powerHp: 333, powerRpm: 7900, torqueLbFt: 262, torqueRpm: 4900 },
   },
 ];

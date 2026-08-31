@@ -20,7 +20,6 @@ import { resolveSlotConfig } from "../shared/configSlot";
 import type { ConfigSlot } from "../shared/configSlot";
 import {
   METRIC_INFO_BY_ID,
-  describeMechanism,
   lengthForDisplay,
   lengthRangeForDisplay,
 } from "../shared/calculationFormatting";
@@ -214,9 +213,6 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
           );
         })}
       </dl>
-      <p className={styles.description} data-testid="mechanism-description">
-        {describeMechanism(mechanism, displayUnit)}
-      </p>
     </section>
   );
 }

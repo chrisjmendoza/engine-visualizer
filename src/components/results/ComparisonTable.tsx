@@ -19,7 +19,6 @@ import {
 } from "../shared/formatting";
 import {
   METRIC_INFO_BY_ID,
-  describeMechanism,
   lengthForDisplay,
   lengthRangeForDisplay,
 } from "../shared/calculationFormatting";
@@ -349,17 +348,6 @@ export function ComparisonTable() {
             })}
           </tbody>
         </table>
-      </div>
-
-      <div className={styles.descriptions}>
-        <p className={styles.description} data-testid="mechanism-description-a">
-          <strong className={styles.descriptionLabel}>Engine A. </strong>
-          {describeMechanism(metricsA.mechanism, displayUnit)}
-        </p>
-        <p className={styles.description} data-testid="mechanism-description-b">
-          <strong className={styles.descriptionLabel}>Engine B. </strong>
-          {describeMechanism(metricsB.mechanism, displayUnit)}
-        </p>
       </div>
     </section>
   );

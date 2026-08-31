@@ -6,8 +6,8 @@
  * oxlint's `react/only-export-components` rule) expects that.
  */
 
-import { mmToIn, radToDeg } from "../../engine/units";
-import type { DisplayUnit, MechanismState } from "../../engine/types";
+import { mmToIn } from "../../engine/units";
+import type { DisplayUnit } from "../../engine/types";
 import { formatRounded } from "./formatting";
 import { METRIC_INFO } from "./metricInfo";
 import type { MetricInfo } from "./metricInfo";
@@ -38,28 +38,4 @@ export function lengthRangeForDisplay(
   const min = unit === "in" ? mmToIn(minMm) : minMm;
   const max = unit === "in" ? mmToIn(maxMm) : maxMm;
   return `${formatRounded(min, decimals)} – ${formatRounded(max, decimals)} ${unit}`;
-}
-
-/** A mechanical-terms sentence summarizing the live mechanism state (§19). */
-export function describeMechanism(
-  state: MechanismState,
-  unit: DisplayUnit,
-): string {
-  const angleDeg = radToDeg(state.crankAngleRad);
-  const rodDeg = radToDeg(state.rodAngleRad);
-
-  let tilt: string;
-  if (rodDeg > 0.05) {
-    tilt = `tilted ${formatRounded(rodDeg, 1)} degrees toward the crankpin's side of the cylinder`;
-  } else if (rodDeg < -0.05) {
-    tilt = `tilted ${formatRounded(Math.abs(rodDeg), 1)} degrees away from the crankpin's side of the cylinder`;
-  } else {
-    tilt = "aligned with the cylinder centerline";
-  }
-
-  return (
-    `At a crank angle of ${formatRounded(angleDeg, 1)} degrees, the piston is ` +
-    `${lengthForDisplay(state.pistonDisplacementMm, unit)} past top dead center, ` +
-    `and the connecting rod is ${tilt}.`
-  );
 }

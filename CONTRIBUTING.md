@@ -22,6 +22,11 @@ Four layers, strictly separated:
 - Keep the four-layer separation. If a change blurs a boundary, restructure before merging.
 - Run the full check locally before pushing: `npm run lint && npm run format:check && npm test && npm run build`.
 
-## Commit style
+## Branching and commits
 
-Conventional-commit-flavored subjects (`feat:`, `fix:`, `chore:`, `docs:`, `test:`). Update `CHANGELOG.md` for user-visible changes.
+Work happens on feature branches, never directly on `main`:
+
+1. `git checkout -b feature/<topic>` (or `fix/<topic>`).
+2. Commit there, with conventional-commit-flavored subjects (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
+3. Push and open a pull request; CI must pass before merging.
+4. Update `CHANGELOG.md` for user-visible changes, in the same change.

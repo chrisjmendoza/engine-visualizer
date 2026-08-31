@@ -107,15 +107,6 @@ describe("CalculationPanel", () => {
     expect(getResultValue("Current crank angle")).toBe("180.0°");
   });
 
-  it("renders a textual mechanism description that reflects the current crank angle", () => {
-    useEngineStore.setState({ crankAngleRad: Math.PI / 2 });
-    render(<CalculationPanel />);
-
-    const description = screen.getByTestId("mechanism-description");
-    expect(description.textContent).toMatch(/90\.0 degrees/);
-    expect(description.textContent).toMatch(/top dead center/);
-  });
-
   it("re-renders results when the store's crank angle changes", () => {
     render(<CalculationPanel />);
     expect(getResultValue("Current crank angle")).toBe("0.0°");

@@ -1,13 +1,16 @@
 import { Suspense, lazy } from "react";
 import { AnimationControls } from "../components/controls/AnimationControls";
 import { ComparisonToggle } from "../components/controls/ComparisonToggle";
+import { ShareLinkButton } from "../components/controls/ShareLinkButton";
 import { UnitSelector } from "../components/controls/UnitSelector";
 import { ApplicationShell } from "../components/layout/ApplicationShell";
 import { EngineComparisonLayout } from "../components/layout/EngineComparisonLayout";
 import { EnginePanel } from "../components/layout/EnginePanel";
 import { SharedControlsRow } from "../components/layout/SharedControlsRow";
 import { ComparisonTable } from "../components/results/ComparisonTable";
+import { useShareLinkSync } from "../components/shared/useShareLinkSync";
 import { useEngineStore } from "../state/engineStore";
+import styles from "./App.module.css";
 
 /**
  * Three.js (~330 kB gzipped) loads in its own chunk so the controls and
@@ -33,11 +36,19 @@ const EngineViewport = lazy(() =>
  * plus a single `ComparisonTable` showing both engines' results together —
  * a gpuboss-style table replaces two separate result lists rather than
  * duplicating them.
+ *
+ * `useShareLinkSync()` hydrates the store from `window.location.search` on
+ * mount (a shared link opens straight into the state it was copied from)
+ * and keeps the address bar in sync with the store afterward, so the
+ * current URL is always a valid link to the current configuration —
+ * `ShareLinkButton` just copies it.
  */
 export function App() {
   const isComparing = useEngineStore(
     (state) => state.comparisonConfig !== null,
   );
+
+  useShareLinkSync();
 
   return (
     <ApplicationShell
@@ -48,7 +59,10 @@ export function App() {
       }
       panel={
         <>
-          <ComparisonToggle />
+          <div className={styles.actionsRow}>
+            <ComparisonToggle />
+            <ShareLinkButton />
+          </div>
           <SharedControlsRow>
             <AnimationControls />
             <UnitSelector />
