@@ -60,6 +60,14 @@
   white-space: normal;
 }
 
+/* The row-header label doubles as its metric's info-explainer trigger
+   (see MetricLabelButton); it inherits tbody th's own typography above,
+   and just needs to fill the cell for a reasonably-sized hit area. */
+.rowLabel {
+  width: 100%;
+  white-space: normal;
+}
+
 .table th:first-child,
 .table td:first-child {
   text-align: left;
@@ -77,6 +85,22 @@
 .table td.difference {
   color: var(--color-text-muted);
   font-weight: 600;
+}
+
+/* The expanded metric-info row: a single full-width cell, left-aligned and
+   wrapping (unlike every other cell in this table). */
+.table td.explanationCell {
+  text-align: left;
+  white-space: normal;
+  background: var(--color-bg);
+}
+
+.explanation {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.45;
 }
 
 .descriptions {

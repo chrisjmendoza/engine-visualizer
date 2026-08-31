@@ -1,0 +1,30 @@
+.trigger {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0.15rem 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trigger:hover .icon,
+.trigger:focus-visible .icon {
+  color: var(--color-accent);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.icon {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+  color: var(--color-text-muted);
+}

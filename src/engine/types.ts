@@ -27,6 +27,11 @@ export interface CrankMechanismConfig {
   strokeMm: number;
   rodLengthMm: number;
   compressionRatio: number;
+  /**
+   * The engine's rated maximum speed, in RPM. Engine-level data, ignored by
+   * kinematics; used for at-redline calculated results.
+   */
+  redlineRpm: number;
 }
 
 export type DisplayUnit = "mm" | "in";
@@ -66,6 +71,7 @@ export interface ValidationIssue {
     | "strokeMm"
     | "rodLengthMm"
     | "compressionRatio"
+    | "redlineRpm"
     | "rpm"
     | "crankAngleRad";
   message: string;

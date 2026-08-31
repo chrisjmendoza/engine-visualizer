@@ -53,15 +53,33 @@ function buildRig(config: CrankMechanismConfig) {
 const CONFIGS: Array<[string, CrankMechanismConfig]> = [
   [
     "default square engine",
-    { boreMm: 86, strokeMm: 86, rodLengthMm: 143, compressionRatio: 10.5 },
+    {
+      boreMm: 86,
+      strokeMm: 86,
+      rodLengthMm: 143,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
   ],
   [
     "short rod, long stroke",
-    { boreMm: 60, strokeMm: 120, rodLengthMm: 90, compressionRatio: 10.5 },
+    {
+      boreMm: 60,
+      strokeMm: 120,
+      rodLengthMm: 90,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
   ],
   [
     "long rod, short stroke",
-    { boreMm: 100, strokeMm: 30, rodLengthMm: 300, compressionRatio: 10.5 },
+    {
+      boreMm: 100,
+      strokeMm: 30,
+      rodLengthMm: 300,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
   ],
 ];
 

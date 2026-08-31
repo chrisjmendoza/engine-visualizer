@@ -1,6 +1,7 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ComparisonTable } from "./ComparisonTable";
 import { useEngineStore } from "../../state/engineStore";
 import {
@@ -8,6 +9,7 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_PLAYBACK_SPEED,
 } from "../../engine/constants";
+import { METRIC_INFO_BY_ID } from "../shared/calculationFormatting";
 import type { CrankMechanismConfig } from "../../engine/types";
 
 function resetStore() {
@@ -93,8 +95,8 @@ describe("ComparisonTable", () => {
       "+4.7%",
     ]);
     expect(getRow("Bore-to-stroke ratio")).toEqual([
-      "1.00:1",
-      "0.96:1",
+      "1.00:1 · square",
+      "0.96:1 · undersquare",
       "−4.4%",
     ]);
     expect(getRow("Mean piston speed")).toEqual([
@@ -181,5 +183,94 @@ describe("ComparisonTable", () => {
     });
 
     expect(getRow("Current crank angle")[0]).toBe("90.0°");
+  });
+
+  it("shows the redline and mean piston speed at redline for both engines, with a signed percentage", () => {
+    // A keeps DEFAULT_CONFIG's redlineRpm (7000); B differs only in
+    // redlineRpm (8900), so both rows share one hand-computed percentage.
+    enableComparisonWith({ ...DEFAULT_CONFIG, redlineRpm: 8900 });
+    render(<ComparisonTable />);
+
+    expect(getRow("Redline")).toEqual(["7,000 rpm", "8,900 rpm", "+27.1%"]);
+    // 2 x 0.086 m x {7000,8900} rpm / 60, computed independently rather
+    // than by calling calculateMeanPistonSpeedMps directly.
+    expect(getRow("Mean piston speed at redline")).toEqual([
+      "20.07 m/s",
+      "25.51 m/s",
+      "+27.1%",
+    ]);
+  });
+
+  describe("metric info popups", () => {
+    it("opens the matching METRIC_INFO explainer in a full-width row when a label is clicked", async () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      const user = userEvent.setup();
+      render(<ComparisonTable />);
+
+      const trigger = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      await user.click(trigger);
+
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      const info = METRIC_INFO_BY_ID.get("cylinderDisplacement");
+      expect(info).toBeDefined();
+      expect(screen.getByText(info!.body)).toBeInTheDocument();
+    });
+
+    it("closes the explainer when its trigger is clicked again", async () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      const user = userEvent.setup();
+      render(<ComparisonTable />);
+
+      const trigger = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      await user.click(trigger);
+      await user.click(trigger);
+
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      const info = METRIC_INFO_BY_ID.get("cylinderDisplacement");
+      expect(screen.queryByText(info!.body)).not.toBeInTheDocument();
+    });
+
+    it("keeps only one explainer open at a time", async () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      const user = userEvent.setup();
+      render(<ComparisonTable />);
+
+      const first = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      const second = screen.getByRole("button", {
+        name: "Bore-to-stroke ratio",
+      });
+
+      await user.click(first);
+      await user.click(second);
+
+      expect(second).toHaveAttribute("aria-expanded", "true");
+      expect(first).toHaveAttribute("aria-expanded", "false");
+      const firstInfo = METRIC_INFO_BY_ID.get("cylinderDisplacement");
+      expect(screen.queryByText(firstInfo!.body)).not.toBeInTheDocument();
+    });
+
+    it("closes the open explainer on Escape", async () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      const user = userEvent.setup();
+      render(<ComparisonTable />);
+
+      const trigger = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+      await user.keyboard("{Escape}");
+
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+    });
   });
 });

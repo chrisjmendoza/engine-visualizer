@@ -1,3 +1,4 @@
+import { Fragment, useId } from "react";
 import { useEngineStore } from "../../state/engineStore";
 import { calculateMechanismState } from "../../engine/kinematics";
 import {
@@ -11,12 +12,19 @@ import {
 } from "../../engine/calculations";
 import { radToDeg } from "../../engine/units";
 import type { CrankMechanismConfig, MechanismState } from "../../engine/types";
-import { formatRounded } from "../shared/formatting";
 import {
+  classifyBoreStrokeRatio,
+  formatRounded,
+  formatRpm,
+} from "../shared/formatting";
+import {
+  METRIC_INFO_BY_ID,
   describeMechanism,
   lengthForDisplay,
   lengthRangeForDisplay,
 } from "../shared/calculationFormatting";
+import { useMetricInfoToggle } from "../shared/useMetricInfoToggle";
+import { MetricLabelButton } from "../shared/MetricLabelButton";
 import styles from "./ComparisonTable.module.css";
 
 interface EngineMetrics {
@@ -25,6 +33,7 @@ interface EngineMetrics {
   boreStrokeRatio: number;
   rodStrokeRatio: number;
   meanPistonSpeedMps: number;
+  meanPistonSpeedAtRedlineMps: number;
   clearanceVolumeCc: number;
   clearanceHeightMm: number;
   pistonToHeadMinMm: number;
@@ -51,6 +60,10 @@ function computeMetrics(
       config.strokeMm,
     ),
     meanPistonSpeedMps: calculateMeanPistonSpeedMps(config.strokeMm, rpm),
+    meanPistonSpeedAtRedlineMps: calculateMeanPistonSpeedMps(
+      config.strokeMm,
+      config.redlineRpm,
+    ),
     clearanceVolumeCc: calculateClearanceVolumeCc(
       config.boreMm,
       config.strokeMm,
@@ -103,6 +116,7 @@ function percentDifference(a: number, b: number): string {
 }
 
 interface TableRow {
+  id: string;
   label: string;
   a: string;
   b: string;
@@ -121,6 +135,10 @@ interface TableRow {
  * ((B − A) / A) — never a declared "winner". Most of these metrics (bore
  * ratio, mean piston speed, clearance volume...) have no objectively better
  * side, so this deliberately stops short of gpuboss-style highlighting.
+ *
+ * Each row's label doubles as a trigger that expands an inline explainer
+ * row (from `METRIC_INFO`) — see `useMetricInfoToggle`, shared with
+ * `CalculationPanel`.
  */
 export function ComparisonTable() {
   const config = useEngineStore((state) => state.config);
@@ -128,6 +146,9 @@ export function ComparisonTable() {
   const rpm = useEngineStore((state) => state.rpm);
   const crankAngleRad = useEngineStore((state) => state.crankAngleRad);
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
+
+  const { openMetricId, toggleMetric } = useMetricInfoToggle();
+  const basePanelId = useId();
 
   // This table is only ever mounted by App.tsx while comparisonConfig is
   // set; the fallback to `config` just keeps it crash-proof if that ever
@@ -141,6 +162,7 @@ export function ComparisonTable() {
 
   const rows: TableRow[] = [
     {
+      id: "cylinderDisplacement",
       label: "Cylinder displacement",
       a: `${formatRounded(metricsA.displacementCc, 1)} cc`,
       b: `${formatRounded(metricsB.displacementCc, 1)} cc`,
@@ -150,15 +172,19 @@ export function ComparisonTable() {
       ),
     },
     {
+      id: "boreStrokeRatio",
       label: "Bore-to-stroke ratio",
-      a: `${formatRounded(metricsA.boreStrokeRatio, 2)}:1`,
-      b: `${formatRounded(metricsB.boreStrokeRatio, 2)}:1`,
+      a: `${formatRounded(metricsA.boreStrokeRatio, 2)}:1 · ${classifyBoreStrokeRatio(metricsA.boreStrokeRatio)}`,
+      b: `${formatRounded(metricsB.boreStrokeRatio, 2)}:1 · ${classifyBoreStrokeRatio(metricsB.boreStrokeRatio)}`,
+      // The classification label is descriptive, not numeric — the percent
+      // difference still comes from the underlying numeric ratio alone.
       difference: percentDifference(
         metricsA.boreStrokeRatio,
         metricsB.boreStrokeRatio,
       ),
     },
     {
+      id: "rodStrokeRatio",
       label: "Rod-to-stroke ratio",
       a: `${formatRounded(metricsA.rodStrokeRatio, 2)}:1`,
       b: `${formatRounded(metricsB.rodStrokeRatio, 2)}:1`,
@@ -168,6 +194,14 @@ export function ComparisonTable() {
       ),
     },
     {
+      id: "redline",
+      label: "Redline",
+      a: formatRpm(config.redlineRpm),
+      b: formatRpm(configB.redlineRpm),
+      difference: percentDifference(config.redlineRpm, configB.redlineRpm),
+    },
+    {
+      id: "meanPistonSpeed",
       label: "Mean piston speed",
       a: `${formatRounded(metricsA.meanPistonSpeedMps, 2)} m/s`,
       b: `${formatRounded(metricsB.meanPistonSpeedMps, 2)} m/s`,
@@ -177,6 +211,17 @@ export function ComparisonTable() {
       ),
     },
     {
+      id: "meanPistonSpeedRedline",
+      label: "Mean piston speed at redline",
+      a: `${formatRounded(metricsA.meanPistonSpeedAtRedlineMps, 2)} m/s`,
+      b: `${formatRounded(metricsB.meanPistonSpeedAtRedlineMps, 2)} m/s`,
+      difference: percentDifference(
+        metricsA.meanPistonSpeedAtRedlineMps,
+        metricsB.meanPistonSpeedAtRedlineMps,
+      ),
+    },
+    {
+      id: "clearanceVolume",
       label: "Clearance volume",
       a: `${formatRounded(metricsA.clearanceVolumeCc, 1)} cc`,
       b: `${formatRounded(metricsB.clearanceVolumeCc, 1)} cc`,
@@ -186,6 +231,7 @@ export function ComparisonTable() {
       ),
     },
     {
+      id: "clearanceHeight",
       label: "Clearance height (TDC)",
       a: lengthForDisplay(metricsA.clearanceHeightMm, displayUnit),
       b: lengthForDisplay(metricsB.clearanceHeightMm, displayUnit),
@@ -195,6 +241,7 @@ export function ComparisonTable() {
       ),
     },
     {
+      id: "currentCrankAngle",
       label: "Current crank angle",
       a: sharedAngleDeg,
       b: sharedAngleDeg,
@@ -204,6 +251,7 @@ export function ComparisonTable() {
       difference: "—",
     },
     {
+      id: "pistonToHeadRange",
       label: "Piston-to-head distance",
       a: lengthRangeForDisplay(
         metricsA.pistonToHeadMinMm,
@@ -219,6 +267,7 @@ export function ComparisonTable() {
       difference: "—",
     },
     {
+      id: "pistonDisplacement",
       label: "Piston displacement from TDC",
       a: lengthForDisplay(metricsA.mechanism.pistonDisplacementMm, displayUnit),
       b: lengthForDisplay(metricsB.mechanism.pistonDisplacementMm, displayUnit),
@@ -228,6 +277,7 @@ export function ComparisonTable() {
       ),
     },
     {
+      id: "currentPistonToHead",
       label: "Current piston-to-head distance",
       a: lengthForDisplay(metricsA.pistonToHeadCurrentMm, displayUnit),
       b: lengthForDisplay(metricsB.pistonToHeadCurrentMm, displayUnit),
@@ -237,6 +287,7 @@ export function ComparisonTable() {
       ),
     },
     {
+      id: "rodAngle",
       label: "Connecting-rod angle",
       a: `${formatRounded(radToDeg(metricsA.mechanism.rodAngleRad), 1)}°`,
       b: `${formatRounded(radToDeg(metricsB.mechanism.rodAngleRad), 1)}°`,
@@ -263,14 +314,39 @@ export function ComparisonTable() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.label}>
-                <th scope="row">{row.label}</th>
-                <td>{row.a}</td>
-                <td>{row.b}</td>
-                <td className={styles.difference}>{row.difference}</td>
-              </tr>
-            ))}
+            {rows.map((row) => {
+              const panelId = `${basePanelId}-${row.id}`;
+              const isOpen = openMetricId === row.id;
+              const info = METRIC_INFO_BY_ID.get(row.id);
+              return (
+                <Fragment key={row.id}>
+                  <tr>
+                    <th scope="row">
+                      <MetricLabelButton
+                        id={row.id}
+                        label={row.label}
+                        isOpen={isOpen}
+                        onToggle={toggleMetric}
+                        panelId={panelId}
+                        className={styles.rowLabel}
+                      />
+                    </th>
+                    <td>{row.a}</td>
+                    <td>{row.b}</td>
+                    <td className={styles.difference}>{row.difference}</td>
+                  </tr>
+                  {isOpen && info ? (
+                    <tr>
+                      <td className={styles.explanationCell} colSpan={4}>
+                        <p className={styles.explanation} id={panelId}>
+                          {info.body}
+                        </p>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

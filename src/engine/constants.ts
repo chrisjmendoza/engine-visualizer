@@ -6,6 +6,7 @@ export const DEFAULT_CONFIG: CrankMechanismConfig = {
   strokeMm: 86,
   rodLengthMm: 143,
   compressionRatio: 10.5,
+  redlineRpm: 7000,
 };
 
 export const DEFAULT_ANIMATION: AnimationControls = {
@@ -23,6 +24,7 @@ export const INPUT_RANGES = {
   strokeMm: { min: 20, max: 200 },
   rodLengthMm: { min: 30, max: 400 },
   compressionRatio: { min: 5, max: 20 },
+  redlineRpm: { min: 3000, max: 12_000 },
   rpm: { min: 0, max: 10_000 },
 } as const;
 

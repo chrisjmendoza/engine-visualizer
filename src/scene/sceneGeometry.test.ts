@@ -21,7 +21,7 @@ import type { PlacedMechanism, SceneBounds } from "./sceneGeometry";
 
 /** Geometry extremes that satisfy the `rodLength > stroke / 2` rule. */
 const GEOMETRIES: Array<
-  [string, Omit<CrankMechanismConfig, "compressionRatio">]
+  [string, Omit<CrankMechanismConfig, "compressionRatio" | "redlineRpm">]
 > = [
   ["default", { boreMm: 86, strokeMm: 86, rodLengthMm: 143 }],
   ["smallest", { boreMm: 20, strokeMm: 20, rodLengthMm: 30 }],
@@ -40,10 +40,14 @@ const COMPRESSION_RATIOS = [
 ];
 
 function configFor(
-  geometry: Omit<CrankMechanismConfig, "compressionRatio">,
+  geometry: Omit<CrankMechanismConfig, "compressionRatio" | "redlineRpm">,
   compressionRatio: number,
 ): CrankMechanismConfig {
-  return { ...geometry, compressionRatio };
+  return {
+    ...geometry,
+    compressionRatio,
+    redlineRpm: DEFAULT_CONFIG.redlineRpm,
+  };
 }
 
 describe("deriveProportions — cylinder head placement", () => {
@@ -200,6 +204,7 @@ const LS7: CrankMechanismConfig = {
   strokeMm: 101.6,
   rodLengthMm: 168.15,
   compressionRatio: 11,
+  redlineRpm: 7000,
 };
 
 const B6_1_6: CrankMechanismConfig = {
@@ -207,6 +212,7 @@ const B6_1_6: CrankMechanismConfig = {
   strokeMm: 83.6,
   rodLengthMm: 133.4,
   compressionRatio: 9.4,
+  redlineRpm: 7000,
 };
 
 /** World-space extents of a placed mechanism. */

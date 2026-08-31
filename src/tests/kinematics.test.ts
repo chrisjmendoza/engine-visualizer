@@ -8,6 +8,7 @@ const DEFAULT: CrankMechanismConfig = {
   strokeMm: 86,
   rodLengthMm: 143,
   compressionRatio: 10.5,
+  redlineRpm: 7000,
 };
 
 const CRANK_RADIUS_MM = DEFAULT.strokeMm / 2; // 43
@@ -84,11 +85,41 @@ describe("calculateMechanismState - known crank positions (default config)", () 
 
 describe("calculateMechanismState - invariants across configurations", () => {
   const configs: CrankMechanismConfig[] = [
-    { boreMm: 86, strokeMm: 86, rodLengthMm: 143, compressionRatio: 10.5 },
-    { boreMm: 70, strokeMm: 60, rodLengthMm: 120, compressionRatio: 10.5 },
-    { boreMm: 150, strokeMm: 100, rodLengthMm: 180, compressionRatio: 10.5 },
-    { boreMm: 200, strokeMm: 200, rodLengthMm: 101, compressionRatio: 10.5 },
-    { boreMm: 20, strokeMm: 20, rodLengthMm: 30, compressionRatio: 10.5 },
+    {
+      boreMm: 86,
+      strokeMm: 86,
+      rodLengthMm: 143,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
+    {
+      boreMm: 70,
+      strokeMm: 60,
+      rodLengthMm: 120,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
+    {
+      boreMm: 150,
+      strokeMm: 100,
+      rodLengthMm: 180,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
+    {
+      boreMm: 200,
+      strokeMm: 200,
+      rodLengthMm: 101,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
+    {
+      boreMm: 20,
+      strokeMm: 20,
+      rodLengthMm: 30,
+      compressionRatio: 10.5,
+      redlineRpm: 7000,
+    },
   ];
 
   const ANGLE_STEPS = 73; // includes 0, 5, 10, ... 360 degrees

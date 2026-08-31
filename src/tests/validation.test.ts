@@ -23,6 +23,7 @@ describe("validateConfig - acceptance", () => {
       strokeMm: INPUT_RANGES.strokeMm.min,
       rodLengthMm: INPUT_RANGES.rodLengthMm.min,
       compressionRatio: INPUT_RANGES.compressionRatio.min,
+      redlineRpm: INPUT_RANGES.redlineRpm.min,
     });
     expect(result.ok).toBe(true);
   });
@@ -33,6 +34,7 @@ describe("validateConfig - acceptance", () => {
       strokeMm: 100,
       rodLengthMm: 50.001,
       compressionRatio: 10,
+      redlineRpm: 7000,
     });
     expect(result.ok).toBe(true);
   });
@@ -70,6 +72,7 @@ describe("validateConfig - rejection", () => {
       strokeMm: 86,
       rodLengthMm: 43,
       compressionRatio: 10.5,
+      redlineRpm: 7000,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -85,6 +88,7 @@ describe("validateConfig - rejection", () => {
       strokeMm: 86,
       rodLengthMm: 30,
       compressionRatio: 10.5,
+      redlineRpm: 7000,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -104,6 +108,7 @@ describe("validateConfig - rejection", () => {
       strokeMm: 200,
       rodLengthMm: 90,
       compressionRatio: 10.5,
+      redlineRpm: 7000,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -159,6 +164,32 @@ describe("validateConfig - rejection", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("rejects a redline below the practical range", () => {
+    const result = validateConfig({ ...DEFAULT_CONFIG, redlineRpm: 2999 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const issue = result.issues.find((item) => item.field === "redlineRpm");
+      expect(issue?.message).toBe("Redline must be at least 3,000 RPM.");
+    }
+  });
+
+  it("rejects a redline above the practical range", () => {
+    const result = validateConfig({ ...DEFAULT_CONFIG, redlineRpm: 12001 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const issue = result.issues.find((item) => item.field === "redlineRpm");
+      expect(issue?.message).toBe("Redline must be at most 12,000 RPM.");
+    }
+  });
+
+  it("rejects a non-finite redline", () => {
+    const result = validateConfig({
+      ...DEFAULT_CONFIG,
+      redlineRpm: Number.NaN,
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("rejects non-object input", () => {
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig(undefined).ok).toBe(false);
@@ -176,6 +207,7 @@ describe("validateConfig - rejection", () => {
       strokeMm: 86,
       rodLengthMm: 43,
       compressionRatio: 10.5,
+      redlineRpm: 7000,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {

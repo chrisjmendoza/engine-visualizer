@@ -9,6 +9,17 @@
 import { mmToIn, radToDeg } from "../../engine/units";
 import type { DisplayUnit, MechanismState } from "../../engine/types";
 import { formatRounded } from "./formatting";
+import { METRIC_INFO } from "./metricInfo";
+import type { MetricInfo } from "./metricInfo";
+
+/**
+ * Looks up a metric's explainer content by id (the single place
+ * `CalculationPanel` and `ComparisonTable` map a results row to its
+ * `METRIC_INFO` entry, so the two never drift on which id means what).
+ */
+export const METRIC_INFO_BY_ID: ReadonlyMap<string, MetricInfo> = new Map(
+  METRIC_INFO.map((entry) => [entry.id, entry]),
+);
 
 /** Renders a length in the selected display unit (mm 2dp / in 3dp). */
 export function lengthForDisplay(mm: number, unit: DisplayUnit): string {

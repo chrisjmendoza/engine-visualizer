@@ -17,6 +17,7 @@ const CONFIG_FIELDS = [
   "strokeMm",
   "rodLengthMm",
   "compressionRatio",
+  "redlineRpm",
 ] as const;
 type ConfigField = (typeof CONFIG_FIELDS)[number];
 
@@ -55,6 +56,16 @@ export const crankMechanismConfigSchema = z
       .max(
         INPUT_RANGES.compressionRatio.max,
         `Compression ratio must be at most ${INPUT_RANGES.compressionRatio.max}:1.`,
+      ),
+    redlineRpm: z
+      .number("Redline must be a finite number of RPM.")
+      .min(
+        INPUT_RANGES.redlineRpm.min,
+        `Redline must be at least ${INPUT_RANGES.redlineRpm.min.toLocaleString()} RPM.`,
+      )
+      .max(
+        INPUT_RANGES.redlineRpm.max,
+        `Redline must be at most ${INPUT_RANGES.redlineRpm.max.toLocaleString()} RPM.`,
       ),
   })
   .superRefine((value, ctx) => {

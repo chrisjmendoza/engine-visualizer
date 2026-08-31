@@ -18,6 +18,11 @@ const ADVERTISED: Record<string, { cylinders: number; totalCc: number }> = {
   "supra-2jzgte": { cylinders: 6, totalCc: 2997 },
   "k20a-type-r": { cylinders: 4, totalCc: 1998 },
   "miata-nd-2-0": { cylinders: 4, totalCc: 1998 },
+  "ferrari-458-italia": { cylinders: 8, totalCc: 4497 },
+  "silvia-sr20det": { cylinders: 4, totalCc: 1998 },
+  "skyline-gtr-rb26dett": { cylinders: 6, totalCc: 2568 },
+  "gtr-r35-vr38dett": { cylinders: 6, totalCc: 3799 },
+  "bmw-e46-m3-s54": { cylinders: 6, totalCc: 3246 },
 };
 
 /**
@@ -36,6 +41,51 @@ const ADVERTISED_COMPRESSION_RATIO: Record<string, number> = {
   "supra-2jzgte": 8.5,
   "k20a-type-r": 11.5,
   "miata-nd-2-0": 13.0,
+  "ferrari-458-italia": 12.5,
+  "silvia-sr20det": 8.5,
+  "skyline-gtr-rb26dett": 8.5,
+  "gtr-r35-vr38dett": 9.0,
+  "bmw-e46-m3-s54": 11.5,
+};
+
+/**
+ * Factory rated redline (RPM) for each preset engine, hardcoded here as an
+ * independent literal for the same reason as the displacement and
+ * compression-ratio fixtures above.
+ */
+const ADVERTISED_REDLINE_RPM: Record<string, number> = {
+  "s2000-ap1": 9000,
+  "s2000-ap2": 8000,
+  "miata-na-nb-1-8": 7000,
+  "miata-na-1-6": 7200,
+  "corvette-c6-ls3": 6600,
+  "corvette-z06-c6-ls7": 7000,
+  "supra-2jzgte": 6800,
+  "k20a-type-r": 8400,
+  "miata-nd-2-0": 7500,
+  "ferrari-458-italia": 9000,
+  "silvia-sr20det": 7500,
+  "skyline-gtr-rb26dett": 8000,
+  "gtr-r35-vr38dett": 7100,
+  "bmw-e46-m3-s54": 8000,
+};
+
+/** Manufacturer brand for each preset, hardcoded as an independent literal. */
+const ADVERTISED_BRAND: Record<string, string> = {
+  "s2000-ap1": "Honda",
+  "s2000-ap2": "Honda",
+  "miata-na-nb-1-8": "Mazda",
+  "miata-na-1-6": "Mazda",
+  "corvette-c6-ls3": "Chevrolet",
+  "corvette-z06-c6-ls7": "Chevrolet",
+  "supra-2jzgte": "Toyota",
+  "k20a-type-r": "Honda",
+  "miata-nd-2-0": "Mazda",
+  "ferrari-458-italia": "Ferrari",
+  "silvia-sr20det": "Nissan",
+  "skyline-gtr-rb26dett": "Nissan",
+  "gtr-r35-vr38dett": "Nissan",
+  "bmw-e46-m3-s54": "BMW",
 };
 
 function perCylinderCc(boreMm: number, strokeMm: number): number {
@@ -48,6 +98,28 @@ describe("ENGINE_PRESETS", () => {
     const ids = ENGINE_PRESETS.map((preset) => preset.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it("has a non-empty brand for every preset", () => {
+    for (const preset of ENGINE_PRESETS) {
+      expect(typeof preset.brand).toBe("string");
+      expect(preset.brand.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("has an advertised-brand fixture for every preset", () => {
+    for (const preset of ENGINE_PRESETS) {
+      expect(ADVERTISED_BRAND[preset.id]).toBeDefined();
+    }
+  });
+
+  it.each(ENGINE_PRESETS)(
+    "$name ($engineCode) brand matches the advertised manufacturer",
+    (preset) => {
+      const advertised = ADVERTISED_BRAND[preset.id];
+      expect(advertised).toBeDefined();
+      expect(preset.brand).toBe(advertised);
+    },
+  );
 
   it("has an advertised-displacement fixture for every preset", () => {
     for (const preset of ENGINE_PRESETS) {
@@ -109,6 +181,21 @@ describe("ENGINE_PRESETS", () => {
       const advertised = ADVERTISED_COMPRESSION_RATIO[preset.id];
       expect(advertised).toBeDefined();
       expect(preset.config.compressionRatio).toBe(advertised);
+    },
+  );
+
+  it("has an advertised-redline fixture for every preset", () => {
+    for (const preset of ENGINE_PRESETS) {
+      expect(ADVERTISED_REDLINE_RPM[preset.id]).toBeDefined();
+    }
+  });
+
+  it.each(ENGINE_PRESETS)(
+    "$name ($engineCode) redline matches the advertised factory figure",
+    (preset) => {
+      const advertised = ADVERTISED_REDLINE_RPM[preset.id];
+      expect(advertised).toBeDefined();
+      expect(preset.config.redlineRpm).toBe(advertised);
     },
   );
 });

@@ -17,7 +17,7 @@ Interactive slider-crank engine visualizer. Vite 8 + React 19 + TypeScript 6, Th
 - `npm run build` — `tsc -b` then Vite build
 - `npm run lint`, `npm run format:check` — oxlint, Prettier
 - Full pre-push check: `npm run lint && npm run format:check && npm test && npm run build`
-- Known local quirk: `npm test` run immediately after `tsc -b` can fail to collect any tests ("no tests", all files failed). Re-run once before investigating; CI is unaffected.
+- Known local quirk: under git-bash, `npm test` can intermittently fail to collect tests ("no tests" / "Vitest failed to find the runner") — a git-bash/vitest worker incompatibility, worst right after `tsc -b`. Run tests from PowerShell for reliability, or re-run once in bash; CI (Linux) is unaffected.
 
 ## Conventions
 

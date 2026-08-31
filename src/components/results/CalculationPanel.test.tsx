@@ -1,6 +1,7 @@
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { CalculationPanel } from "./CalculationPanel";
 import { useEngineStore } from "../../state/engineStore";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../../engine/constants";
 import { calculateCylinderDisplacementCc } from "../../engine/calculations";
 import { formatRounded } from "../shared/formatting";
+import { METRIC_INFO_BY_ID } from "../shared/calculationFormatting";
 import type { CrankMechanismConfig } from "../../engine/types";
 
 function resetStore() {
@@ -33,14 +35,22 @@ beforeEach(() => {
 // unmount explicitly so each test starts from an empty document.
 afterEach(cleanup);
 
-/** Reads the <dd> text next to a <dt> whose text matches `label`. */
+/**
+ * Reads the <dd> value next to a row's label. The label is now a button
+ * (it doubles as the metric-info trigger), so this looks it up by its
+ * accessible name (the info icon beside it is aria-hidden, so the name is
+ * exactly the label) rather than by text content, then walks from the
+ * button up to its row and back down to the value cell.
+ */
 function getResultValue(label: string): string {
-  const term = screen.getByText(label);
-  const value = term.nextElementSibling;
-  if (!value) {
+  const trigger = screen.getByRole("button", { name: label });
+  const dt = trigger.closest("dt");
+  const mainRow = dt?.parentElement;
+  const dd = mainRow?.querySelector("dd");
+  if (!dd) {
     throw new Error(`No value element found next to "${label}"`);
   }
-  return value.textContent ?? "";
+  return dd.textContent ?? "";
 }
 
 describe("CalculationPanel", () => {
@@ -157,12 +167,28 @@ describe("CalculationPanel", () => {
     expect(getResultValue("Current piston-to-head distance")).toBe("95.05 mm");
   });
 
+  it("displays the redline and mean piston speed at redline for the default configuration", () => {
+    render(<CalculationPanel />);
+    // DEFAULT_CONFIG.redlineRpm = 7000.
+    expect(getResultValue("Redline")).toBe("7,000 rpm");
+    // 2 x 0.086 m x 7000 rpm / 60 = 20.0666... m/s, computed independently
+    // rather than by calling calculateMeanPistonSpeedMps directly.
+    expect(getResultValue("Mean piston speed at redline")).toBe("20.07 m/s");
+  });
+
+  it("appends the industry square/oversquare/undersquare classification to the bore-to-stroke ratio", () => {
+    render(<CalculationPanel />);
+    // DEFAULT_CONFIG is 86 x 86 mm: exactly 1:1, "square".
+    expect(getResultValue("Bore-to-stroke ratio")).toBe("1.00:1 · square");
+  });
+
   it("renders engine B's own values when given the comparison slot", () => {
     const comparisonConfig: CrankMechanismConfig = {
       boreMm: 100,
       strokeMm: 90,
       rodLengthMm: 160,
       compressionRatio: 9,
+      redlineRpm: 7000,
     };
     act(() => {
       useEngineStore.getState().enableComparison(comparisonConfig);
@@ -173,12 +199,98 @@ describe("CalculationPanel", () => {
     // Literal values computed independently for boreMm=100, strokeMm=90,
     // rather than by calling the function under test.
     expect(getResultValue("Cylinder displacement")).toBe("706.9 cc");
-    expect(getResultValue("Bore-to-stroke ratio")).toBe("1.11:1");
+    expect(getResultValue("Bore-to-stroke ratio")).toBe("1.11:1 · oversquare");
     // Piston-to-head range reflects engine B's own stroke/CR (90 mm, 9:1:
     // clearance = 90/8 = 11.25 mm, so 11.25 - 101.25 mm), not engine A's.
     expect(getResultValue("Piston-to-head distance")).toBe("11.25 – 101.25 mm");
 
     // Engine A's own config (still DEFAULT_CONFIG) is untouched.
     expect(useEngineStore.getState().config).toEqual(DEFAULT_CONFIG);
+  });
+
+  describe("metric info popups", () => {
+    it("opens the matching METRIC_INFO explainer when a row's label is clicked, and reflects it via aria-expanded", async () => {
+      const user = userEvent.setup();
+      render(<CalculationPanel />);
+
+      const trigger = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      await user.click(trigger);
+
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      const info = METRIC_INFO_BY_ID.get("cylinderDisplacement");
+      expect(info).toBeDefined();
+      expect(screen.getByText(info!.body)).toBeInTheDocument();
+    });
+
+    it("closes the explainer when its trigger is clicked again", async () => {
+      const user = userEvent.setup();
+      render(<CalculationPanel />);
+
+      const trigger = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      const info = METRIC_INFO_BY_ID.get("cylinderDisplacement");
+      expect(screen.queryByText(info!.body)).not.toBeInTheDocument();
+    });
+
+    it("keeps only one explainer open at a time", async () => {
+      const user = userEvent.setup();
+      render(<CalculationPanel />);
+
+      const first = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      const second = screen.getByRole("button", {
+        name: "Bore-to-stroke ratio",
+      });
+
+      await user.click(first);
+      expect(first).toHaveAttribute("aria-expanded", "true");
+
+      await user.click(second);
+      expect(second).toHaveAttribute("aria-expanded", "true");
+      expect(first).toHaveAttribute("aria-expanded", "false");
+
+      const firstInfo = METRIC_INFO_BY_ID.get("cylinderDisplacement");
+      expect(screen.queryByText(firstInfo!.body)).not.toBeInTheDocument();
+    });
+
+    it("closes the open explainer on Escape", async () => {
+      const user = userEvent.setup();
+      render(<CalculationPanel />);
+
+      const trigger = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+      await user.keyboard("{Escape}");
+
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("associates the trigger with its explainer via aria-controls", async () => {
+      const user = userEvent.setup();
+      render(<CalculationPanel />);
+
+      const trigger = screen.getByRole("button", {
+        name: "Cylinder displacement",
+      });
+      await user.click(trigger);
+
+      const controlsId = trigger.getAttribute("aria-controls");
+      expect(controlsId).toBeTruthy();
+      expect(document.getElementById(controlsId!)).not.toBeNull();
+    });
   });
 });

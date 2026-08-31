@@ -8,6 +8,15 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-30
 
+### feat: redlines, brand-grouped presets, metric explainers, squareness labels
+
+- **Redline** is now part of every engine config (editable, validated 3,000–12,000 rpm), shown as a metric with a new **mean piston speed at redline** row — the equalizer stat (most performance engines converge on ~20–25 m/s at their limits). All preset redlines verified against two sources; F20C corrected to 9,000 rpm (8,900 was the US fuel cut) and B6 to 7,200.
+- **Five new preset cars**: Ferrari 458 Italia (F136), Nissan Silvia (SR20DET), Skyline GT-R (RB26DETT), GT-R R35 (VR38DETT), and BMW M3 E46 (S54) — full sourced per-cylinder data. The Toyota GR86's FA24 was researched but dropped: its stock rod length could not be corroborated. The F136's rod length is flagged single-source in code.
+- **Brand-grouped preset picker**: presets now organize under brand buttons with car counts (BMW, Chevrolet, Ferrari, Honda, Mazda, Nissan, Toyota); one brand expands at a time and the brand matching the current config auto-expands.
+- **Clickable metric explainers**: every results/comparison metric label toggles an inline explanation of what the metric means and the difference it makes in an engine (keyboard accessible, Escape closes, one open at a time).
+- **Bore-to-stroke squareness**: the ratio now carries its industry label — square, oversquare, or undersquare (±1% band for square), e.g. "1.12:1 · oversquare" for the LS3.
+- Full suite: 395 tests.
+
 ### feat: piston-to-head distance and comparison difference table
 
 - The results panel's static range row now shows what was actually asked for: **piston-to-head distance** — clearance height at TDC to clearance height + stroke at BDC (e.g. 9.05 – 95.05 mm at defaults) — plus a live current-distance-to-head readout. The live piston displacement from TDC remains. Backed by a new tested engine function `calculatePistonToHeadDistanceMm`.

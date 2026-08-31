@@ -16,6 +16,7 @@ const FIELD_ORDER: ConfigField[] = [
   "strokeMm",
   "rodLengthMm",
   "compressionRatio",
+  "redlineRpm",
 ];
 
 const FIELD_LABEL: Record<ConfigField, string> = {
@@ -23,11 +24,18 @@ const FIELD_LABEL: Record<ConfigField, string> = {
   strokeMm: "Stroke",
   rodLengthMm: "Connecting-rod length",
   compressionRatio: "Compression ratio",
+  redlineRpm: "Redline",
 };
 
-/** Length fields display in the selected unit; ratios are dimensionless. */
+/** Fields whose unit is fixed, unaffected by the mm/in display toggle. */
+const UNITLESS_FIELDS = new Set<ConfigField>([
+  "compressionRatio",
+  "redlineRpm",
+]);
+
+/** Length fields display in the selected unit; ratios and RPM are not. */
 function isLengthField(field: ConfigField): boolean {
-  return field !== "compressionRatio";
+  return !UNITLESS_FIELDS.has(field);
 }
 
 function toDisplayValue(mm: number, unit: DisplayUnit): number {
@@ -109,9 +117,9 @@ export interface EngineGeometryControlsProps {
 }
 
 /**
- * Bore, stroke, connecting-rod length, and compression-ratio inputs
+ * Bore, stroke, connecting-rod length, compression-ratio, and redline inputs
  * (TECHNICAL_DESIGN.md §16). The first three display in the selected unit;
- * compression ratio is dimensionless and unaffected by the unit toggle.
+ * compression ratio and redline are unaffected by the unit toggle.
  *
  * Each field keeps a local draft string so the user can type freely. A draft
  * is converted to millimeters and checked against the full configuration via
@@ -157,12 +165,18 @@ export function EngineGeometryControls({
     slotConfig.compressionRatio,
     displayUnit,
   );
+  const [redlineState, setRedlineState] = useFieldDraft(
+    "redlineRpm",
+    slotConfig.redlineRpm,
+    displayUnit,
+  );
 
   const fieldStates: Record<ConfigField, FieldDraftState> = {
     boreMm: boreState,
     strokeMm: strokeState,
     rodLengthMm: rodState,
     compressionRatio: ratioState,
+    redlineRpm: redlineState,
   };
   const fieldSetters: Record<
     ConfigField,
@@ -172,17 +186,20 @@ export function EngineGeometryControls({
     strokeMm: setStrokeState,
     rodLengthMm: setRodState,
     compressionRatio: setRatioState,
+    redlineRpm: setRedlineState,
   };
 
   const boreErrorId = useId();
   const strokeErrorId = useId();
   const rodErrorId = useId();
   const ratioErrorId = useId();
+  const redlineErrorId = useId();
   const errorIds: Record<ConfigField, string> = {
     boreMm: boreErrorId,
     strokeMm: strokeErrorId,
     rodLengthMm: rodErrorId,
     compressionRatio: ratioErrorId,
+    redlineRpm: redlineErrorId,
   };
 
   function handleFieldChange(field: ConfigField, rawText: string) {
@@ -219,7 +236,10 @@ export function EngineGeometryControls({
   const unitSuffix = displayUnit === "in" ? "in" : "mm";
 
   function fieldSuffix(field: ConfigField): string {
-    return isLengthField(field) ? unitSuffix : ":1";
+    if (isLengthField(field)) {
+      return unitSuffix;
+    }
+    return field === "redlineRpm" ? "rpm" : ":1";
   }
 
   return (
