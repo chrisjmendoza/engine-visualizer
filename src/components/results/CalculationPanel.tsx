@@ -52,6 +52,12 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const slotConfig = resolveSlotConfig(slot, config, comparisonConfig);
+  const cylinderCount = useEngineStore((state) => state.cylinderCount);
+  const comparisonCylinderCount = useEngineStore(
+    (state) => state.comparisonCylinderCount,
+  );
+  const slotCylinderCount =
+    slot === "comparison" ? comparisonCylinderCount : cylinderCount;
   const rpm = useEngineStore((state) => state.rpm);
   const crankAngleRad = useEngineStore((state) => state.crankAngleRad);
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
@@ -108,8 +114,17 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
   const results: { id: string; label: string; value: string }[] = [
     {
       id: "cylinderDisplacement",
-      label: "Cylinder displacement",
-      value: `${formatRounded(displacementCc, 1)} cc`,
+      // Single-cylinder engines keep the original label/value exactly; a
+      // multi-cylinder engine (§24a) additionally shows the whole engine's
+      // swept volume (per-cylinder cc times cylinder count) as "total",
+      // which is what the "2.0 L", "6.2 L" etc. advertised figures mean —
+      // see this metric's METRIC_INFO_BY_ID entry, which already explains
+      // that relationship.
+      label: slotCylinderCount > 1 ? "Displacement" : "Cylinder displacement",
+      value:
+        slotCylinderCount > 1
+          ? `${formatRounded(displacementCc, 1)} cc/cyl · ${formatRounded(displacementCc * slotCylinderCount, 1)} cc total`
+          : `${formatRounded(displacementCc, 1)} cc`,
     },
     {
       id: "boreStrokeRatio",

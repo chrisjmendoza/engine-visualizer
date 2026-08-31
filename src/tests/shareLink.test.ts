@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeConfig,
   decodeShareState,
+  defaultCylinderCountFor,
   encodeConfig,
   encodeShareState,
 } from "../engine/shareLink";
@@ -11,6 +12,7 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_PLAYBACK_SPEED,
 } from "../engine/constants";
+import { SUPPORTED_CYLINDER_COUNTS } from "../engine/engineLayout";
 import { ENGINE_PRESETS } from "../engine/presets";
 import type { CrankMechanismConfig } from "../engine/types";
 
@@ -26,6 +28,8 @@ function baseState(overrides: Partial<ShareState> = {}): ShareState {
   return {
     config: DEFAULT_CONFIG,
     comparisonConfig: null,
+    cylinderCount: 1,
+    comparisonCylinderCount: 1,
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,
     rpmLinked: true,
@@ -90,8 +94,15 @@ describe("encodeShareState", () => {
   it("includes engine B when comparing, by preset id", () => {
     const ls7 = ENGINE_PRESETS.find((p) => p.id === "corvette-z06-c6-ls7");
     const f20c = ENGINE_PRESETS.find((p) => p.id === "s2000-ap1");
+    // cylinderCount matches f20c's own real count (4, §24a) so `c` stays
+    // omitted here — this test is about the `a`/`b` preset-id encoding,
+    // not the `c`/`bc` cylinder-count rules covered separately below.
     const query = encodeShareState(
-      baseState({ config: f20c!.config, comparisonConfig: ls7!.config }),
+      baseState({
+        config: f20c!.config,
+        comparisonConfig: ls7!.config,
+        cylinderCount: 4,
+      }),
     );
     expect(query).toBe("a=s2000-ap1&b=corvette-z06-c6-ls7");
   });
@@ -338,5 +349,196 @@ describe("decodeShareState", () => {
     // is exact to about 1e-6 rad — far finer than the 0.1 degrees the
     // interface displays.
     expect(decoded.crankAngleRad).toBeCloseTo(original.crankAngleRad, 5);
+  });
+});
+
+describe("cylinder counts (§24a)", () => {
+  it("omits both counts when both engines are single-cylinder", () => {
+    const query = encodeShareState(baseState());
+    expect(query).not.toContain("c=");
+    expect(query).not.toContain("bc=");
+  });
+
+  it("includes engine A's count whenever it isn't single-cylinder", () => {
+    const query = encodeShareState(baseState({ cylinderCount: 4 }));
+    expect(query).toContain("c=4");
+  });
+
+  it("includes engine B's count only once engine B is present and non-default", () => {
+    const noB = encodeShareState(
+      baseState({ comparisonCylinderCount: 6 }), // no comparisonConfig
+    );
+    expect(noB).not.toContain("bc=");
+
+    const withB = encodeShareState(
+      baseState({ comparisonConfig: LS7, comparisonCylinderCount: 6 }),
+    );
+    expect(withB).toContain("bc=6");
+  });
+
+  it("omits engine B's count when comparing but B is single-cylinder", () => {
+    const query = encodeShareState(
+      baseState({ comparisonConfig: LS7, comparisonCylinderCount: 1 }),
+    );
+    expect(query).not.toContain("bc=");
+  });
+
+  it("decodes valid counts", () => {
+    const state = decodeShareState(
+      "?a=s2000-ap1&b=corvette-z06-c6-ls7&c=4&bc=6",
+    );
+    expect(state.cylinderCount).toBe(4);
+    expect(state.comparisonCylinderCount).toBe(6);
+  });
+
+  it("drops an unsupported engine-A count instead of failing the whole link", () => {
+    const state = decodeShareState("?a=s2000-ap1&c=5");
+    expect(state.cylinderCount).toBeUndefined();
+    expect(state.config).toBeDefined();
+  });
+
+  it("drops an unsupported, non-finite, or malformed engine-B count", () => {
+    expect(
+      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&bc=8")
+        .comparisonCylinderCount,
+    ).toBeUndefined();
+    expect(
+      decodeShareState("?a=s2000-ap1&b=corvette-z06-c6-ls7&bc=nope")
+        .comparisonCylinderCount,
+    ).toBeUndefined();
+  });
+
+  it("ignores bc entirely when the link carries no usable engine B", () => {
+    // No `b` at all, and a `b` that fails to decode: neither may leave
+    // comparisonCylinderCount set with no comparisonConfig to go with it.
+    expect(decodeShareState("?a=s2000-ap1&bc=4").comparisonCylinderCount).toBe(
+      undefined,
+    );
+    expect(
+      decodeShareState("?a=s2000-ap1&b=not-real&bc=4").comparisonCylinderCount,
+    ).toBeUndefined();
+  });
+
+  it("round-trips both counts through encode/decode", () => {
+    const original = baseState({
+      config: F20C,
+      comparisonConfig: LS7,
+      cylinderCount: 4,
+      comparisonCylinderCount: 6,
+    });
+    const decoded = decodeShareState(encodeShareState(original));
+    expect(decoded.cylinderCount).toBe(4);
+    expect(decoded.comparisonCylinderCount).toBe(6);
+  });
+});
+
+describe("preset-id share links imply the preset's real cylinder count", () => {
+  it("defaultCylinderCountFor returns the preset's own count, or 1 for a non-preset config", () => {
+    expect(defaultCylinderCountFor(F20C)).toBe(4);
+    expect(defaultCylinderCountFor(CUSTOM)).toBe(1);
+    // LS7 (a V8) isn't a currently-renderable layout, so its preset omits
+    // `cylinderCount` — falls back to 1, same as any non-preset config.
+    expect(defaultCylinderCountFor(LS7)).toBe(1);
+  });
+
+  it("a bare preset-id `a` with no `c` decodes to the preset's own cylinder count", () => {
+    // s2000-ap1 (F20C) is a real inline-4 (§24a); with no `c` at all, the
+    // link must not silently render as a single cylinder.
+    const state = decodeShareState("?a=s2000-ap1");
+    expect(state.cylinderCount).toBe(4);
+  });
+
+  it("an explicit `c` still overrides the preset's implied count", () => {
+    // A deliberate "view this real engine as a single cylinder" link.
+    const state = decodeShareState("?a=s2000-ap1&c=1");
+    expect(state.cylinderCount).toBe(1);
+
+    const state6 = decodeShareState("?a=s2000-ap1&c=6");
+    expect(state6.cylinderCount).toBe(6);
+  });
+
+  it("a numeric (non-preset) `a` with no `c` implies 1, not the current session's count", () => {
+    const state = decodeShareState(`?a=${encodeConfig(CUSTOM)}`);
+    expect(state.config).toEqual(CUSTOM);
+    expect(state.cylinderCount).toBe(1);
+  });
+
+  it("the same rules apply to engine B via `b`/`bc`", () => {
+    const bareB = decodeShareState("?a=s2000-ap1&b=s2000-ap1");
+    expect(bareB.comparisonCylinderCount).toBe(4);
+
+    const overriddenB = decodeShareState("?a=s2000-ap1&b=s2000-ap1&bc=1");
+    expect(overriddenB.comparisonCylinderCount).toBe(1);
+
+    const numericB = decodeShareState(`?a=s2000-ap1&b=${encodeConfig(CUSTOM)}`);
+    expect(numericB.comparisonCylinderCount).toBe(1);
+  });
+
+  it("encodeShareState omits `c`/`bc` exactly when they'd round-trip to the same count anyway", () => {
+    // F20C at its own real count (4): omitted, decode still infers 4.
+    const atOwnCount = encodeShareState(
+      baseState({ config: F20C, cylinderCount: 4 }),
+    );
+    expect(atOwnCount).not.toContain("c=");
+    expect(decodeShareState(atOwnCount).cylinderCount).toBe(4);
+
+    // F20C deliberately viewed at count 1: must NOT be silently omitted,
+    // or the link would corrupt back to an inline-4 on decode (the bug
+    // this fix addresses).
+    const overridden = encodeShareState(
+      baseState({ config: F20C, cylinderCount: 1 }),
+    );
+    expect(overridden).toContain("c=1");
+    expect(decodeShareState(overridden).cylinderCount).toBe(1);
+
+    // Same for engine B.
+    const bAtOwnCount = encodeShareState(
+      baseState({
+        config: DEFAULT_CONFIG,
+        comparisonConfig: F20C,
+        comparisonCylinderCount: 4,
+      }),
+    );
+    expect(bAtOwnCount).not.toContain("bc=");
+    expect(decodeShareState(bAtOwnCount).comparisonCylinderCount).toBe(4);
+
+    const bOverridden = encodeShareState(
+      baseState({
+        config: DEFAULT_CONFIG,
+        comparisonConfig: F20C,
+        comparisonCylinderCount: 1,
+      }),
+    );
+    expect(bOverridden).toContain("bc=1");
+    expect(decodeShareState(bOverridden).comparisonCylinderCount).toBe(1);
+  });
+
+  it("round-trips every preset at every supported cylinder count", () => {
+    for (const preset of ENGINE_PRESETS) {
+      for (const count of SUPPORTED_CYLINDER_COUNTS) {
+        const state = baseState({
+          config: preset.config,
+          cylinderCount: count,
+        });
+        const decoded = decodeShareState(encodeShareState(state));
+        expect(decoded.config).toEqual(preset.config);
+        expect(decoded.cylinderCount).toBe(count);
+      }
+    }
+  });
+
+  it("round-trips every preset as engine B at every supported cylinder count", () => {
+    for (const preset of ENGINE_PRESETS) {
+      for (const count of SUPPORTED_CYLINDER_COUNTS) {
+        const state = baseState({
+          config: DEFAULT_CONFIG,
+          comparisonConfig: preset.config,
+          comparisonCylinderCount: count,
+        });
+        const decoded = decodeShareState(encodeShareState(state));
+        expect(decoded.comparisonConfig).toEqual(preset.config);
+        expect(decoded.comparisonCylinderCount).toBe(count);
+      }
+    }
   });
 });

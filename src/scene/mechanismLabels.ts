@@ -9,11 +9,19 @@
  * Pure: no React, Three.js, or browser imports.
  */
 
+import { DEFAULT_CONFIG } from "../engine/constants";
 import { ENGINE_PRESETS } from "../engine/presets";
 import type { CrankMechanismConfig } from "../engine/types";
 
 /** Shown when a configuration matches no preset. */
 export const CUSTOM_ENGINE_LABEL = "Custom engine";
+
+/**
+ * Shown for the untouched default configuration, which matches no preset but
+ * isn't anything the user customized either — "Custom engine" on first load
+ * wrongly implied edits had already been made.
+ */
+export const DEFAULT_ENGINE_LABEL = "Default engine (86 × 86 mm)";
 
 /**
  * Exact field-by-field equality. Every field of `CrankMechanismConfig` is
@@ -38,7 +46,16 @@ export function findMatchingPreset(config: CrankMechanismConfig) {
   return ENGINE_PRESETS.find((preset) => configsMatch(preset.config, config));
 }
 
-/** Display name for a configuration: its preset's name, or "Custom engine". */
+/**
+ * Display name for a configuration: its preset's name, the default label for
+ * the untouched default configuration, or "Custom engine" once edited.
+ */
 export function describeConfig(config: CrankMechanismConfig): string {
-  return findMatchingPreset(config)?.name ?? CUSTOM_ENGINE_LABEL;
+  const preset = findMatchingPreset(config);
+  if (preset) {
+    return preset.name;
+  }
+  return configsMatch(config, DEFAULT_CONFIG)
+    ? DEFAULT_ENGINE_LABEL
+    : CUSTOM_ENGINE_LABEL;
 }

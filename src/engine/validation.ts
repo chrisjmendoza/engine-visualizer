@@ -79,6 +79,17 @@ export const crankMechanismConfigSchema = z
     }
   });
 
+/*
+ * Cylinder counts (§24a) are deliberately validated by `engineLayout.ts`'s
+ * `isSupportedCylinderCount` type guard rather than by a schema here. Both
+ * entry points — the share-link decoder and the cylinder-count select — need
+ * a boolean narrowing to `SupportedCylinderCount`, not a parsed value with a
+ * user-facing message: the select is a closed list, and a bad count in a
+ * hand-edited link is dropped silently like every other malformed parameter
+ * (§25a). A schema would only earn its place alongside free-text entry, the
+ * way `rpmSchema` does below.
+ */
+
 /** Schema for engine speed in revolutions per minute. */
 export const rpmSchema = z
   .number("RPM must be a finite number.")

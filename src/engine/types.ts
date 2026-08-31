@@ -39,6 +39,12 @@ export type DisplayUnit = "mm" | "in";
 export interface UserPreferences {
   displayUnit: DisplayUnit;
   showLabels: boolean;
+  /**
+   * Gates the four-stroke stroke badge (`src/engine/cycle.ts`'s pedagogical
+   * overlay). Session-local, like every other preference here: not carried
+   * by share links tonight (see the store's `setShowCycle` doc comment).
+   */
+  showCycle: boolean;
 }
 
 export interface AnimationControls {

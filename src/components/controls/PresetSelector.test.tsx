@@ -16,7 +16,9 @@ function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    preferences: { displayUnit: "mm", showLabels: true },
+    cylinderCount: 1,
+    comparisonCylinderCount: 1,
+    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
@@ -212,6 +214,52 @@ describe("PresetSelector", () => {
     expect(useEngineStore.getState().isPlaying).toBe(true);
   });
 
+  it("sets cylinderCount to the preset's real layout when it selects one (§24a)", async () => {
+    const user = userEvent.setup();
+    useEngineStore.setState({ cylinderCount: 1 });
+    render(<PresetSelector />);
+
+    const preset = ENGINE_PRESETS.find((p) => p.id === "supra-2jzgte");
+    if (!preset) throw new Error("expected supra-2jzgte preset to exist");
+    expect(preset.cylinderCount).toBe(6);
+
+    await user.click(await getPresetButton(user, preset));
+
+    expect(useEngineStore.getState().cylinderCount).toBe(6);
+  });
+
+  it("falls back to single-cylinder for a preset without a supported layout (e.g. a V8)", async () => {
+    const user = userEvent.setup();
+    // Start from a non-default count so the fallback is visibly exercised,
+    // not just coincidentally already 1.
+    useEngineStore.setState({ cylinderCount: 4 });
+    render(<PresetSelector />);
+
+    const preset = ENGINE_PRESETS.find((p) => p.id === "corvette-c6-ls3");
+    if (!preset) throw new Error("expected corvette-c6-ls3 preset to exist");
+    expect(preset.cylinderCount).toBeUndefined();
+
+    await user.click(await getPresetButton(user, preset));
+
+    expect(useEngineStore.getState().cylinderCount).toBe(1);
+  });
+
+  it("applies cylinderCount to the comparison slot only, leaving engine A's alone", async () => {
+    act(() => {
+      useEngineStore.getState().enableComparison();
+    });
+    const user = userEvent.setup();
+    render(<PresetSelector slot="comparison" />);
+
+    const preset = ENGINE_PRESETS.find((p) => p.id === "supra-2jzgte");
+    if (!preset) throw new Error("expected supra-2jzgte preset to exist");
+
+    await user.click(await getPresetButton(user, preset));
+
+    expect(useEngineStore.getState().comparisonCylinderCount).toBe(6);
+    expect(useEngineStore.getState().cylinderCount).toBe(1);
+  });
+
   it("marks the matching preset as pressed and no others in the same brand", async () => {
     const user = userEvent.setup();
     render(<PresetSelector />);
@@ -251,6 +299,60 @@ describe("PresetSelector", () => {
     }
   });
 
+  describe("active state tracks cylinder count, not just geometry (§24a)", () => {
+    it("is active immediately after selecting a multi-cylinder preset", async () => {
+      const user = userEvent.setup();
+      render(<PresetSelector />);
+
+      const preset = ENGINE_PRESETS.find((p) => p.id === "supra-2jzgte");
+      if (!preset) throw new Error("expected supra-2jzgte preset to exist");
+      expect(preset.cylinderCount).toBe(6);
+
+      const button = await getPresetButton(user, preset);
+      await user.click(button);
+
+      expect(button).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("stops being active once the cylinder count is changed away from the preset's own layout", async () => {
+      const user = userEvent.setup();
+      render(<PresetSelector />);
+
+      const preset = ENGINE_PRESETS.find((p) => p.id === "supra-2jzgte");
+      if (!preset) throw new Error("expected supra-2jzgte preset to exist");
+
+      const button = await getPresetButton(user, preset);
+      await user.click(button);
+      expect(button).toHaveAttribute("aria-pressed", "true");
+
+      // Simulates switching to "Single" in CylinderCountSelector: the
+      // geometry is untouched, only the count changes.
+      act(() => {
+        useEngineStore.getState().setCylinderCount(1);
+      });
+
+      expect(button).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("stays active for a single-cylinder preset (no real layout) at count 1", async () => {
+      const user = userEvent.setup();
+      render(<PresetSelector />);
+
+      const preset = ENGINE_PRESETS.find((p) => p.id === "corvette-c6-ls3");
+      if (!preset) throw new Error("expected corvette-c6-ls3 preset to exist");
+      expect(preset.cylinderCount).toBeUndefined();
+
+      const button = await getPresetButton(user, preset);
+      await user.click(button);
+
+      // Clicking committed cylinderCount to 1 (preset.cylinderCount ?? 1),
+      // which already equals the store's default, so the preset stays
+      // active rather than reading as mismatched.
+      expect(useEngineStore.getState().cylinderCount).toBe(1);
+      expect(button).toHaveAttribute("aria-pressed", "true");
+    });
+  });
+
   describe("comparison slot", () => {
     it("applies a preset to comparisonConfig (engine B) only, leaving config (engine A) untouched", async () => {
       act(() => {
@@ -272,6 +374,15 @@ describe("PresetSelector", () => {
       const preset = ENGINE_PRESETS[0];
       act(() => {
         useEngineStore.getState().enableComparison(preset.config);
+        // enableComparison seeds comparisonCylinderCount from engine A's
+        // current count (1, from resetStore), not from the preset being
+        // seeded directly into engine B here — set it to match the
+        // preset's own real layout so this test's geometry-matching intent
+        // isn't confounded by the count check (PresetSelector marks a
+        // preset active only when both agree, see its isActive comment).
+        useEngineStore.setState({
+          comparisonCylinderCount: preset.cylinderCount ?? 1,
+        });
       });
       const user = userEvent.setup();
       render(<PresetSelector slot="comparison" />);

@@ -4,6 +4,8 @@
  * units (millimeters, RPM); outputs are documented per function.
  */
 
+import { TWO_PI } from "./constants";
+
 /** Single-cylinder swept displacement in cubic centimeters. */
 export function calculateCylinderDisplacementCc(
   boreMm: number,
@@ -18,6 +20,47 @@ export function calculateMeanPistonSpeedMps(
   rpm: number,
 ): number {
   return (2 * (strokeMm / 1000) * rpm) / 60;
+}
+
+/**
+ * Crankshaft angular velocity ω in radians per second, from engine speed.
+ *
+ * This is the only bridge between the crank-angle domain — where
+ * `src/engine/kinematics.ts` derives piston velocity and acceleration as
+ * exact functions of geometry alone — and the time domain a readout wants.
+ * Keeping it here rather than in `kinematics.ts` preserves that split: the
+ * shape of a kinematic curve is geometry, its scale is engine speed.
+ */
+export function calculateAngularVelocityRadPerSec(rpm: number): number {
+  return (rpm * TWO_PI) / 60;
+}
+
+/**
+ * Piston velocity in meters per second, from the per-radian velocity
+ * (`calculatePistonVelocityMmPerRad`) and an engine speed: dx/dt =
+ * (dx/dθ)·ω, then millimeters to meters.
+ */
+export function calculatePistonVelocityMps(
+  velocityMmPerRad: number,
+  rpm: number,
+): number {
+  return (velocityMmPerRad * calculateAngularVelocityRadPerSec(rpm)) / 1000;
+}
+
+/**
+ * Piston acceleration in meters per second squared, from the per-radian
+ * acceleration (`calculatePistonAccelerationMmPerRad2`) and an engine speed:
+ * d²x/dt² = (d²x/dθ²)·ω², then millimeters to meters. ω is squared, so this
+ * grows with the *square* of rpm — the reason peak piston acceleration, not
+ * mean piston speed, is what limits a high-revving engine's reciprocating
+ * mass.
+ */
+export function calculatePistonAccelerationMps2(
+  accelerationMmPerRad2: number,
+  rpm: number,
+): number {
+  const omega = calculateAngularVelocityRadPerSec(rpm);
+  return (accelerationMmPerRad2 * omega * omega) / 1000;
 }
 
 /** Connecting-rod length divided by stroke (dimensionless). */

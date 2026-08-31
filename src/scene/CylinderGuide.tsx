@@ -11,14 +11,31 @@
  * a distinct volume that grows and shrinks with the compression ratio.
  */
 
+import {
+  CRANK_ARROW_HEAD_ANGLE_RAD,
+  CRANK_ARROW_HEAD_ROTATION_Z_RAD,
+  CRANK_ARROW_MESH_START_RAD,
+  CRANK_ARROW_SWEEP_RAD,
+  SCENE_COLORS,
+} from "./sceneGeometry";
 import type { MechanismProportions } from "./sceneGeometry";
-import { SCENE_COLORS } from "./sceneGeometry";
 
 interface CylinderGuideProps {
   p: MechanismProportions;
+  /**
+   * Only the front cylinder of an engine draws the crank-direction arrow —
+   * a six-cylinder engine must not get six overlapping copies of it. Always
+   * on for that one cylinder, exactly like the TDC/BDC ticks below: neither
+   * is gated by the `showLabels` preference, which affects only the name
+   * label (`MechanismLabel`).
+   */
+  isFrontCylinder?: boolean;
 }
 
-export function CylinderGuide({ p }: CylinderGuideProps) {
+export function CylinderGuide({
+  p,
+  isFrontCylinder = false,
+}: CylinderGuideProps) {
   const wallCenterX = p.boreMm / 2 + p.cylinderWallThicknessMm / 2;
 
   // Wall below the TDC crown: the swept section the piston travels through.
@@ -39,6 +56,15 @@ export function CylinderGuide({ p }: CylinderGuideProps) {
   // markers do not rely on color alone (§19).
   const bdcMarkerLength = p.markerLengthMm * 0.6;
   const bdcMarkerCenterX = p.markerInnerXMm + bdcMarkerLength / 2;
+
+  // Crank-direction arrowhead position: on the reference ring at the
+  // standard angle where clockwise travel reaches the gap first (see
+  // sceneGeometry.ts for the full derivation and the sign-convention check
+  // against `calculateMechanismState`).
+  const arrowHeadX =
+    p.crankArrowRadiusMm * Math.cos(CRANK_ARROW_HEAD_ANGLE_RAD);
+  const arrowHeadY =
+    p.crankArrowRadiusMm * Math.sin(CRANK_ARROW_HEAD_ANGLE_RAD);
 
   return (
     <group>
@@ -136,6 +162,39 @@ export function CylinderGuide({ p }: CylinderGuideProps) {
           <meshBasicMaterial color={SCENE_COLORS.accentDim} />
         </mesh>
       ))}
+
+      {/* Crank-direction indicator: front cylinder only (per engine), so a
+          six-cylinder row doesn't draw six overlapping copies. Static
+          reference geometry — never animated, never rotated with the
+          crank — showing which way the crank actually turns. */}
+      {isFrontCylinder ? (
+        <group>
+          <mesh
+            position={[0, 0, p.referenceZMm]}
+            rotation={[0, 0, CRANK_ARROW_MESH_START_RAD]}
+          >
+            <torusGeometry
+              args={[
+                p.crankArrowRadiusMm,
+                p.crankArrowTubeRadiusMm,
+                8,
+                48,
+                CRANK_ARROW_SWEEP_RAD,
+              ]}
+            />
+            <meshBasicMaterial color={SCENE_COLORS.accentDim} />
+          </mesh>
+          <mesh
+            position={[arrowHeadX, arrowHeadY, p.referenceZMm]}
+            rotation={[0, 0, CRANK_ARROW_HEAD_ROTATION_Z_RAD]}
+          >
+            <coneGeometry
+              args={[p.crankArrowHeadRadiusMm, p.crankArrowHeadLengthMm, 16]}
+            />
+            <meshBasicMaterial color={SCENE_COLORS.accentDim} />
+          </mesh>
+        </group>
+      ) : null}
     </group>
   );
 }

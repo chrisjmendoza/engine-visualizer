@@ -27,6 +27,8 @@ interface CrankMechanismProps {
   crankRef: MechanismRefs["crank"];
   rodRef: MechanismRefs["rod"];
   pistonRef: MechanismRefs["piston"];
+  /** Forwarded to `CylinderGuide`: only cylinder 0 draws the crank-direction arrow. */
+  isFrontCylinder?: boolean;
 }
 
 export function CrankMechanism({
@@ -35,10 +37,11 @@ export function CrankMechanism({
   crankRef,
   rodRef,
   pistonRef,
+  isFrontCylinder = false,
 }: CrankMechanismProps) {
   return (
     <group position={[positionX, 0, 0]}>
-      <CylinderGuide p={p} />
+      <CylinderGuide p={p} isFrontCylinder={isFrontCylinder} />
       <CrankThrow p={p} ref={crankRef} />
       <ConnectingRod p={p} ref={rodRef} />
       <Piston p={p} ref={pistonRef} />

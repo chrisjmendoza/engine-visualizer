@@ -18,7 +18,9 @@ function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    preferences: { displayUnit: "mm", showLabels: true },
+    cylinderCount: 1,
+    comparisonCylinderCount: 1,
+    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     playbackSpeed: DEFAULT_PLAYBACK_SPEED,
     isPlaying: false,
@@ -65,6 +67,39 @@ describe("CalculationPanel", () => {
     );
   });
 
+  it("shows per-cylinder and total displacement, relabeled, once cylinderCount is more than one (§24a)", () => {
+    useEngineStore.setState({ cylinderCount: 4 });
+    render(<CalculationPanel />);
+
+    const perCylinder = calculateCylinderDisplacementCc(
+      DEFAULT_CONFIG.boreMm,
+      DEFAULT_CONFIG.strokeMm,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Cylinder displacement" }),
+    ).not.toBeInTheDocument();
+    expect(getResultValue("Displacement")).toBe(
+      `${formatRounded(perCylinder, 1)} cc/cyl · ${formatRounded(perCylinder * 4, 1)} cc total`,
+    );
+  });
+
+  it("reads the comparison slot's own cylinderCount, not engine A's", () => {
+    useEngineStore.setState({
+      comparisonConfig: { ...DEFAULT_CONFIG },
+      cylinderCount: 1,
+      comparisonCylinderCount: 6,
+    });
+    render(<CalculationPanel slot="comparison" />);
+
+    const perCylinder = calculateCylinderDisplacementCc(
+      DEFAULT_CONFIG.boreMm,
+      DEFAULT_CONFIG.strokeMm,
+    );
+    expect(getResultValue("Displacement")).toBe(
+      `${formatRounded(perCylinder, 1)} cc/cyl · ${formatRounded(perCylinder * 6, 1)} cc total`,
+    );
+  });
+
   it("displays the clearance volume and clearance height for the default configuration", () => {
     render(<CalculationPanel />);
 
@@ -79,7 +114,7 @@ describe("CalculationPanel", () => {
 
   it("displays the clearance height in inches when the display unit is inches", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "in", showLabels: true },
+      preferences: { displayUnit: "in", showLabels: true, showCycle: false },
     });
     render(<CalculationPanel />);
 
@@ -128,7 +163,7 @@ describe("CalculationPanel", () => {
 
   it("displays the static piston-to-head distance range in inches", () => {
     useEngineStore.setState({
-      preferences: { displayUnit: "in", showLabels: true },
+      preferences: { displayUnit: "in", showLabels: true, showCycle: false },
     });
     render(<CalculationPanel />);
     // 9.0526.../25.4 = 0.3564... in; 95.0526.../25.4 = 3.7423... in.

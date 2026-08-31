@@ -9,19 +9,27 @@ const UNIT_OPTIONS: { value: DisplayUnit; label: string }[] = [
 ];
 
 /**
- * Display-unit toggle (mm/in) and the "show labels" preference
- * (TECHNICAL_DESIGN.md §7.2, §16). Switching units only changes how
- * dimensions are presented elsewhere in the interface — it never alters the
- * millimeter values stored in `config`.
+ * Display-unit toggle (mm/in) and the "show labels" and "four-stroke cycle"
+ * preferences (TECHNICAL_DESIGN.md §7.2, §16). Switching units only changes
+ * how dimensions are presented elsewhere in the interface — it never alters
+ * the millimeter values stored in `config`.
+ *
+ * "Four-stroke cycle" gates `StrokeBadge` (`src/engine/cycle.ts`'s
+ * pedagogical overlay, rendered inside `AnimationControls` beside the
+ * crank-angle readout) — off by default, like the other preferences here,
+ * and session-local: it is not carried by share links tonight.
  */
 export function UnitSelector() {
   const displayUnit = useEngineStore((state) => state.preferences.displayUnit);
   const setDisplayUnit = useEngineStore((state) => state.setDisplayUnit);
   const showLabels = useEngineStore((state) => state.preferences.showLabels);
   const setShowLabels = useEngineStore((state) => state.setShowLabels);
+  const showCycle = useEngineStore((state) => state.preferences.showCycle);
+  const setShowCycle = useEngineStore((state) => state.setShowCycle);
 
   const groupNameId = useId();
   const showLabelsId = useId();
+  const showCycleId = useId();
 
   return (
     <div className={styles.container}>
@@ -61,6 +69,17 @@ export function UnitSelector() {
           onChange={(event) => setShowLabels(event.target.checked)}
         />
         Show component labels
+      </label>
+
+      <label className={styles.checkboxRow} htmlFor={showCycleId}>
+        <input
+          id={showCycleId}
+          className={styles.checkbox}
+          type="checkbox"
+          checked={showCycle}
+          onChange={(event) => setShowCycle(event.target.checked)}
+        />
+        Four-stroke cycle
       </label>
     </div>
   );

@@ -932,7 +932,31 @@ interface EngineDefinition {
 }
 ```
 
-This model is intentionally deferred. The initial release should prove the reusable crank-mechanism API before introducing multi-cylinder state.
+This model was intentionally deferred until the single-cylinder release proved the reusable crank-mechanism API. Phase 1 of it is now implemented — see §24a.
+
+---
+
+## 24a. Multi-Cylinder Composition — Phase 1
+
+_Added 2026-08-31, implementing the first slice of §24._
+
+An engine is composed of N copies of the proven slider-crank mechanism, one per cylinder, each driven at the engine's crank angle plus that cylinder's crank-throw phase offset. The single-cylinder mechanism remains the only place slider-crank math lives; multi-cylinder support is pure composition, as §23 planned.
+
+**Model (`src/engine/engineLayout.ts`).** `EngineLayoutDefinition` holds a layout kind, a bank angle, and a list of `CylinderDefinition`s (`index`, `bankIndex`, `crankPhaseRad`). It deviates from the §24 sketch in one deliberate way: angles are stored in **radians** (`crankPhaseRad`, `bankAngleRad`), not degrees, because §8.1's canonical-units rule outranks the sketch. Phase 1 ships kinds `"single"` and `"inline"` with supported cylinder counts 1, 3, 4, and 6; `bankIndex` and `bankAngleRad` are always 0 for these, but exist so V and flat layouts can be added later without reshaping state or share links.
+
+Crank-throw phase tables (position along the crank, front to back):
+
+- inline-3 (120° crank): 0, 2π/3, 4π/3
+- inline-4 (flat-plane, throws paired 1&4 / 2&3): 0, π, π, 0
+- inline-6 (throws paired 1&6, 2&5, 3&4): 0, 2π/3, 4π/3, 4π/3, 2π/3, 0
+
+Cylinder 0's phase is always 0, so the degree counter, scrubbing, and every calculated readout remain referenced to cylinder 1 exactly as before.
+
+**State.** The store gains `cylinderCount` (and `comparisonCylinderCount`, seeded on comparison enable like `comparisonRpm`). Counts are geometry: changing one never resets the crank angle or playback (§11.1). Share links carry both counts; absent means 1, and unsupported values are dropped at decode.
+
+**Rendering.** The stage places an engine's N mechanisms in a row along X, each animated at `cylinderCrankAngleRad(θ_engine, cylinder)`. This is an educational schematic — each cylinder is drawn in its own cutaway plane, side by side, rather than stacked along a true 3D crankshaft axis — because the fixed orthographic front view (§12) cannot show depth-wise rod articulation, and a row makes the phase relationships (the whole point) legible. A true axial crankshaft view is future work and would come with a camera change. Comparison mode composes unchanged: each engine's row is placed and framed by the same union-bounds camera fit, so an inline-6 genuinely dwarfs a single.
+
+**Presets.** Presets whose documented layout is a supported inline arrangement declare a `cylinderCount`; selecting such a preset applies its real layout. Presets for V and flat engines fall back to the single-cylinder view until those layouts render.
 
 ---
 
@@ -963,6 +987,8 @@ Application state is serialized into the URL query string by `src/engine/shareLi
 | -------- | ----------------------------------------------------------- | ------------------------------- |
 | `a`      | Engine A: a preset id, or `bore-stroke-rod-cr-redline`      | never                           |
 | `b`      | Engine B; its presence enables comparison mode              | not comparing                   |
+| `c`      | Engine A's cylinder count (§24a: 1, 3, 4, or 6)             | single-cylinder (1)             |
+| `bc`     | Engine B's cylinder count                                   | single (1), or not comparing    |
 | `rpm`    | Engine speed (engine A's, when speeds are split)            | at default                      |
 | `brpm`   | Engine B's speed; its presence marks the speeds as unlinked | speeds linked, or not comparing |
 | `u`      | `in` for inch display                                       | millimeters                     |

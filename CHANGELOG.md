@@ -6,7 +6,45 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ---
 
-## 2026-08-30
+## 2026-08-31
+
+### fix: review pass over the multi-cylinder work
+
+- **A share link naming a preset now carries that engine's real layout.** `?a=s2000-ap1` with no `c` used to load the F20C's geometry but render it as a single cylinder, while clicking the same preset set inline-4 — the link silently misrepresented the engine it named. A preset id now implies its own cylinder count, and a numeric configuration implies 1, so a link stays a complete description of an engine. Encoding mirrors the rule exactly: `c` travels only when it disagrees with what decoding the config will infer, so viewing a real four deliberately as a single cylinder still round-trips (the naive fix would have decoded it back as an inline-4).
+- **A preset button no longer claims to be selected after changing the cylinder count.** Picking a four-cylinder preset and then switching to "Single" left the button pressed, asserting a real engine's layout the app was no longer showing. Active state now requires the count to match too.
+- **Removed an orphaned cylinder-count validation schema.** It had no callers, and its doc comment implied a validation path that did not exist — the type guard both real entry points use is the correct check for a closed select and a silently-dropped link parameter.
+- **Known limitation, documented not fixed:** an arrow-key nudge during playback jumps rather than steps, because it reads the crank angle the loop mirrors at 10 Hz. The jump is not the shortcut's: stopping playback by any means already snaps the mechanism to that same mirrored angle. Fixing it means flushing the loop's live angle into the store as playback stops, reconciled with `scrubTo` writing an explicit angle at the same instant — a change to pause semantics app-wide, left as a deliberate decision rather than a side effect. Full suite: 827 tests.
+
+### feat: keyboard shortcuts, crank-direction arrow, About dialog
+
+- **Keyboard shortcuts.** Space toggles play/pause; ←/→ scrub the crank by 1° (10° with Shift), pausing playback per the scrub rule. Form controls, buttons, contentEditable regions, and open modal dialogs keep their native key handling untouched, and modifier combos are left to the browser. Hinted via `title`/`aria-keyshortcuts` on the play button and scrub slider.
+- **Crank-direction arrow.** A dim partial-ring arrow around the front cylinder's crank center shows rotation direction. The handedness was derived from the actual kinematics — crankpin at (r·sinθ, r·cosθ) reads as clockwise from the front view — and is pinned by a finite-difference test against `calculateMechanismState`, so the arrow can never silently disagree with the motion.
+- **About dialog.** An "About" button in the header opens an accessible modal covering what the app is, what the kinematics do and don't model, the two-independent-source data-sourcing discipline behind every preset figure, and the tech stack with a repo link. Hand-rolled focus trap (jsdom's `<dialog>` is a stub, so native `showModal` would be untestable); Esc, backdrop, and close button all dismiss; focus returns to the trigger. Full suite: 816 tests.
+
+### feat: four-stroke cycle overlay
+
+- **Stroke badge.** An optional "Four-stroke cycle" preference shows the current stroke (intake, compression, power, exhaust) and a 0–720° cycle counter beside the crank-angle readout. The textbook idealization — quarter boundaries exactly at the dead centers, no valve-overlap modeling — stated as such.
+- The 720° cycle needs to know _which_ of the two crank revolutions it is on, which a wrapped 0–360° angle cannot say; a revolution-parity bit is integrated in the animation loop's ref state alongside the angle (multi-wrap-safe for clamped inactive-tab frames), mirrored to the store at the same throttled 10 Hz, assigned rather than integrated for engine B while speeds are linked — the same discipline as the angle itself. Scrubbing keeps the current half of the cycle; a 720° scrub control is future work.
+- The badge reads cylinder 1 (crank-throw phase 0) — per-cylinder stroke display arrives with firing orders. Full suite: 757 tests.
+
+### feat: piston kinematic curves
+
+- **Position, velocity, and acceleration vs. crank angle** as three stacked SVG strips under the results, from the exact closed-form derivatives of the slider-crank displacement (dx/dθ and d²x/dθ² live in the engine layer in crank-angle units; the rpm-dependent conversion to m/s and m/s² happens only at the display boundary). Peak values are labeled in real units at the current rpm, and a live cursor follows the crank via the existing throttled 10 Hz readout mirror — the frame loop is untouched.
+- **Comparison overlay.** Engine B's curves are drawn dashed over engine A's on shared per-quantity scales, so a short-rod engine's skewed velocity curve and harsher TDC acceleration are directly visible against a long-rod one.
+- The closed forms are tested against central-difference numerical differentiation of the mechanism state across five rod ratios (velocity to ~1e-9, acceleration to ~2e-7 relative), plus exact identities: acceleration r(1 + r/l) at TDC and −r(1 − r/l) at BDC, and peak velocity landing earlier the shorter the rod.
+
+### fix: honest label for the untouched default configuration
+
+- The default 86 × 86 mm configuration now reads "Default engine (86 × 86 mm)" instead of "Custom engine", which wrongly implied edits had been made before the user touched anything. Editing any dimension still switches it to "Custom engine".
+
+### feat: multi-cylinder engines — inline layouts
+
+- **Inline-3, inline-4, and inline-6 layouts.** A "Cylinders" select per engine renders N copies of the proven slider-crank mechanism in a row, each driven at the engine's crank angle plus its cylinder's crank-throw phase (flat-plane 0-π-π-0 for a four, 120° pairings for a three and six) — so the phase relationships of a real crankshaft are visible at a glance. Each cylinder is drawn in its own cutaway plane; a true axial 3D crankshaft view remains future work (§24a).
+- **Presets know their layout.** Selecting an inline engine (F20C, RB26DETT, 2JZ-GTE, S54, and the rest of the inline roster) applies its real cylinder count; V-engine presets stay in single-cylinder view until V layouts render.
+- **Total displacement.** The displacement row shows per-cylinder and whole-engine figures ("499 cc/cyl · 1997 cc total") once an engine has more than one cylinder.
+- **Cylinder counts are shareable** via new `c`/`bc` link params, append-only per the §25a contract; unsupported counts in hand-edited links are dropped at decode.
+- Comparison mode composes unchanged: two rows placed and framed by the same union-bounds camera fit, so an inline-6 genuinely dwarfs a single. Cylinder 0 keeps phase 0, so scrubbing, the degree counter, and every readout stay referenced to cylinder 1.
+- Architecture documented in §24a; the model deliberately stores phase/bank angles in radians rather than the §24 sketch's degree fields (§8.1 canonical-units rule). Full suite: 683 tests.
 
 ### fix: review pass over the independent-speeds work
 

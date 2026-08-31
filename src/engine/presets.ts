@@ -39,6 +39,7 @@
  */
 
 import type { CrankMechanismConfig } from "./types";
+import type { SupportedCylinderCount } from "./engineLayout";
 
 export interface EnginePreset {
   /** Kebab-case identifier, stable across releases. */
@@ -51,6 +52,17 @@ export interface EnginePreset {
   engineCode: string;
   /** Short displacement/layout label, e.g. "2.0 L inline-4". */
   layoutLabel: string;
+  /**
+   * The engine's real cylinder count (§24a), when `layoutLabel` names a
+   * layout this visualizer can currently render (inline-3/4/6; single is
+   * never a real preset's layout, so it never appears here). Omitted for
+   * V/flat-layout presets (V6, V8, flat-plane...) until those layout kinds
+   * land — selecting one of those then falls back to a single-cylinder
+   * view rather than a wrong one. Wherever a preset is applied, this value
+   * (or 1 when absent) is what `setCylinderCount`/`setComparisonCylinderCount`
+   * is called with, so picking a real engine shows its real layout.
+   */
+  cylinderCount?: SupportedCylinderCount;
   /** Per-cylinder stock geometry. */
   config: CrankMechanismConfig;
   /**
@@ -78,6 +90,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "F20C",
     layoutLabel: "2.0 L inline-4",
+    cylinderCount: 4,
     // rod 153.0 mm — corroborated by Wiseco piston specs (cartel-aus.com),
     // FCP Engineering (fcp-engineering.com), and ZRP (zrp-rods.com).
     // CR 11.0:1 — US/European-spec F20C, confirmed by Wikipedia ("Honda
@@ -118,6 +131,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "F22C1",
     layoutLabel: "2.2 L inline-4",
+    cylinderCount: 4,
     // rod 149.7 mm — CP Pistons spec sheet (realstreetperformance.com) and
     // Eagle/Brian Crower part numbers denoting 5.893 in (drifthq.com,
     // briancrower.com) both give 149.68 mm center-to-center.
@@ -146,6 +160,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Mazda",
     engineCode: "BP",
     layoutLabel: "1.8 L inline-4",
+    cylinderCount: 4,
     // rod 132.9 mm (5.233 in) — Manley (lmperformance.com) and Eagle
     // (eaglerod.com) both catalog stock-length B6/BP replacement rods at
     // 5.233 in center-to-center.
@@ -178,6 +193,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Mazda",
     engineCode: "B6",
     layoutLabel: "1.6 L inline-4",
+    cylinderCount: 4,
     // rod 132.9 mm (5.233 in) — same Manley/Eagle B6/BP catalog entry as the
     // BP above, corroborated by Wiseco's B6 turbo piston spec
     // (cartel-aus.com), which lists a 133 mm (5.234 in) rod.
@@ -264,6 +280,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Toyota",
     engineCode: "2JZ-GTE",
     layoutLabel: "3.0 L inline-6",
+    cylinderCount: 6,
     // rod 142.0 mm — Tomei Powered (products.tomeiusa.com), CXRacing, and
     // Boostline (boostlineproducts.com) all list 142.00 mm as the
     // OEM-length replacement rod for 2JZ-GE/GTE.
@@ -294,6 +311,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "K20A",
     layoutLabel: "2.0 L inline-4",
+    cylinderCount: 4,
     // rod 139.0 mm — K1 Technologies, Manley, and Eagle each catalog
     // 139 mm stock-length H-beam rods for K20A/K20A2.
     // CR 11.5:1 — JDM K20A figure, as used in the DC5 Integra Type R and
@@ -323,6 +341,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Honda",
     engineCode: "K24A2",
     layoutLabel: "2.4 L inline-4",
+    cylinderCount: 4,
     // Acura-badged (2004-2008 Acura TSX); grouped under brand "Honda" here
     // so it sits with the other Honda-family cars rather than starting a
     // one-car "Acura" brand.
@@ -368,6 +387,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Mazda",
     engineCode: "PE",
     layoutLabel: "2.0 L Skyactiv-G inline-4",
+    cylinderCount: 4,
     // rod 154.8 mm — consistently published stock-length replacement-rod
     // dimension across Maxpeedingrods (maxpeedingrods.co.uk) and Clegg
     // Engine (cleggengine.com).
@@ -432,6 +452,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "SR20DET",
     layoutLabel: "2.0 L turbo inline-4",
+    cylinderCount: 4,
     // bore/stroke 86.0/86.0 mm (square), CR 8.5:1 — confirmed by
     // hpacademy.com ("Everything You Need to Know About the SR20DET") and
     // Wikipedia ("Nissan SR20DET").
@@ -462,6 +483,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "RB26DETT",
     layoutLabel: "2.6 L twin-turbo inline-6",
+    cylinderCount: 6,
     // bore/stroke 86.0/73.7 mm, CR 8.5:1 — confirmed by drifted.com
     // ("RB26DETT - Nissan's Ultimate Engine?") and 8020automotive.com
     // ("Nissan RB26DETT Engine Guide").
@@ -521,6 +543,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "Nissan",
     engineCode: "KA24DE",
     layoutLabel: "2.4 L inline-4",
+    cylinderCount: 4,
     // Twin-cam KA24DE (1991+), not the earlier single-cam KA24E — this is
     // the naturally aspirated US-market engine that stood in for the
     // JDM-only turbo SR20DET Silvia preset above; swapping an SR20DET into
@@ -559,6 +582,7 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     brand: "BMW",
     engineCode: "S54",
     layoutLabel: "3.2 L inline-6",
+    cylinderCount: 6,
     // bore/stroke 87.0/91.0 mm, CR 11.5:1, redline 8000 rpm — all three
     // confirmed by a MAHLE Motorsports spec sheet (us.mahle.com) and
     // bmwtuning.co's S54 engine guide.

@@ -9,6 +9,7 @@ import {
   PLAYBACK_SPEEDS,
 } from "../../engine/constants";
 import { formatRounded } from "../shared/formatting";
+import { StrokeBadge } from "../results/StrokeBadge";
 import styles from "./AnimationControls.module.css";
 
 interface RpmFieldState {
@@ -230,6 +231,8 @@ export function AnimationControls() {
           type="button"
           className={styles.playButton}
           aria-pressed={isPlaying}
+          title={`${isPlaying ? "Pause" : "Play"} (Space)`}
+          aria-keyshortcuts="Space"
           onClick={() => (isPlaying ? pause() : play())}
         >
           {isPlaying ? "Pause" : "Play"}
@@ -325,6 +328,8 @@ export function AnimationControls() {
             max={360}
             step={0.1}
             value={crankAngleDeg}
+            title="Scrub crank angle (← → keys, Shift for 10°)"
+            aria-keyshortcuts="ArrowLeft ArrowRight"
             onChange={(event) => handleScrub(event.target.value)}
           />
           <output
@@ -335,6 +340,14 @@ export function AnimationControls() {
             {formatRounded(crankAngleDeg, 1)}°
           </output>
         </div>
+        {/*
+         * The four-stroke overlay (§11's future-work note; `src/engine/cycle.ts`)
+         * sits right beside the readout it extends: this 360° scrub angle is
+         * only half of a four-stroke engine's 720° cycle, and the badge names
+         * which half. Renders nothing unless the "Four-stroke cycle"
+         * preference (`UnitSelector`) is on.
+         */}
+        <StrokeBadge />
       </div>
 
       <fieldset className={styles.speedFieldset} aria-describedby={speedHintId}>

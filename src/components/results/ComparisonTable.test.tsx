@@ -16,7 +16,9 @@ function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    preferences: { displayUnit: "mm", showLabels: true },
+    cylinderCount: 1,
+    comparisonCylinderCount: 1,
+    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,
     rpmLinked: true,
@@ -112,6 +114,21 @@ describe("ComparisonTable", () => {
     expect(getRow("Clearance height (TDC)")).toEqual([
       "9.05 mm",
       "9.47 mm",
+      "+4.7%",
+    ]);
+  });
+
+  it("shows each side's own total displacement once its cylinderCount is more than one (§24a)", () => {
+    enableComparisonWith(STROKE_90_CONFIG);
+    useEngineStore.setState({ cylinderCount: 4, comparisonCylinderCount: 6 });
+    render(<ComparisonTable />);
+
+    // Per-cylinder values are the same as the plain two-engine test above
+    // (499.6 cc / 522.8 cc); each side additionally multiplies by its own
+    // cylinderCount for "total", and the difference column stays per-cylinder.
+    expect(getRow("Cylinder displacement")).toEqual([
+      "499.6 cc/cyl · 1998.2 cc total",
+      "522.8 cc/cyl · 3136.8 cc total",
       "+4.7%",
     ]);
   });

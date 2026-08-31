@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code runtime state (.claude/settings.json is tracked deliberately)
+.claude/scheduled_tasks.lock

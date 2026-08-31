@@ -8,9 +8,11 @@ import { EngineComparisonLayout } from "../components/layout/EngineComparisonLay
 import { EnginePanel } from "../components/layout/EnginePanel";
 import { SharedControlsRow } from "../components/layout/SharedControlsRow";
 import { ComparisonTable } from "../components/results/ComparisonTable";
+import { KinematicsPlot } from "../components/results/KinematicsPlot";
 import { useShareLinkSync } from "../components/shared/useShareLinkSync";
 import { useEngineStore } from "../state/engineStore";
 import styles from "./App.module.css";
+import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 
 /**
  * Three.js (~330 kB gzipped) loads in its own chunk so the controls and
@@ -35,7 +37,9 @@ const EngineViewport = lazy(() =>
  * placed side by side once there is room, via `EngineComparisonLayout`)
  * plus a single `ComparisonTable` showing both engines' results together —
  * a gpuboss-style table replaces two separate result lists rather than
- * duplicating them.
+ * duplicating them. `KinematicsPlot` sits below whichever of those two
+ * result views is showing, in both modes: it plots both engines on one set
+ * of axes, so it is a single instance rather than a per-engine one.
  *
  * `useShareLinkSync()` hydrates the store from `window.location.search` on
  * mount (a shared link opens straight into the state it was copied from)
@@ -49,6 +53,7 @@ export function App() {
   );
 
   useShareLinkSync();
+  useKeyboardShortcuts();
 
   return (
     <ApplicationShell
@@ -86,6 +91,13 @@ export function App() {
           ) : (
             <EnginePanel slot="primary" />
           )}
+          {/*
+           * Rendered once in both modes, below the numeric results it
+           * complements: `KinematicsPlot` already overlays both engines
+           * itself, so — unlike `CalculationPanel` — it never wants a
+           * per-engine copy inside `EnginePanel`.
+           */}
+          <KinematicsPlot />
         </>
       }
     />

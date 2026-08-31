@@ -19,6 +19,7 @@ import {
   MAX_FRAME_DELTA_S,
   advanceCrankAngle,
   advanceEnginePair,
+  advanceRevolutionParity,
 } from "./useMechanismAnimation";
 import type { FrameAngles } from "./useMechanismAnimation";
 
@@ -108,7 +109,12 @@ function runPair(options: {
   playbackSpeed: number;
   rpmLinked: boolean;
 }) {
-  const live: FrameAngles = { crankAngleRad: 0, comparisonCrankAngleRad: 0 };
+  const live: FrameAngles = {
+    crankAngleRad: 0,
+    comparisonCrankAngleRad: 0,
+    crankRevolutionParity: 0,
+    comparisonCrankRevolutionParity: 0,
+  };
   let totalA = 0;
   let totalB = 0;
 
@@ -130,12 +136,23 @@ function runPair(options: {
   return { live, totalA, totalB };
 }
 
+/** Builds a `FrameAngles` literal, defaulting both engines to angle 0 / parity 0. */
+function angles(
+  a = 0,
+  b = 0,
+  parityA: 0 | 1 = 0,
+  parityB: 0 | 1 = 0,
+): FrameAngles {
+  return {
+    crankAngleRad: a,
+    comparisonCrankAngleRad: b,
+    crankRevolutionParity: parityA,
+    comparisonCrankRevolutionParity: parityB,
+  };
+}
+
 describe("advanceEnginePair", () => {
   const DT = 1 / 60;
-
-  function angles(a = 0, b = 0): FrameAngles {
-    return { crankAngleRad: a, comparisonCrankAngleRad: b };
-  }
 
   it("advances both engines in place without allocating a new object", () => {
     const live = angles();
@@ -288,6 +305,134 @@ describe("advanceEnginePair", () => {
 
       expect(quarter.totalA).toBeCloseTo(faster.totalA * 0.25, 8);
       expect(quarter.totalB).toBeCloseTo(faster.totalB * 0.25, 8);
+    });
+  });
+});
+
+/**
+ * Tests the four-stroke revolution-parity bit (`src/engine/cycle.ts`'s
+ * overlay) in isolation, mirroring the `advanceCrankAngle` tests above:
+ * `advanceRevolutionParity` is pure, so its odd/even-wrap-counting rule is
+ * testable without a WebGL context.
+ */
+describe("advanceRevolutionParity", () => {
+  it("does not flip when the frame's advance stays within the current revolution", () => {
+    // 90 degrees at 600 rpm, well short of a full revolution.
+    expect(advanceRevolutionParity(0, 0, 0.025, 600, 1)).toBe(0);
+    expect(advanceRevolutionParity(0, 1, 0.025, 600, 1)).toBe(1);
+  });
+
+  it("flips exactly once when the frame's advance crosses a single revolution boundary", () => {
+    // Starting just before a full turn and advancing past it.
+    const justBeforeWrap = TWO_PI - 0.01;
+    expect(advanceRevolutionParity(justBeforeWrap, 0, 0.025, 600, 1)).toBe(1);
+    expect(advanceRevolutionParity(justBeforeWrap, 1, 0.025, 600, 1)).toBe(0);
+  });
+
+  it("does not flip when the frame's advance crosses two revolution boundaries", () => {
+    // 6,000 rpm is 100 rev/s, so 0.025 s (under the clamp) covers 2.5
+    // revolutions — comfortably past two boundaries (floor 2, even) and
+    // clear of the next one, so floating-point rounding cannot tip this
+    // into the odd case.
+    expect(advanceRevolutionParity(0, 0, 0.025, 6000, 1)).toBe(0);
+    expect(advanceRevolutionParity(0, 1, 0.025, 6000, 1)).toBe(1);
+  });
+
+  it("resolves several whole revolutions within one frame correctly, even vs odd", () => {
+    // 6,000 rpm is 100 rev/s. 0.085 s covers 8.5 revolutions (floors to 8,
+    // even: no flip); 0.095 s covers 9.5 (floors to 9, odd: flips). Both
+    // sit half a revolution clear of an integer boundary, so floating-point
+    // rounding cannot tip either result the wrong way — this is the
+    // inactive-tab scenario a single old/new wrapped-angle comparison could
+    // not resolve at all.
+    expect(advanceRevolutionParity(0, 0, 0.085, 6000, 1)).toBe(0);
+    expect(advanceRevolutionParity(0, 0, 0.095, 6000, 1)).toBe(1);
+  });
+
+  it("never flips at zero rpm", () => {
+    expect(advanceRevolutionParity(1.23, 0, 0.5, 0, 1)).toBe(0);
+    expect(advanceRevolutionParity(1.23, 1, 0.5, 0, 1)).toBe(1);
+  });
+
+  it("clamps the frame delta exactly like advanceCrankAngle", () => {
+    // A huge, unclamped delta at this rpm would cross far more boundaries
+    // than the clamped one; the two must agree once both are clamped.
+    const long = advanceRevolutionParity(0, 0, 30, 6000, 1);
+    const clamped = advanceRevolutionParity(0, 0, MAX_FRAME_DELTA_S, 6000, 1);
+    expect(long).toBe(clamped);
+  });
+});
+
+describe("advanceEnginePair — revolution parity", () => {
+  const DT = 1 / 60;
+
+  it("flips engine A's parity exactly once per crank revolution", () => {
+    const live = angles();
+    let flips = 0;
+    let previousParity = live.crankRevolutionParity;
+
+    // 360 rpm is 6 rev/s, so each 1/60 s frame covers a tenth of a
+    // revolution — comfortably under one full turn, so each frame crosses
+    // at most one boundary and every flip is caught by a plain consecutive
+    // comparison. 100 frames cover exactly 10 revolutions, so parity must
+    // flip exactly 10 times.
+    for (let i = 0; i < 100; i += 1) {
+      advanceEnginePair(live, DT, 360, 360, 1, true);
+      if (live.crankRevolutionParity !== previousParity) {
+        flips += 1;
+        previousParity = live.crankRevolutionParity;
+      }
+    }
+
+    expect(flips).toBe(10);
+  });
+
+  describe("linked", () => {
+    it("assigns engine B's parity from engine A's, not integrating it separately", () => {
+      const live = angles(0, 0, 0, 1);
+      advanceEnginePair(live, DT, 9000, 1234, 1, true);
+
+      expect(live.comparisonCrankRevolutionParity).toBe(
+        live.crankRevolutionParity,
+      );
+    });
+
+    it("pulls a diverged engine B's parity back onto engine A's immediately", () => {
+      const live = angles(0.25, 4.5, 0, 1);
+      advanceEnginePair(live, DT, 6000, 1000, 1, true);
+
+      expect(live.comparisonCrankRevolutionParity).toBe(
+        live.crankRevolutionParity,
+      );
+    });
+  });
+
+  describe("unlinked", () => {
+    it("advances each engine's parity from its own speed, independently", () => {
+      const live = angles();
+
+      // Engine A at 180 rpm (0.05 rev/frame) covers 200 * 0.05 = 10 whole
+      // revolutions over 200 frames — an even count, so parity returns to
+      // 0. Engine B at 90 rpm (0.025 rev/frame) covers 200 * 0.025 = 5
+      // whole revolutions — an odd count, so parity flips to 1. Sharing a
+      // frame loop but not a speed, and ending up with different parities
+      // as a result, is exactly what "unlinked" means.
+      for (let i = 0; i < 200; i += 1) {
+        advanceEnginePair(live, DT, 180, 90, 1, false);
+      }
+
+      expect(live.crankRevolutionParity).toBe(0);
+      expect(live.comparisonCrankRevolutionParity).toBe(1);
+    });
+
+    it("reads engine A's angle before it is overwritten, so parity reflects where the frame started", () => {
+      // Starting just before a wrap: the parity update must see the
+      // pre-advance angle, not the already-wrapped post-advance one.
+      const live = angles(TWO_PI - 0.001, 0, 0, 0);
+      advanceEnginePair(live, DT, 600, 600, 1, false);
+
+      expect(live.crankAngleRad).toBeLessThan(TWO_PI - 0.001);
+      expect(live.crankRevolutionParity).toBe(1);
     });
   });
 });

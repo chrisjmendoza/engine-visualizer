@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  calculateAngularVelocityRadPerSec,
   calculateBoreStrokeRatio,
   calculateClearanceHeightMm,
   calculateClearanceVolumeCc,
   calculateCylinderDisplacementCc,
   calculateMeanPistonSpeedMps,
+  calculatePistonAccelerationMps2,
   calculatePistonToHeadDistanceMm,
+  calculatePistonVelocityMps,
   calculateRodStrokeRatio,
 } from "../engine/calculations";
+import {
+  calculatePistonAccelerationMmPerRad2,
+  calculatePistonVelocityMmPerRad,
+} from "../engine/kinematics";
+import type { CrankMechanismConfig } from "../engine/types";
 
 describe("calculateClearanceVolumeCc", () => {
   it("matches a hand-computed clearance volume", () => {
@@ -124,6 +132,106 @@ describe("calculateRodStrokeRatio", () => {
 
   it("is 1 when rod length equals stroke", () => {
     expect(calculateRodStrokeRatio(100, 100)).toBe(1);
+  });
+});
+
+describe("calculateAngularVelocityRadPerSec", () => {
+  it("matches a hand-computed omega at 3000 RPM", () => {
+    // 3000 rpm = 50 rev/s = 100*PI rad/s.
+    expect(calculateAngularVelocityRadPerSec(3000)).toBeCloseTo(
+      100 * Math.PI,
+      9,
+    );
+  });
+
+  it("is zero at zero RPM and scales linearly", () => {
+    expect(calculateAngularVelocityRadPerSec(0)).toBe(0);
+    expect(calculateAngularVelocityRadPerSec(1200)).toBeCloseTo(
+      2 * calculateAngularVelocityRadPerSec(600),
+      9,
+    );
+  });
+});
+
+describe("crank-angle to time-domain conversions", () => {
+  const config: CrankMechanismConfig = {
+    boreMm: 86,
+    strokeMm: 86,
+    rodLengthMm: 143,
+    compressionRatio: 10.5,
+    redlineRpm: 7000,
+  };
+
+  it("scales velocity linearly with rpm and acceleration quadratically", () => {
+    const velocityMmPerRad = calculatePistonVelocityMmPerRad(
+      config,
+      Math.PI / 3,
+    );
+    const accelerationMmPerRad2 = calculatePistonAccelerationMmPerRad2(
+      config,
+      Math.PI / 3,
+    );
+
+    expect(calculatePistonVelocityMps(velocityMmPerRad, 6000)).toBeCloseTo(
+      2 * calculatePistonVelocityMps(velocityMmPerRad, 3000),
+      9,
+    );
+    expect(
+      calculatePistonAccelerationMps2(accelerationMmPerRad2, 6000),
+    ).toBeCloseTo(
+      4 * calculatePistonAccelerationMps2(accelerationMmPerRad2, 3000),
+      9,
+    );
+  });
+
+  it("converts the TDC acceleration to a hand-computed value in m/s^2", () => {
+    // r(1 + r/l) with r = 43, l = 143: 43 * (1 + 43/143) = 55.930069930... mm
+    // per rad^2. At 6000 rpm, omega = 200*PI rad/s, so omega^2 = 40000*PI^2 =
+    // 394784.176..., and 55.930069930 * 394784.176 / 1000 = 22080.31 m/s^2 —
+    // about 2250 g, the number that explains why rods let go at TDC.
+    const atTdc = calculatePistonAccelerationMmPerRad2(config, 0);
+    expect(calculatePistonAccelerationMps2(atTdc, 6000)).toBeCloseTo(
+      22080.31,
+      1,
+    );
+  });
+
+  it("keeps the mean of |velocity| over a revolution equal to mean piston speed", () => {
+    // Mean piston speed (2 * stroke * rpm / 60) is by definition the average
+    // of |dx/dt| over a full revolution, so the two independent code paths
+    // must agree. This ties the new per-radian derivative to the long-tested
+    // calculateMeanPistonSpeedMps without restating either formula.
+    const rpm = 3000;
+    const samples = 200_000;
+    let total = 0;
+    for (let i = 0; i < samples; i++) {
+      const theta = ((i + 0.5) / samples) * 2 * Math.PI;
+      total += Math.abs(
+        calculatePistonVelocityMps(
+          calculatePistonVelocityMmPerRad(config, theta),
+          rpm,
+        ),
+      );
+    }
+
+    expect(total / samples).toBeCloseTo(
+      calculateMeanPistonSpeedMps(config.strokeMm, rpm),
+      4,
+    );
+  });
+
+  it("is zero at any rpm where the per-radian derivative is zero", () => {
+    expect(calculatePistonVelocityMps(0, 7000)).toBe(0);
+    expect(calculatePistonAccelerationMps2(0, 7000)).toBe(0);
+  });
+
+  it("is zero at zero rpm regardless of geometry", () => {
+    const velocityMmPerRad = calculatePistonVelocityMmPerRad(
+      config,
+      Math.PI / 2,
+    );
+    expect(velocityMmPerRad).not.toBe(0);
+    expect(calculatePistonVelocityMps(velocityMmPerRad, 0)).toBe(0);
   });
 });
 

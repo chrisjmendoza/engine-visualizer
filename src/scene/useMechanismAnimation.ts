@@ -23,6 +23,14 @@
  * floating-point error and slowly pull apart two engines the user was told are
  * locked together. Once unlinked, each engine integrates its own speed, which
  * is the whole point — a 9,000 rpm engine visibly outrunning a 7,000 rpm one.
+ *
+ * The same loop also tracks each engine's four-stroke revolution-parity bit
+ * (`src/engine/cycle.ts`'s pedagogical overlay): which of the two crank
+ * revolutions in a 720° cycle the engine is currently on. Like the angle
+ * itself, parity lives only in this loop's ref state and is mirrored into the
+ * store at the throttled READOUT_SYNC_HZ cadence — never written per frame —
+ * and engine B's parity is assigned from engine A's while linked, exactly
+ * like its angle.
  */
 
 import { useFrame } from "@react-three/fiber";
@@ -42,6 +50,15 @@ export interface FrameAngles {
   crankAngleRad: number;
   /** Engine B's angle; identical to engine A's whenever the speeds are linked. */
   comparisonCrankAngleRad: number;
+  /**
+   * Which of the two crank revolutions in engine A's 720° four-stroke cycle
+   * is current (`src/engine/cycle.ts`). Advanced alongside `crankAngleRad` by
+   * `advanceRevolutionParity`, never inferred from the angle alone — the
+   * wrapped angle repeats every revolution and cannot say which one it is.
+   */
+  crankRevolutionParity: 0 | 1;
+  /** Engine B's parity bit; identical to engine A's whenever the speeds are linked. */
+  comparisonCrankRevolutionParity: 0 | 1;
 }
 
 /**
@@ -81,6 +98,37 @@ export function advanceCrankAngle(
 }
 
 /**
+ * Advances the four-stroke revolution-parity bit for one frame, in lockstep
+ * with `advanceCrankAngle`'s own integration (§11; `src/engine/cycle.ts`'s
+ * overlay): recomputes the same clamped, playback-scaled Δθ and counts how
+ * many whole revolutions it carries the crank through. Only whether that
+ * count is odd or even matters — an odd number of revolutions flips which
+ * half of the 720° cycle the crank is in, an even number (including zero)
+ * leaves it unchanged.
+ *
+ * This deliberately does not just compare the old and new *wrapped* angle:
+ * that can only ever detect a single wrap, but a long clamped frame delta (an
+ * inactive tab, a high rpm, full playback speed) can carry the crank through
+ * several whole revolutions in one frame, and getting the parity wrong by one
+ * is worse than a merely late badge update — it would show two consecutive
+ * strokes as the same one.
+ */
+export function advanceRevolutionParity(
+  crankAngleRad: number,
+  revolutionParity: 0 | 1,
+  deltaS: number,
+  rpm: number,
+  playbackSpeed: number,
+): 0 | 1 {
+  const dt = Math.min(deltaS, MAX_FRAME_DELTA_S);
+  const delta = (dt * rpm * playbackSpeed * TWO_PI) / 60;
+  const wholeRevolutions = Math.floor((crankAngleRad + delta) / TWO_PI);
+  return wholeRevolutions % 2 === 0
+    ? revolutionParity
+    : ((1 - revolutionParity) as 0 | 1);
+}
+
+/**
  * Advances both engines by one frame, in place.
  *
  * `angles` is both the input and the output, so the loop can keep a single
@@ -91,6 +139,12 @@ export function advanceCrankAngle(
  * equivalent but not numerically identical — the two sums would diverge in the
  * low bits and, over minutes of playback, visibly desynchronize engines that
  * are supposed to be locked. Assignment makes the equality exact and free.
+ *
+ * Each engine's revolution-parity bit is advanced the same way its angle is:
+ * integrated independently while unlinked, assigned from engine A while
+ * linked. `advanceRevolutionParity` reads `angles.crankAngleRad` *before* it
+ * is overwritten below — the parity of a frame's advance depends on where the
+ * crank started, not where it ends up.
  */
 export function advanceEnginePair(
   angles: FrameAngles,
@@ -100,20 +154,38 @@ export function advanceEnginePair(
   playbackSpeed: number,
   rpmLinked: boolean,
 ): void {
+  angles.crankRevolutionParity = advanceRevolutionParity(
+    angles.crankAngleRad,
+    angles.crankRevolutionParity,
+    deltaS,
+    rpm,
+    playbackSpeed,
+  );
   angles.crankAngleRad = advanceCrankAngle(
     angles.crankAngleRad,
     deltaS,
     rpm,
     playbackSpeed,
   );
-  angles.comparisonCrankAngleRad = rpmLinked
-    ? angles.crankAngleRad
-    : advanceCrankAngle(
-        angles.comparisonCrankAngleRad,
-        deltaS,
-        comparisonRpm,
-        playbackSpeed,
-      );
+
+  if (rpmLinked) {
+    angles.comparisonCrankAngleRad = angles.crankAngleRad;
+    angles.comparisonCrankRevolutionParity = angles.crankRevolutionParity;
+  } else {
+    angles.comparisonCrankRevolutionParity = advanceRevolutionParity(
+      angles.comparisonCrankAngleRad,
+      angles.comparisonCrankRevolutionParity,
+      deltaS,
+      comparisonRpm,
+      playbackSpeed,
+    );
+    angles.comparisonCrankAngleRad = advanceCrankAngle(
+      angles.comparisonCrankAngleRad,
+      deltaS,
+      comparisonRpm,
+      playbackSpeed,
+    );
+  }
 }
 
 /**
@@ -128,6 +200,9 @@ export function useMechanismAnimation(
   const anglesRef = useRef<FrameAngles>({
     crankAngleRad: useEngineStore.getState().crankAngleRad,
     comparisonCrankAngleRad: useEngineStore.getState().comparisonCrankAngleRad,
+    crankRevolutionParity: useEngineStore.getState().crankRevolutionParity,
+    comparisonCrankRevolutionParity:
+      useEngineStore.getState().comparisonCrankRevolutionParity,
   });
   const lastSyncRef = useRef(0);
   const onFrameRef = useRef(onFrame);
@@ -156,11 +231,15 @@ export function useMechanismAnimation(
       if (state.clock.elapsedTime - lastSyncRef.current > 1 / READOUT_SYNC_HZ) {
         lastSyncRef.current = state.clock.elapsedTime;
         store.syncCrankAngle(angles.crankAngleRad);
-        // While linked the store keeps engine B's angle equal to engine A's
-        // itself, so mirroring it here every tick would be a redundant write
-        // (and a redundant rerender of everything reading it).
+        store.syncCrankRevolutionParity(angles.crankRevolutionParity);
+        // While linked the store keeps engine B's angle (and parity) equal to
+        // engine A's itself, so mirroring them here every tick would be a
+        // redundant write (and a redundant rerender of everything reading it).
         if (!store.rpmLinked) {
           store.syncComparisonCrankAngle(angles.comparisonCrankAngleRad);
+          store.syncComparisonCrankRevolutionParity(
+            angles.comparisonCrankRevolutionParity,
+          );
         }
       }
     } else {
@@ -191,10 +270,20 @@ export function useMechanismAnimation(
  * reads the same value either way — but it also holds the guarantee if a
  * partial update (a share link carrying only engine A's angle, say) leaves
  * engine B's field behind. Linked engines are never drawn out of phase.
+ *
+ * Revolution parity is read the same way, and deliberately *not* touched by
+ * scrubbing itself: `scrubTo` (§11.1's scrub rule) only ever writes the
+ * angle, never the parity, so scrubbing to a new point on the 0–360° slider
+ * keeps whichever half of the 720° cycle was already current. A 720° scrub
+ * control is out of scope for this overlay.
  */
 function readPausedAngles(angles: FrameAngles, store: EngineStoreState): void {
   angles.crankAngleRad = store.crankAngleRad;
   angles.comparisonCrankAngleRad = store.rpmLinked
     ? store.crankAngleRad
     : store.comparisonCrankAngleRad;
+  angles.crankRevolutionParity = store.crankRevolutionParity;
+  angles.comparisonCrankRevolutionParity = store.rpmLinked
+    ? store.crankRevolutionParity
+    : store.comparisonCrankRevolutionParity;
 }

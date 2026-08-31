@@ -8,7 +8,7 @@ import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
-    preferences: { displayUnit: "mm", showLabels: true },
+    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
@@ -48,5 +48,19 @@ describe("UnitSelector", () => {
 
     await user.click(checkbox);
     expect(useEngineStore.getState().preferences.showLabels).toBe(false);
+  });
+
+  it("toggles the four-stroke cycle preference, off by default", async () => {
+    const user = userEvent.setup();
+    render(<UnitSelector />);
+
+    const checkbox = screen.getByLabelText(/four-stroke cycle/i);
+    expect(useEngineStore.getState().preferences.showCycle).toBe(false);
+
+    await user.click(checkbox);
+    expect(useEngineStore.getState().preferences.showCycle).toBe(true);
+
+    await user.click(checkbox);
+    expect(useEngineStore.getState().preferences.showCycle).toBe(false);
   });
 });

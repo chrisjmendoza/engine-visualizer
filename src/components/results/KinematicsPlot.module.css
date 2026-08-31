@@ -1,0 +1,169 @@
+/* Responsive tiers: see the comment at the top of ApplicationShell.module.css. */
+
+.panel {
+  /*
+   * Engine A reuses the app's accent so its curves read as "the" engine,
+   * matching the accent already used for moving joints in the scene. Engine
+   * B needs a second hue that survives overlapping A on a dark ground; it is
+   * declared here rather than in globals.css because this is the only
+   * component that draws per-engine curves so far — promote it to a global
+   * token when a second one needs it (AnimationControls' error red sets the
+   * same precedent).
+   */
+  --curve-a: var(--color-accent);
+  --curve-b: #4dc9c0;
+
+  padding: 0.5rem;
+  margin: 0 0 0.6rem;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.summary {
+  /* Large enough to be a comfortable touch target for the disclosure (§19). */
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.caption {
+  margin: 0 0 0.6rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  padding: 0;
+  margin: 0 0 0.6rem;
+  list-style: none;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.swatch {
+  width: 1.1rem;
+  height: 0;
+  border-top: 2px solid var(--curve-a);
+}
+
+.swatch[data-engine="b"] {
+  /* Dashed, so the two engines stay distinguishable without relying on hue
+     alone (§19) — the same distinction the curves themselves use. */
+  border-top-style: dashed;
+  border-top-color: var(--curve-b);
+}
+
+.strip {
+  margin: 0 0 0.5rem;
+}
+
+.stripHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.stripLabel {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stripPeak {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: 58px;
+  margin-top: 0.2rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.gridline {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.zeroLine {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.curve {
+  stroke: var(--curve-a);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.curve[data-engine="b"] {
+  stroke: var(--curve-b);
+  stroke-dasharray: 4 3;
+}
+
+.cursor {
+  stroke: var(--color-text);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+.cursor[data-engine="b"] {
+  stroke-dasharray: 2 2;
+}
+
+.axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 600px) {
+  .panel {
+    padding: 0.75rem;
+    margin: 0 0 1rem;
+  }
+
+  .chart {
+    height: 68px;
+  }
+}
+
+/*
+ * Reduced-motion users get a paused mechanism by default (§14), so the
+ * cursor simply sits still; nothing here animates, and there is no
+ * transition to suppress.
+ */

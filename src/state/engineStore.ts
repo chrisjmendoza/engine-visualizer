@@ -10,6 +10,7 @@ import type {
   DisplayUnit,
   UserPreferences,
 } from "../engine/types";
+import type { SupportedCylinderCount } from "../engine/engineLayout";
 import type { PartialShareState } from "../engine/shareLink";
 
 /**
@@ -29,6 +30,21 @@ interface EngineStore {
    * differences are purely geometric.
    */
   comparisonConfig: CrankMechanismConfig | null;
+  /**
+   * Number of cylinders in engine A's layout (§24a). This is geometry, like
+   * `config`, so changing it must never touch `crankAngleRad` or playback
+   * (§11.1's geometry-change rule).
+   */
+  cylinderCount: SupportedCylinderCount;
+  /**
+   * Engine B's cylinder count. `enableComparison` seeds it from engine A's
+   * current `cylinderCount` (same pattern as `comparisonRpm`), so turning on
+   * comparison shows two copies of the same layout before the user diverges
+   * them. `disableComparison` leaves it alone, again like `comparisonRpm`,
+   * so re-enabling comparison later re-seeds from A rather than restoring a
+   * stale value.
+   */
+  comparisonCylinderCount: SupportedCylinderCount;
   preferences: UserPreferences;
   rpm: number;
   /**
@@ -57,26 +73,57 @@ interface EngineStore {
    * unlinked the animation loop advances and mirrors it independently.
    */
   comparisonCrankAngleRad: number;
+  /**
+   * Which of the two crank revolutions in engine A's 720° four-stroke cycle
+   * is current (`src/engine/cycle.ts`'s pedagogical overlay): 0 for the first
+   * revolution since the last cycle boundary, 1 for the second. Like
+   * `crankAngleRad`, this is authoritative while paused or scrubbing; while
+   * playing, the animation loop owns it in the same ref as the live angle
+   * and mirrors it here only at the throttled READOUT_SYNC_HZ cadence, never
+   * per frame. Scrubbing (§11.1) deliberately never resets it: the scrub
+   * slider is 0–360° and cannot express which of the two revolutions the
+   * crank is on, so whatever parity was last playing is what resumes.
+   */
+  crankRevolutionParity: 0 | 1;
+  /**
+   * Engine B's parity bit. Equal to `crankRevolutionParity` while
+   * rpm-linked; once unlinked the animation loop advances and mirrors it
+   * independently, exactly like `comparisonCrankAngleRad`.
+   */
+  comparisonCrankRevolutionParity: 0 | 1;
 
   setConfig: (partial: Partial<CrankMechanismConfig>) => void;
   /**
    * Turns comparison on, seeding engine B's config (defaults to a copy of
-   * engine A's) and its speed (`comparisonRpm`, always from engine A's
-   * current `rpm` — see the field's doc comment).
+   * engine A's), its speed (`comparisonRpm`), and its cylinder count
+   * (`comparisonCylinderCount`) — all from engine A's current values, see
+   * each field's doc comment.
    */
   enableComparison: (initial?: CrankMechanismConfig) => void;
   disableComparison: () => void;
   /** No-op while comparison is off. */
   setComparisonConfig: (partial: Partial<CrankMechanismConfig>) => void;
+  /** Geometry change (§11.1): never resets crank angle or playback. */
+  setCylinderCount: (count: SupportedCylinderCount) => void;
+  /** Geometry change (§11.1): never resets crank angle or playback. */
+  setComparisonCylinderCount: (count: SupportedCylinderCount) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setDisplayUnit: (unit: DisplayUnit) => void;
   setShowLabels: (show: boolean) => void;
+  /**
+   * "Four-stroke cycle" preference (`src/engine/cycle.ts`'s pedagogical
+   * overlay): gates the stroke badge. Session-local, like `showLabels` was
+   * before it — deliberately not wired into the share link tonight, since a
+   * shared link is about geometry and speed, not which optional readout the
+   * recipient happens to have open.
+   */
+  setShowCycle: (show: boolean) => void;
   setRpm: (rpm: number) => void;
   setComparisonRpm: (rpm: number) => void;
   /**
-   * Linking re-synchronizes engine B onto engine A's angle immediately, so
-   * the two mechanisms never sit visibly out of phase while claiming to
-   * share a speed.
+   * Linking re-synchronizes engine B onto engine A's angle (and cycle
+   * parity) immediately, so the two mechanisms never sit visibly out of
+   * phase while claiming to share a speed.
    */
   setRpmLinked: (linked: boolean) => void;
   play: () => void;
@@ -91,6 +138,13 @@ interface EngineStore {
   syncCrankAngle: (angleRad: number) => void;
   /** Throttled mirror of engine B's angle; only meaningful while unlinked. */
   syncComparisonCrankAngle: (angleRad: number) => void;
+  /** Throttled mirror of engine A's revolution-parity bit, alongside the angle. */
+  syncCrankRevolutionParity: (parity: 0 | 1) => void;
+  /**
+   * Throttled mirror of engine B's revolution-parity bit; only meaningful
+   * while unlinked, exactly like `syncComparisonCrankAngle`.
+   */
+  syncComparisonCrankRevolutionParity: (parity: 0 | 1) => void;
   /**
    * Applies a decoded share link (`decodeShareState`) to the store. Every
    * field is optional and independent: whatever the link carried is
@@ -116,7 +170,9 @@ function initialIsPlaying(): boolean {
 export const useEngineStore = create<EngineStore>((set) => ({
   config: DEFAULT_CONFIG,
   comparisonConfig: null,
-  preferences: { displayUnit: "mm", showLabels: true },
+  cylinderCount: 1,
+  comparisonCylinderCount: 1,
+  preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
   rpm: DEFAULT_ANIMATION.rpm,
   comparisonRpm: DEFAULT_ANIMATION.rpm,
   rpmLinked: true,
@@ -124,6 +180,8 @@ export const useEngineStore = create<EngineStore>((set) => ({
   isPlaying: initialIsPlaying(),
   crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
   comparisonCrankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
+  crankRevolutionParity: 0,
+  comparisonCrankRevolutionParity: 0,
 
   setConfig: (partial) =>
     set((state) => ({ config: { ...state.config, ...partial } })),
@@ -135,6 +193,9 @@ export const useEngineStore = create<EngineStore>((set) => ({
       // engine B to the pristine default (DEFAULT_ANIMATION.rpm). A later
       // re-enable re-seeds from whatever engine A is running at then.
       comparisonRpm: state.rpm,
+      // Same reasoning for cylinder count: comparison starts as two copies
+      // of engine A's layout, not a snap back to a pristine single cylinder.
+      comparisonCylinderCount: state.cylinderCount,
     })),
   disableComparison: () => set({ comparisonConfig: null }),
   setComparisonConfig: (partial) =>
@@ -143,6 +204,9 @@ export const useEngineStore = create<EngineStore>((set) => ({
         ? { comparisonConfig: { ...state.comparisonConfig, ...partial } }
         : {},
     ),
+  setCylinderCount: (count) => set({ cylinderCount: count }),
+  setComparisonCylinderCount: (count) =>
+    set({ comparisonCylinderCount: count }),
   setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
   setDisplayUnit: (unit) =>
     set((state) => ({
@@ -152,12 +216,20 @@ export const useEngineStore = create<EngineStore>((set) => ({
     set((state) => ({
       preferences: { ...state.preferences, showLabels: show },
     })),
+  setShowCycle: (show) =>
+    set((state) => ({
+      preferences: { ...state.preferences, showCycle: show },
+    })),
   setRpm: (rpm) => set({ rpm }),
   setComparisonRpm: (comparisonRpm) => set({ comparisonRpm }),
   setRpmLinked: (rpmLinked) =>
     set((state) =>
       rpmLinked
-        ? { rpmLinked, comparisonCrankAngleRad: state.crankAngleRad }
+        ? {
+            rpmLinked,
+            comparisonCrankAngleRad: state.crankAngleRad,
+            comparisonCrankRevolutionParity: state.crankRevolutionParity,
+          }
         : { rpmLinked },
     ),
   play: () => set({ isPlaying: true }),
@@ -171,6 +243,9 @@ export const useEngineStore = create<EngineStore>((set) => ({
   syncCrankAngle: (angleRad) => set({ crankAngleRad: angleRad }),
   syncComparisonCrankAngle: (angleRad) =>
     set({ comparisonCrankAngleRad: angleRad }),
+  syncCrankRevolutionParity: (parity) => set({ crankRevolutionParity: parity }),
+  syncComparisonCrankRevolutionParity: (parity) =>
+    set({ comparisonCrankRevolutionParity: parity }),
   hydrateFromShareState: (partial) =>
     set((state) => ({
       config: partial.config ?? state.config,
@@ -179,6 +254,12 @@ export const useEngineStore = create<EngineStore>((set) => ({
       // real config or nothing (never `null`) into a decoded partial, so
       // "absent" is the only falsy-ish case to guard against here.
       comparisonConfig: partial.comparisonConfig ?? state.comparisonConfig,
+      // Same `??` pattern as every other field here: a link either carried
+      // a valid, supported count (decodeShareState already dropped anything
+      // else) or it carried nothing, in which case the current value stands.
+      cylinderCount: partial.cylinderCount ?? state.cylinderCount,
+      comparisonCylinderCount:
+        partial.comparisonCylinderCount ?? state.comparisonCylinderCount,
       preferences:
         partial.displayUnit !== undefined
           ? { ...state.preferences, displayUnit: partial.displayUnit }

@@ -10,18 +10,26 @@
 
 import { describe, expect, it } from "vitest";
 import { calculateClearanceHeightMm } from "../engine/calculations";
-import { DEFAULT_CONFIG, INPUT_RANGES } from "../engine/constants";
+import { DEFAULT_CONFIG, INPUT_RANGES, TWO_PI } from "../engine/constants";
+import { calculateMechanismState } from "../engine/kinematics";
 import type { CrankMechanismConfig } from "../engine/types";
 import { ENGINE_PRESETS } from "../engine/presets";
 import { CUSTOM_ENGINE_LABEL } from "./mechanismLabels";
 import {
   COMPARISON_GAP_FRACTION,
+  CRANK_ARROW_GAP_RAD,
+  CRANK_ARROW_HEAD_ANGLE_RAD,
+  CRANK_ARROW_HEAD_ROTATION_Z_RAD,
+  CRANK_ARROW_MESH_START_RAD,
+  CRANK_ARROW_SWEEP_RAD,
+  INLINE_GAP_FRACTION,
   LABEL_BAND_FRACTION,
   LABEL_GAP_FRACTION,
+  clockwiseTangentRotationZRad,
   deriveLayout,
   deriveProportions,
 } from "./sceneGeometry";
-import type { PlacedMechanism, SceneBounds } from "./sceneGeometry";
+import type { PlacedEngine, SceneBounds } from "./sceneGeometry";
 
 /** Geometry extremes that satisfy the `rodLength > stroke / 2` rule. */
 const GEOMETRIES: Array<
@@ -219,12 +227,17 @@ const B6_1_6: CrankMechanismConfig = {
   redlineRpm: 7000,
 };
 
-/** World-space extents of a placed mechanism. */
-function worldBounds(placed: PlacedMechanism): SceneBounds {
+/**
+ * World-space extents of a placed engine's whole cylinder row, recomputed from
+ * its cylinder offsets rather than read from `placed.bounds`, so the tests
+ * check the published bounds instead of trusting them.
+ */
+function worldBounds(placed: PlacedEngine): SceneBounds {
   const { bounds } = placed.proportions;
+  const offsets = placed.cylinders.map((c) => c.offsetXMm);
   return {
-    minX: bounds.minX + placed.offsetXMm,
-    maxX: bounds.maxX + placed.offsetXMm,
+    minX: bounds.minX + Math.min(...offsets),
+    maxX: bounds.maxX + Math.max(...offsets),
     minY: bounds.minY,
     maxY: bounds.maxY,
   };
@@ -235,9 +248,24 @@ describe("deriveLayout — single engine", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null);
 
     expect(layout.secondary).toBeNull();
-    expect(layout.primary.offsetXMm).toBe(0);
+    expect(layout.primary.cylinders).toHaveLength(1);
+    expect(layout.primary.cylinders[0].offsetXMm).toBe(0);
     expect(layout.primary.config).toBe(DEFAULT_CONFIG);
     expect(layout.bounds).toEqual(deriveProportions(DEFAULT_CONFIG).bounds);
+  });
+
+  it("publishes row bounds matching the single cylinder's own extents", () => {
+    const layout = deriveLayout(DEFAULT_CONFIG, null);
+    expect(layout.primary.bounds).toEqual(worldBounds(layout.primary));
+  });
+
+  it("gives the one cylinder index 0 and zero phase", () => {
+    const layout = deriveLayout(DEFAULT_CONFIG, null);
+    const [cylinder] = layout.primary.cylinders;
+
+    expect(cylinder.index).toBe(0);
+    expect(cylinder.crankPhaseRad).toBe(0);
+    expect(cylinder.bankIndex).toBe(0);
   });
 });
 
@@ -299,12 +327,12 @@ describe("deriveLayout — comparison pair", () => {
     const forward = deriveLayout(LS7, B6_1_6);
     const reversed = deriveLayout(B6_1_6, LS7);
 
-    expect(reversed.primary.offsetXMm).toBeCloseTo(
-      -forward.secondary!.offsetXMm,
+    expect(reversed.primary.cylinders[0].offsetXMm).toBeCloseTo(
+      -forward.secondary!.cylinders[0].offsetXMm,
       10,
     );
-    expect(reversed.secondary!.offsetXMm).toBeCloseTo(
-      -forward.primary.offsetXMm,
+    expect(reversed.secondary!.cylinders[0].offsetXMm).toBeCloseTo(
+      -forward.primary.cylinders[0].offsetXMm,
       10,
     );
     expect(reversed.bounds.maxX).toBeCloseTo(forward.bounds.maxX, 10);
@@ -495,4 +523,290 @@ describe("deriveLayout — mechanism labels", () => {
       small.primary.label!.anchorYMm,
     );
   });
+});
+
+describe("deriveLayout — multi-cylinder rows", () => {
+  /** Expected center-to-center cylinder spacing for a configuration. */
+  function spacingFor(config: CrankMechanismConfig): number {
+    const { bounds } = deriveProportions(config);
+    return (bounds.maxX - bounds.minX) * (1 + INLINE_GAP_FRACTION);
+  }
+
+  it("lays an inline-4 out as four cylinders in crankshaft order", () => {
+    const layout = deriveLayout(DEFAULT_CONFIG, null, false, 4);
+    const indices = layout.primary.cylinders.map((c) => c.index);
+
+    expect(layout.primary.cylinders).toHaveLength(4);
+    expect(indices).toEqual([0, 1, 2, 3]);
+    // Left to right, in the same order as along the crankshaft.
+    const offsets = layout.primary.cylinders.map((c) => c.offsetXMm);
+    for (let i = 1; i < offsets.length; i += 1) {
+      expect(offsets[i]).toBeGreaterThan(offsets[i - 1]);
+    }
+  });
+
+  it("carries the inline-4 crank-throw phases through to the stage", () => {
+    const layout = deriveLayout(DEFAULT_CONFIG, null, false, 4);
+
+    expect(layout.primary.cylinders.map((c) => c.crankPhaseRad)).toEqual([
+      0,
+      Math.PI,
+      Math.PI,
+      0,
+    ]);
+    for (const cylinder of layout.primary.cylinders) {
+      expect(cylinder.bankIndex).toBe(0);
+    }
+  });
+
+  it("spaces the cylinders evenly by the inline gap fraction", () => {
+    const layout = deriveLayout(DEFAULT_CONFIG, null, false, 4);
+    const spacing = spacingFor(DEFAULT_CONFIG);
+    const offsets = layout.primary.cylinders.map((c) => c.offsetXMm);
+
+    for (let i = 1; i < offsets.length; i += 1) {
+      expect(offsets[i] - offsets[i - 1]).toBeCloseTo(spacing, 10);
+    }
+  });
+
+  it("leaves clear space between neighbouring cylinders", () => {
+    for (const count of [3, 4, 6] as const) {
+      for (const [, geometry] of GEOMETRIES) {
+        const config = configFor(geometry, 10.5);
+        const layout = deriveLayout(config, null, false, count);
+        const { bounds } = layout.primary.proportions;
+        const offsets = layout.primary.cylinders.map((c) => c.offsetXMm);
+
+        for (let i = 1; i < offsets.length; i += 1) {
+          const gap = offsets[i] + bounds.minX - (offsets[i - 1] + bounds.maxX);
+          expect(gap).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it("centers a lone row on x = 0 and frames exactly the row", () => {
+    for (const count of [1, 3, 4, 6] as const) {
+      const layout = deriveLayout(DEFAULT_CONFIG, null, false, count);
+      const world = worldBounds(layout.primary);
+
+      expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 10);
+      expect(layout.primary.bounds.minX).toBeCloseTo(world.minX, 10);
+      expect(layout.primary.bounds.maxX).toBeCloseTo(world.maxX, 10);
+      expect(layout.bounds.minX).toBeCloseTo(world.minX, 10);
+      expect(layout.bounds.maxX).toBeCloseTo(world.maxX, 10);
+    }
+  });
+
+  it("widens the framed union with each extra cylinder, height unchanged", () => {
+    const one = deriveLayout(DEFAULT_CONFIG, null, false, 1);
+    const four = deriveLayout(DEFAULT_CONFIG, null, false, 4);
+    const six = deriveLayout(DEFAULT_CONFIG, null, false, 6);
+
+    const widthOf = (b: SceneBounds) => b.maxX - b.minX;
+    expect(widthOf(four.bounds)).toBeGreaterThan(widthOf(one.bounds));
+    expect(widthOf(six.bounds)).toBeGreaterThan(widthOf(four.bounds));
+
+    // Only the row grows: a taller frame would mean the cylinders were
+    // rescaled, which the stage never does.
+    expect(six.bounds.minY).toBeCloseTo(one.bounds.minY, 10);
+    expect(six.bounds.maxY).toBeCloseTo(one.bounds.maxY, 10);
+    expect(six.primary.proportions).toEqual(one.primary.proportions);
+  });
+
+  it("matches the pre-multi-cylinder layout when the count is one", () => {
+    const implicit = deriveLayout(LS7, B6_1_6, true);
+    const explicitOne = deriveLayout(LS7, B6_1_6, true, 1, 1);
+
+    expect(explicitOne).toEqual(implicit);
+  });
+});
+
+describe("deriveLayout — comparing engines of different cylinder counts", () => {
+  it("keeps an inline-4 clear of a single-cylinder engine", () => {
+    const layout = deriveLayout(LS7, B6_1_6, false, 4, 1);
+    const a = worldBounds(layout.primary);
+    const b = worldBounds(layout.secondary!);
+
+    expect(layout.primary.cylinders).toHaveLength(4);
+    expect(layout.secondary!.cylinders).toHaveLength(1);
+    expect(a.maxX).toBeLessThan(b.minX);
+  });
+
+  it("frames the union of both rows exactly", () => {
+    const layout = deriveLayout(LS7, B6_1_6, false, 4, 3);
+    const a = worldBounds(layout.primary);
+    const b = worldBounds(layout.secondary!);
+
+    expect(layout.bounds.minX).toBeCloseTo(a.minX, 10);
+    expect(layout.bounds.maxX).toBeCloseTo(b.maxX, 10);
+    expect(layout.bounds.minY).toBeCloseTo(Math.min(a.minY, b.minY), 10);
+    expect(layout.bounds.maxY).toBeCloseTo(Math.max(a.maxY, b.maxY), 10);
+    expect((layout.bounds.minX + layout.bounds.maxX) / 2).toBeCloseTo(0, 10);
+  });
+
+  it("scales the comparison gap to the two row widths, not one cylinder", () => {
+    const layout = deriveLayout(LS7, B6_1_6, false, 6, 6);
+    const a = worldBounds(layout.primary);
+    const b = worldBounds(layout.secondary!);
+
+    const rowWidthA = a.maxX - a.minX;
+    const rowWidthB = b.maxX - b.minX;
+    const expectedGap = (COMPARISON_GAP_FRACTION * (rowWidthA + rowWidthB)) / 2;
+
+    expect(b.minX - a.maxX).toBeCloseTo(expectedGap, 10);
+
+    // And it is genuinely wider than the single-cylinder pair's gap, so two
+    // inline-sixes do not end up crammed against each other.
+    const singles = deriveLayout(LS7, B6_1_6, false, 1, 1);
+    const singleGap =
+      worldBounds(singles.secondary!).minX - worldBounds(singles.primary).maxX;
+    expect(expectedGap).toBeGreaterThan(singleGap);
+  });
+
+  it("centers one label under each engine's whole row", () => {
+    const layout = deriveLayout(LS7, B6_1_6, true, 4, 3);
+
+    for (const placed of [layout.primary, layout.secondary!]) {
+      const world = worldBounds(placed);
+      expect(placed.label!.anchorXMm).toBeCloseTo(
+        (world.minX + world.maxX) / 2,
+        10,
+      );
+    }
+
+    // One label per engine, on a shared baseline, each over its own row.
+    expect(layout.primary.label!.anchorYMm).toBeCloseTo(
+      layout.secondary!.label!.anchorYMm,
+      10,
+    );
+    expect(layout.primary.label!.anchorXMm).toBeLessThan(
+      worldBounds(layout.secondary!).minX,
+    );
+    expect(layout.secondary!.label!.anchorXMm).toBeGreaterThan(
+      worldBounds(layout.primary).maxX,
+    );
+  });
+});
+
+describe("crank-direction arrow — rotation sense matches calculateMechanismState", () => {
+  /**
+   * The arrow's whole reason to exist is to draw the crank's *actual*
+   * rotation direction, not an assumed one. Rather than trusting the
+   * hand-derived comment in sceneGeometry.ts, this samples the real
+   * kinematics: the drawn crankpin position at angle theta is exactly
+   * (crankPinXmm, crankPinYmm) — CrankThrow rotates the crank assembly by
+   * -theta about Z, which puts the local TDC point (0, r) at
+   * (r*sin(theta), r*cos(theta)), matching calculateMechanismState's own
+   * output. Differencing that position across a small step in theta gives
+   * the true, empirical direction of travel in scene XY, at every point
+   * around the circle.
+   */
+  function drawnCrankpinXY(crankAngleRad: number): [number, number] {
+    const state = calculateMechanismState(DEFAULT_CONFIG, crankAngleRad);
+    return [state.crankPinXmm, state.crankPinYmm];
+  }
+
+  it("moves clockwise (top -> +X -> bottom -> -X) as the crank angle increases", () => {
+    const [topX, topY] = drawnCrankpinXY(0);
+    const [rightX, rightY] = drawnCrankpinXY(Math.PI / 2);
+    const [bottomX, bottomY] = drawnCrankpinXY(Math.PI);
+    const [leftX, leftY] = drawnCrankpinXY((3 * Math.PI) / 2);
+
+    expect(topX).toBeCloseTo(0, 10);
+    expect(topY).toBeGreaterThan(0);
+    expect(rightX).toBeGreaterThan(0);
+    expect(rightY).toBeCloseTo(0, 10);
+    expect(bottomX).toBeCloseTo(0, 10);
+    expect(bottomY).toBeLessThan(0);
+    expect(leftX).toBeLessThan(0);
+    expect(leftY).toBeCloseTo(0, 10);
+  });
+
+  it("has a finite-difference velocity that matches clockwiseTangentRotationZRad's tangent at every sampled angle", () => {
+    const dTheta = 1e-4;
+
+    for (const theta of [
+      0,
+      Math.PI / 6,
+      Math.PI / 2,
+      (5 * Math.PI) / 6,
+      Math.PI,
+      (7 * Math.PI) / 6,
+      (3 * Math.PI) / 2,
+      (11 * Math.PI) / 6,
+      CRANK_ARROW_HEAD_ANGLE_RAD,
+    ]) {
+      const [x0, y0] = drawnCrankpinXY(theta);
+      const [x1, y1] = drawnCrankpinXY(theta + dTheta);
+      const velocity = [(x1 - x0) / dTheta, (y1 - y0) / dTheta];
+
+      // The standard angle of the drawn point, independent of the crank's
+      // own theta parametrization — this is what the arrow's math (defined
+      // purely in terms of a standard angle around the circle) must agree
+      // with.
+      const standardAngle = Math.atan2(y0, x0);
+      const rotationZ = clockwiseTangentRotationZRad(standardAngle);
+      // A +Y-pointing vector rotated by rotationZ about Z:
+      const predictedDirection = [-Math.sin(rotationZ), Math.cos(rotationZ)];
+
+      const velocityMagnitude = Math.hypot(velocity[0], velocity[1]);
+      const normalizedVelocity = [
+        velocity[0] / velocityMagnitude,
+        velocity[1] / velocityMagnitude,
+      ];
+
+      expect(normalizedVelocity[0]).toBeCloseTo(predictedDirection[0], 3);
+      expect(normalizedVelocity[1]).toBeCloseTo(predictedDirection[1], 3);
+    }
+  });
+
+  it("places the arrowhead at the gap edge a clockwise-moving point reaches first", () => {
+    // The gap spans [-120°, -60°] (centered at -90°, the bottom). A point
+    // moving clockwise (decreasing standard angle) traveling from the top
+    // reaches -60° (CRANK_ARROW_HEAD_ANGLE_RAD) before it would reach
+    // -120°, so the arrowhead belongs at -60°, not -120°.
+    expect(CRANK_ARROW_HEAD_ANGLE_RAD).toBeCloseTo(-Math.PI / 3, 10);
+    expect(CRANK_ARROW_MESH_START_RAD).toBeCloseTo(-Math.PI / 3, 10);
+  });
+
+  it("sweeps the drawn arc across everything except one fixed gap", () => {
+    expect(CRANK_ARROW_SWEEP_RAD + CRANK_ARROW_GAP_RAD).toBeCloseTo(TWO_PI, 10);
+    expect(CRANK_ARROW_GAP_RAD).toBeGreaterThan(0);
+    expect(CRANK_ARROW_SWEEP_RAD).toBeGreaterThan(0);
+    expect(CRANK_ARROW_SWEEP_RAD).toBeLessThan(TWO_PI);
+  });
+
+  it("gives the arrowhead cone a fixed, precomputed rotation", () => {
+    expect(CRANK_ARROW_HEAD_ROTATION_Z_RAD).toBeCloseTo(
+      clockwiseTangentRotationZRad(CRANK_ARROW_HEAD_ANGLE_RAD),
+      10,
+    );
+    expect(Number.isFinite(CRANK_ARROW_HEAD_ROTATION_Z_RAD)).toBe(true);
+  });
+});
+
+describe("deriveProportions — crank-direction arrow sizing", () => {
+  for (const [geometryName, geometry] of GEOMETRIES) {
+    for (const compressionRatio of COMPRESSION_RATIOS) {
+      it(`clears the crankpin's own disc and stays framed (${geometryName}, ${compressionRatio}:1)`, () => {
+        const config = configFor(geometry, compressionRatio);
+        const p = deriveProportions(config);
+
+        expect(p.crankArrowRadiusMm).toBeGreaterThan(
+          p.crankRadiusMm + p.crankPinRadiusMm,
+        );
+        expect(p.crankArrowTubeRadiusMm).toBeGreaterThan(0);
+        expect(p.crankArrowHeadRadiusMm).toBeGreaterThan(0);
+        expect(p.crankArrowHeadLengthMm).toBeGreaterThan(0);
+
+        // Auto-framing must never clip the ring or its arrowhead, in any
+        // direction from the crank center.
+        const reach = p.crankArrowRadiusMm + p.crankArrowHeadLengthMm;
+        expect(p.bounds.maxX).toBeGreaterThanOrEqual(reach);
+        expect(p.bounds.minX).toBeLessThanOrEqual(-reach);
+        expect(-p.bounds.minY).toBeGreaterThanOrEqual(reach);
+      });
+    }
+  }
 });

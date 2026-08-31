@@ -18,6 +18,8 @@
  * |----------|--------------------------------------------------|--------------|
  * | `a`      | Engine A: a preset id, or `bore-stroke-rod-cr-redline` | never |
  * | `b`      | Engine B; its presence turns comparison mode on  | not comparing |
+ * | `c`      | Engine A's cylinder count (§24a: 1, 3, 4, or 6)  | matches what `a` implies (a preset's own count, or 1) |
+ * | `bc`     | Engine B's cylinder count                        | matches what `b` implies, or not comparing |
  * | `rpm`    | Engine speed (engine A's, when speeds are split) | default |
  * | `brpm`   | Engine B's speed; its presence means unlinked    | speeds linked |
  * | `u`      | `in` for inch display                            | millimeters |
@@ -45,7 +47,10 @@ import {
   TWO_PI,
 } from "./constants";
 import type { PlaybackSpeed } from "./constants";
+import { isSupportedCylinderCount } from "./engineLayout";
+import type { SupportedCylinderCount } from "./engineLayout";
 import { ENGINE_PRESETS } from "./presets";
+import type { EnginePreset } from "./presets";
 import type { CrankMechanismConfig, DisplayUnit } from "./types";
 import { validateConfig } from "./validation";
 
@@ -53,6 +58,10 @@ import { validateConfig } from "./validation";
 export interface ShareState {
   config: CrankMechanismConfig;
   comparisonConfig: CrankMechanismConfig | null;
+  /** Engine A's cylinder count (§24a). */
+  cylinderCount: SupportedCylinderCount;
+  /** Engine B's cylinder count; only meaningful while `comparisonConfig` is set. */
+  comparisonCylinderCount: SupportedCylinderCount;
   rpm: number;
   /** Engine B's speed; only travels in a link while `rpmLinked` is false. */
   comparisonRpm: number;
@@ -88,11 +97,36 @@ function configsEqual(
   );
 }
 
+/**
+ * Finds the preset (if any) whose geometry exactly matches `config`. Shared
+ * by `encodeConfig` (to decide whether a preset id or five numbers gets
+ * written) and `defaultCylinderCountFor` (to decide what cylinder count a
+ * link implies when it omits `c`/`bc`), so the two stay in lockstep by
+ * construction rather than by two independently-maintained rules.
+ */
+function presetForConfig(
+  config: CrankMechanismConfig,
+): EnginePreset | undefined {
+  return ENGINE_PRESETS.find((entry) => configsEqual(entry.config, config));
+}
+
+/**
+ * The cylinder count a link implies for `config` when it carries no
+ * explicit `c`/`bc`: a preset's own real cylinder count when `config`
+ * matches one exactly (§24a — falling back to 1 for a preset whose real
+ * layout isn't renderable yet, e.g. a V8), or 1 for a hand-typed numeric
+ * config. A link is a complete description of an engine, so a numeric `a`
+ * with no `c` means single-cylinder, not "leave the current count alone".
+ */
+export function defaultCylinderCountFor(
+  config: CrankMechanismConfig,
+): SupportedCylinderCount {
+  return presetForConfig(config)?.cylinderCount ?? 1;
+}
+
 /** Encodes one config as a preset id when possible, else as five numbers. */
 export function encodeConfig(config: CrankMechanismConfig): string {
-  const preset = ENGINE_PRESETS.find((entry) =>
-    configsEqual(entry.config, config),
-  );
+  const preset = presetForConfig(config);
   if (preset) {
     return preset.id;
   }
@@ -176,6 +210,23 @@ export function encodeShareState(state: ShareState): string {
   if (state.comparisonConfig) {
     params.set("b", encodeConfig(state.comparisonConfig));
   }
+  // `c` only needs to travel when it disagrees with what decoding `a` will
+  // infer on its own: a preset id already implies its own real cylinder
+  // count (§24a), and a numeric config implies 1. Omitting `c` whenever the
+  // count merely equals 1 (regardless of what `a` implies) would corrupt a
+  // preset-id link deliberately viewed at a different count — see
+  // `defaultCylinderCountFor`. Engine B's count only means anything once
+  // engine B itself is in the link, same reasoning as `brpm`/`bangle` below.
+  if (state.cylinderCount !== defaultCylinderCountFor(state.config)) {
+    params.set("c", String(state.cylinderCount));
+  }
+  if (
+    state.comparisonConfig &&
+    state.comparisonCylinderCount !==
+      defaultCylinderCountFor(state.comparisonConfig)
+  ) {
+    params.set("bc", String(state.comparisonCylinderCount));
+  }
   if (state.rpm !== DEFAULT_ANIMATION.rpm) {
     params.set("rpm", formatNumber(state.rpm));
   }
@@ -235,6 +286,40 @@ export function decodeShareState(query: string): PartialShareState {
     const comparisonConfig = decodeConfig(rawB);
     if (comparisonConfig) {
       state.comparisonConfig = comparisonConfig;
+    }
+  }
+
+  // An explicit `c` always wins. Absent, `a` still implies a count — a
+  // preset id implies its own real cylinder count, a numeric config implies
+  // 1 (see `defaultCylinderCountFor`) — so a link is a complete description
+  // of engine A's layout even when `c` never travelled. `c` present but
+  // unsupported (a stale or hand-edited value) is neither "explicit" nor
+  // "absent": it's dropped without falling back, leaving the current
+  // session's count stand, same as any other malformed param here.
+  const rawC = params.get("c");
+  if (rawC !== null) {
+    const count = Number(rawC);
+    if (isSupportedCylinderCount(count)) {
+      state.cylinderCount = count;
+    }
+  } else if (state.config) {
+    state.cylinderCount = defaultCylinderCountFor(state.config);
+  }
+
+  // `bc` only means anything alongside a successfully decoded engine B —
+  // same reasoning as `brpm`/`bangle` above — and so does its absence:
+  // no `b`, no implied count either.
+  const rawBc = params.get("bc");
+  if (state.comparisonConfig) {
+    if (rawBc !== null) {
+      const count = Number(rawBc);
+      if (isSupportedCylinderCount(count)) {
+        state.comparisonCylinderCount = count;
+      }
+    } else {
+      state.comparisonCylinderCount = defaultCylinderCountFor(
+        state.comparisonConfig,
+      );
     }
   }
 

@@ -4,8 +4,13 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { DEFAULT_CONFIG } from "../engine/constants";
 import { ENGINE_PRESETS } from "../engine/presets";
-import { CUSTOM_ENGINE_LABEL, describeConfig } from "./mechanismLabels";
+import {
+  CUSTOM_ENGINE_LABEL,
+  DEFAULT_ENGINE_LABEL,
+  describeConfig,
+} from "./mechanismLabels";
 
 describe("describeConfig", () => {
   it("names every preset by its own name", () => {
@@ -32,6 +37,16 @@ describe("describeConfig", () => {
       const edited = { ...preset.config, [field]: preset.config[field] + 1 };
       expect(describeConfig(edited)).toBe(CUSTOM_ENGINE_LABEL);
     }
+  });
+
+  it("names the untouched default configuration as the default engine", () => {
+    expect(describeConfig({ ...DEFAULT_CONFIG })).toBe(DEFAULT_ENGINE_LABEL);
+  });
+
+  it("describes an edited default configuration as custom", () => {
+    expect(
+      describeConfig({ ...DEFAULT_CONFIG, boreMm: DEFAULT_CONFIG.boreMm + 1 }),
+    ).toBe(CUSTOM_ENGINE_LABEL);
   });
 
   it("describes an unrelated configuration as custom", () => {

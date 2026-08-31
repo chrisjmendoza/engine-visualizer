@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { AboutDialog } from "./AboutDialog";
 import styles from "./ApplicationShell.module.css";
 
 export interface ApplicationShellProps {
@@ -22,6 +23,7 @@ export function ApplicationShell({ viewport, panel }: ApplicationShellProps) {
       <header className={styles.header}>
         <h1 className={styles.title}>Engine Visualizer</h1>
         <p className={styles.subtitle}>Slider-crank mechanism explorer</p>
+        <AboutDialog />
       </header>
       <div className={styles.body}>
         <section className={styles.viewport} aria-label="Engine viewport">

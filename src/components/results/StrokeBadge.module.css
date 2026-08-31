@@ -1,0 +1,53 @@
+/* Four phase colors, scoped to this component (not global tokens): each is
+   a small decorative dot, never the only way the stroke is communicated —
+   the stroke name is always spelled out beside it (§19). Chosen distinct
+   from --color-accent (used elsewhere for the one interactive highlight
+   color) so the badge reads as its own small legend, not a stray control. */
+.badge {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+}
+
+.badge[data-phase="intake"] .dot {
+  background: #4dabf7;
+}
+
+.badge[data-phase="compression"] .dot {
+  background: #f2b155;
+}
+
+.badge[data-phase="power"] .dot {
+  background: #ff6b6b;
+}
+
+.badge[data-phase="exhaust"] .dot {
+  background: #868e96;
+}
+
+.label {
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.75rem;
+}
+
+.value {
+  color: var(--color-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

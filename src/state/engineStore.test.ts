@@ -7,7 +7,9 @@ function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
-    preferences: { displayUnit: "mm", showLabels: true },
+    cylinderCount: 1,
+    comparisonCylinderCount: 1,
+    preferences: { displayUnit: "mm", showLabels: true, showCycle: false },
     rpm: DEFAULT_ANIMATION.rpm,
     comparisonRpm: DEFAULT_ANIMATION.rpm,
     rpmLinked: true,
@@ -53,6 +55,60 @@ describe("enableComparison — comparisonRpm seeding", () => {
     expect(useEngineStore.getState().comparisonRpm).not.toBe(
       DEFAULT_ANIMATION.rpm,
     );
+  });
+});
+
+describe("cylinderCount / comparisonCylinderCount — setters", () => {
+  it("setCylinderCount updates cylinderCount without touching crank angle or playback", () => {
+    useEngineStore.setState({ crankAngleRad: 1.23, isPlaying: false });
+
+    useEngineStore.getState().setCylinderCount(4);
+
+    expect(useEngineStore.getState().cylinderCount).toBe(4);
+    expect(useEngineStore.getState().crankAngleRad).toBe(1.23);
+    expect(useEngineStore.getState().isPlaying).toBe(false);
+  });
+
+  it("setComparisonCylinderCount updates comparisonCylinderCount without touching crank angle or playback", () => {
+    useEngineStore.setState({ comparisonCrankAngleRad: 2.5, isPlaying: true });
+
+    useEngineStore.getState().setComparisonCylinderCount(6);
+
+    expect(useEngineStore.getState().comparisonCylinderCount).toBe(6);
+    expect(useEngineStore.getState().comparisonCrankAngleRad).toBe(2.5);
+    expect(useEngineStore.getState().isPlaying).toBe(true);
+  });
+});
+
+describe("enableComparison — comparisonCylinderCount seeding", () => {
+  it("copies the current cylinderCount into comparisonCylinderCount", () => {
+    useEngineStore.setState({ cylinderCount: 6 });
+
+    useEngineStore.getState().enableComparison();
+
+    expect(useEngineStore.getState().comparisonCylinderCount).toBe(6);
+  });
+
+  it("a later re-enable re-seeds comparisonCylinderCount from the then-current cylinderCount", () => {
+    useEngineStore.setState({ cylinderCount: 3 });
+    useEngineStore.getState().enableComparison();
+    expect(useEngineStore.getState().comparisonCylinderCount).toBe(3);
+
+    useEngineStore.getState().disableComparison();
+    useEngineStore.setState({ cylinderCount: 4 });
+    useEngineStore.getState().enableComparison();
+
+    expect(useEngineStore.getState().comparisonCylinderCount).toBe(4);
+  });
+
+  it("disableComparison leaves comparisonCylinderCount alone", () => {
+    useEngineStore.setState({ cylinderCount: 4 });
+    useEngineStore.getState().enableComparison();
+    useEngineStore.getState().setComparisonCylinderCount(6);
+
+    useEngineStore.getState().disableComparison();
+
+    expect(useEngineStore.getState().comparisonCylinderCount).toBe(6);
   });
 });
 

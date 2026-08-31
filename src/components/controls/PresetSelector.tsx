@@ -62,8 +62,12 @@ export interface PresetSelectorProps {
  * slot's config; it never touches RPM or playback state.
  *
  * A preset is shown pressed only when the slot's current config exactly
- * equals that preset's values — hand-edited geometry that happens to drift
- * away from every preset shows no selection at all. Whenever the slot's
+ * equals that preset's values AND the slot's current cylinder count matches
+ * that preset's real layout (§24a, `cylinderCount ?? 1`) — hand-edited
+ * geometry that happens to drift away from every preset shows no selection
+ * at all, and so does switching the cylinder count away after picking a
+ * preset (the geometry still matches, but the app is no longer showing that
+ * engine's real layout). Whenever the slot's
  * config newly matches a preset (picking one, or a slot being seeded by
  * `enableComparison`), that preset's brand auto-expands; losing a match
  * (e.g. hand-editing away from it) leaves whatever the user currently has
@@ -73,11 +77,23 @@ export function PresetSelector({ slot = "primary" }: PresetSelectorProps) {
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const slotConfig = resolveSlotConfig(slot, config, comparisonConfig);
+  const cylinderCount = useEngineStore((state) => state.cylinderCount);
+  const comparisonCylinderCount = useEngineStore(
+    (state) => state.comparisonCylinderCount,
+  );
+  const slotCylinderCount =
+    slot === "comparison" ? comparisonCylinderCount : cylinderCount;
   const setConfig = useEngineStore((state) => state.setConfig);
   const setComparisonConfig = useEngineStore(
     (state) => state.setComparisonConfig,
   );
   const commitSlot = slot === "comparison" ? setComparisonConfig : setConfig;
+  const setCylinderCount = useEngineStore((state) => state.setCylinderCount);
+  const setComparisonCylinderCount = useEngineStore(
+    (state) => state.setComparisonCylinderCount,
+  );
+  const commitCylinderCount =
+    slot === "comparison" ? setComparisonCylinderCount : setCylinderCount;
 
   const groups = groupByBrand(ENGINE_PRESETS);
   const matchingPreset = ENGINE_PRESETS.find((preset) =>
@@ -153,7 +169,15 @@ export function PresetSelector({ slot = "primary" }: PresetSelectorProps) {
           aria-label={`${expandedGroup.brand} presets`}
         >
           {expandedGroup.presets.map((preset) => {
-            const isActive = configsMatch(slotConfig, preset.config);
+            // Geometry alone isn't enough: a preset whose geometry matches
+            // but whose real cylinder count (§24a) no longer matches the
+            // slot's current count (e.g. switched to "Single" after picking
+            // a 4-cylinder preset) is no longer actually selected — showing
+            // it pressed would claim a real engine's layout the app isn't
+            // currently rendering.
+            const isActive =
+              configsMatch(slotConfig, preset.config) &&
+              slotCylinderCount === (preset.cylinderCount ?? 1);
             return (
               <button
                 key={preset.id}
@@ -161,7 +185,16 @@ export function PresetSelector({ slot = "primary" }: PresetSelectorProps) {
                 className={styles.presetButton}
                 aria-pressed={isActive}
                 data-active={isActive ? "true" : undefined}
-                onClick={() => commitSlot(preset.config)}
+                onClick={() => {
+                  commitSlot(preset.config);
+                  // §24a: a preset whose real layout this visualizer
+                  // supports (inline-3/4/6) shows that layout; one without
+                  // (V6, V8, flat...) falls back to a single-cylinder view
+                  // rather than leaving whatever layout was previously
+                  // selected — selecting a real engine should always show
+                  // its own layout, never a leftover from a different one.
+                  commitCylinderCount(preset.cylinderCount ?? 1);
+                }}
               >
                 <span className={styles.name}>{preset.name}</span>
                 <span className={styles.meta}>

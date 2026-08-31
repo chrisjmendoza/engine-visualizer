@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { calculateMechanismState } from "../engine/kinematics";
+import {
+  calculateMechanismState,
+  calculatePistonAccelerationMmPerRad2,
+  calculatePistonVelocityMmPerRad,
+} from "../engine/kinematics";
 import type { CrankMechanismConfig } from "../engine/types";
 import { TWO_PI } from "../engine/constants";
 
@@ -177,4 +181,265 @@ describe("calculateMechanismState - invariants across configurations", () => {
       }
     });
   }
+});
+
+/**
+ * Slider-crank motion depends on stroke and rod length alone; bore,
+ * compression ratio, and redline are carried only to satisfy the config
+ * type. Fixing them here keeps each derivative case down to the two numbers
+ * that actually matter.
+ */
+function geometry(strokeMm: number, rodLengthMm: number): CrankMechanismConfig {
+  return {
+    boreMm: 86,
+    strokeMm,
+    rodLengthMm,
+    compressionRatio: 10.5,
+    redlineRpm: 7000,
+  };
+}
+
+/**
+ * Configurations spanning the legal rod-ratio range, from near-sinusoidal
+ * to barely-legal. The last one (l/r = 1.01, just past validation's
+ * `rodLength > stroke / 2` rule) is the important one: its radical
+ * s = sqrt(l^2 - r^2 sin^2(theta)) nearly collapses around 90 degrees, which
+ * is where a mis-transcribed term does the most damage and where a lazily
+ * chosen finite-difference step stops being trustworthy.
+ */
+const DERIVATIVE_CONFIGS: CrankMechanismConfig[] = [
+  geometry(86, 143), // l/r = 3.33, the default
+  geometry(60, 120), // l/r = 4.00, long rod
+  geometry(100, 180), // l/r = 3.60
+  geometry(200, 101), // l/r = 1.01, near-degenerate
+  geometry(20, 30), // l/r = 3.00, smallest legal engine
+];
+
+/** The displacement the two derivatives are supposed to be derivatives of. */
+function displacementAt(config: CrankMechanismConfig, theta: number): number {
+  return calculateMechanismState(config, theta).pistonDisplacementMm;
+}
+
+/**
+ * Step sizes differ between the two orders, deliberately. A first central
+ * difference divides by 2h and so amplifies double-precision roundoff by
+ * ~1/h; a second central difference divides by h^2 and amplifies it by
+ * ~1/h^2. At h = 1e-5 the first derivative agrees to ~1e-9 relative, but the
+ * second is already swamped by roundoff (~2e-5 relative — it would pass a
+ * carelessly loose tolerance while proving nothing). h = 1e-4 sits near the
+ * second difference's optimum, where roundoff and O(h^2) truncation balance,
+ * and holds every configuration above below ~2e-7 — including the
+ * near-degenerate one, whose large higher derivatives are what rule out a
+ * still-larger step.
+ */
+const VELOCITY_STEP_RAD = 1e-5;
+const ACCELERATION_STEP_RAD = 1e-4;
+
+const DERIVATIVE_TOLERANCE = 1e-6;
+
+/**
+ * Relative error, but scaled by the crank radius wherever the exact value
+ * passes through zero (both derivatives do, twice a revolution), where a
+ * pure relative comparison would be meaningless rather than merely strict.
+ */
+function relativeError(
+  numerical: number,
+  exact: number,
+  crankRadiusMm: number,
+): number {
+  return Math.abs(numerical - exact) / Math.max(Math.abs(exact), crankRadiusMm);
+}
+
+/**
+ * Numerical-differentiation guard for the closed forms.
+ *
+ * `calculatePistonVelocityMmPerRad` and
+ * `calculatePistonAccelerationMmPerRad2` are hand-differentiated algebra,
+ * so the failure they actually risk is a transcription slip — a dropped
+ * chain-rule term, a sign, an exponent — that still draws plausible-looking
+ * curves. Restating the same algebra in a test would reproduce the slip, so
+ * these compare against central differences of the already-tested §9.4
+ * displacement instead.
+ */
+describe("calculatePistonVelocityMmPerRad - versus numerical differentiation", () => {
+  for (const config of DERIVATIVE_CONFIGS) {
+    it(`matches a central difference of piston displacement for stroke=${config.strokeMm} rod=${config.rodLengthMm}`, () => {
+      const crankRadiusMm = config.strokeMm / 2;
+      const h = VELOCITY_STEP_RAD;
+
+      for (let deg = 0; deg <= 360; deg++) {
+        const theta = (deg / 360) * TWO_PI;
+        const numerical =
+          (displacementAt(config, theta + h) -
+            displacementAt(config, theta - h)) /
+          (2 * h);
+        const exact = calculatePistonVelocityMmPerRad(config, theta);
+
+        expect(relativeError(numerical, exact, crankRadiusMm)).toBeLessThan(
+          DERIVATIVE_TOLERANCE,
+        );
+      }
+    });
+  }
+});
+
+describe("calculatePistonAccelerationMmPerRad2 - versus numerical differentiation", () => {
+  for (const config of DERIVATIVE_CONFIGS) {
+    it(`matches a second central difference of piston displacement for stroke=${config.strokeMm} rod=${config.rodLengthMm}`, () => {
+      const crankRadiusMm = config.strokeMm / 2;
+      const h = ACCELERATION_STEP_RAD;
+
+      for (let deg = 0; deg <= 360; deg++) {
+        const theta = (deg / 360) * TWO_PI;
+        const numerical =
+          (displacementAt(config, theta + h) -
+            2 * displacementAt(config, theta) +
+            displacementAt(config, theta - h)) /
+          (h * h);
+        const exact = calculatePistonAccelerationMmPerRad2(config, theta);
+
+        expect(relativeError(numerical, exact, crankRadiusMm)).toBeLessThan(
+          DERIVATIVE_TOLERANCE,
+        );
+      }
+    });
+  }
+});
+
+/** Crank angle (degrees) of maximum outward velocity, by a fine sweep. */
+function peakVelocityAngleDeg(config: CrankMechanismConfig): number {
+  let bestDeg = 0;
+  let bestVelocity = -Infinity;
+  for (let step = 0; step <= 18_000; step++) {
+    const deg = step / 100;
+    const velocity = calculatePistonVelocityMmPerRad(
+      config,
+      (deg / 360) * TWO_PI,
+    );
+    if (velocity > bestVelocity) {
+      bestVelocity = velocity;
+      bestDeg = deg;
+    }
+  }
+  return bestDeg;
+}
+
+describe("calculatePistonVelocityMmPerRad - known values and shape", () => {
+  it("is zero at both dead centers, for every configuration", () => {
+    for (const config of DERIVATIVE_CONFIGS) {
+      expect(calculatePistonVelocityMmPerRad(config, 0)).toBeCloseTo(0, 9);
+      expect(calculatePistonVelocityMmPerRad(config, Math.PI)).toBeCloseTo(
+        0,
+        9,
+      );
+      expect(calculatePistonVelocityMmPerRad(config, TWO_PI)).toBeCloseTo(0, 9);
+    }
+  });
+
+  it("is positive descending from TDC and negative returning to it", () => {
+    // Velocity here is d(displacement from TDC)/d(theta): 0-180 degrees is
+    // TDC toward BDC, so displacement grows; 180-360 degrees returns.
+    expect(
+      calculatePistonVelocityMmPerRad(DEFAULT, Math.PI / 2),
+    ).toBeGreaterThan(0);
+    expect(
+      calculatePistonVelocityMmPerRad(DEFAULT, (3 * Math.PI) / 2),
+    ).toBeLessThan(0);
+  });
+
+  it("treats theta and theta + 2*PI as equivalent", () => {
+    for (let i = 0; i < 12; i++) {
+      const theta = (i / 12) * TWO_PI - Math.PI;
+      expect(
+        calculatePistonVelocityMmPerRad(DEFAULT, theta + TWO_PI),
+      ).toBeCloseTo(calculatePistonVelocityMmPerRad(DEFAULT, theta), 9);
+    }
+  });
+
+  it("peaks before 90 degrees, and earlier the shorter the rod", () => {
+    // Rod angularity, the whole reason piston motion is not sinusoidal:
+    // maximum speed arrives before the crank reaches 90 degrees, and an
+    // infinitely long rod would peak exactly at 90. Assert the ordering
+    // only — the peak angle is a continuous function of the rod ratio and
+    // not worth pinning to decimals.
+    const byDescendingRodRatio = [300, 200, 143, 100, 60].map((rodLengthMm) =>
+      geometry(86, rodLengthMm),
+    );
+    const peakAnglesDeg = byDescendingRodRatio.map(peakVelocityAngleDeg);
+
+    for (const angle of peakAnglesDeg) {
+      expect(angle).toBeGreaterThan(0);
+      expect(angle).toBeLessThan(90);
+    }
+
+    // Strictly earlier with each shorter rod: the asymmetry grows.
+    for (let i = 1; i < peakAnglesDeg.length; i++) {
+      expect(peakAnglesDeg[i]).toBeLessThan(peakAnglesDeg[i - 1]);
+    }
+
+    // The longest rod here (l/r = 6.98) is already near the sinusoidal ideal.
+    expect(peakAnglesDeg[0]).toBeGreaterThan(80);
+  });
+});
+
+describe("calculatePistonAccelerationMmPerRad2 - known dead-center values", () => {
+  it("equals r(1 + r/l) at TDC and -r(1 - r/l) at BDC", () => {
+    // sin(theta) = 0 at both dead centers, so the radical collapses to l and
+    // the closed form reduces to these two textbook expressions — the pair
+    // that makes TDC the harder end for the rod and its bearings.
+    for (const config of DERIVATIVE_CONFIGS) {
+      const r = config.strokeMm / 2;
+      const l = config.rodLengthMm;
+
+      expect(calculatePistonAccelerationMmPerRad2(config, 0)).toBeCloseTo(
+        r * (1 + r / l),
+        9,
+      );
+      expect(calculatePistonAccelerationMmPerRad2(config, Math.PI)).toBeCloseTo(
+        -r * (1 - r / l),
+        9,
+      );
+      expect(calculatePistonAccelerationMmPerRad2(config, TWO_PI)).toBeCloseTo(
+        r * (1 + r / l),
+        9,
+      );
+    }
+  });
+
+  it("makes the TDC peak exceed the BDC peak, by more as the rod shortens", () => {
+    // |a_TDC| / |a_BDC| = (1 + r/l) / (1 - r/l), growing without bound as l
+    // approaches r. Ordering only, for the same reason as the velocity peak.
+    const ratios = [300, 200, 143, 100, 60]
+      .map((rodLengthMm) => geometry(86, rodLengthMm))
+      .map((config) => {
+        const atTdc = calculatePistonAccelerationMmPerRad2(config, 0);
+        const atBdc = calculatePistonAccelerationMmPerRad2(config, Math.PI);
+        return Math.abs(atTdc) / Math.abs(atBdc);
+      });
+
+    for (const ratio of ratios) {
+      expect(ratio).toBeGreaterThan(1);
+    }
+    for (let i = 1; i < ratios.length; i++) {
+      expect(ratios[i]).toBeGreaterThan(ratios[i - 1]);
+    }
+  });
+
+  it("is symmetric about TDC and about BDC", () => {
+    // Acceleration is an even function of theta about both dead centers,
+    // where velocity is odd — a second, cheap check on the sign structure.
+    for (let deg = 5; deg < 180; deg += 5) {
+      const theta = (deg / 360) * TWO_PI;
+      expect(calculatePistonAccelerationMmPerRad2(DEFAULT, -theta)).toBeCloseTo(
+        calculatePistonAccelerationMmPerRad2(DEFAULT, theta),
+        9,
+      );
+      expect(
+        calculatePistonAccelerationMmPerRad2(DEFAULT, Math.PI - theta),
+      ).toBeCloseTo(
+        calculatePistonAccelerationMmPerRad2(DEFAULT, Math.PI + theta),
+        9,
+      );
+    }
+  });
 });
