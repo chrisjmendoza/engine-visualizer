@@ -654,7 +654,10 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     // source conflict.
     // Redline 7000 rpm — autoevolution.com's 2005-2007 Impreza WRX STi spec
     // page and auto123.com's 2005 technical specifications; fuel cut lands
-    // slightly later, around 7100-7200 rpm.
+    // slightly later, around 7100-7200 rpm. Some aggregate listings quote
+    // 6700 rpm instead, which matches neither the tachometer marking nor the
+    // observed fuel cut on this variant and appears to describe a different
+    // EJ25; 7000 is the figure the model-specific sources agree on.
     config: {
       boreMm: 99.5,
       strokeMm: 79.0,
@@ -734,5 +737,80 @@ export const ENGINE_PRESETS: readonly EnginePreset[] = [
     // automatic-transmission car's rating, not the manual's, and the torque
     // figure is unchanged between them.
     output: { powerHp: 200, powerRpm: 7000, torqueLbFt: 151, torqueRpm: 6400 },
+  },
+  {
+    id: "rs3-8v2-daza",
+    name: "Audi RS3 (8V.2) / TT RS (8S)",
+    brand: "Audi",
+    engineCode: "DAZA",
+    layoutLabel: "2.5 L turbo inline-5",
+    // Layout: inline-5 on a 72° crank (§24a's `inline-5`), firing order
+    // 1-2-4-5-3 at even 144° intervals — the offbeat five-cylinder warble
+    // comes from that 144° spacing, not from uneven firing.
+    layoutId: "inline-5",
+    // 2018-2020 USDM RS3 (8V.2) and TT RS (8S), the "2.5 TFSI evo"
+    // (EA855 evo). Its bore, stroke and rod are identical to the Golf GTI's
+    // EA888 below — the same cylinder, five of them instead of four, which
+    // makes the pair a direct demonstration that cylinder count alone
+    // changes an engine's character.
+    // Bore, stroke and CR come from Audi's own Self-Study Programme 920273
+    // ("The Audi 2.5l TFSI Engine EA855 evo"), whose specification table
+    // names engine code DAZA explicitly, corroborated by carfolio.com.
+    // rod 144 mm — listed for DAZA by Arlows, FCP Engineering, Wossner,
+    // Brian Crower, and Carrillo.
+    // Redline 7000 rpm — Audi's SSP power curve runs flat to 7000 rpm, and
+    // tuner software (034Motorsport, Revo) describes raising the stock
+    // limiter above that figure. An aggregator listing of 6750 rpm is
+    // inconsistent with Audi's own published curve and is not used.
+    config: {
+      boreMm: 82.5,
+      strokeMm: 92.8,
+      rodLengthMm: 144.0,
+      compressionRatio: 10.0,
+      redlineRpm: 7000,
+    },
+    // Output 400 hp @ 5850 rpm, 354 lb-ft @ 1700 rpm — both are plateaus
+    // (power holds to 7000, torque to 5850); the roster records the onset,
+    // as it does for the KA24DE. CAUTION, and the reason this note is long:
+    // Audi quotes 400 **PS** (294 kW) in Europe and Audi of America quotes
+    // 400 **hp**, so the two rating systems coincidentally round to the same
+    // number here — 400 PS actually converts to about 395 hp. The figures
+    // used are the US SAE-net ones (Audi USA's RS3 specifications, matched
+    // by carfolio.com), paired with the US torque figure, so no PS-derived
+    // power is mixed with an SAE torque number the way an earlier F20C
+    // entry once was.
+    output: { powerHp: 400, powerRpm: 5850, torqueLbFt: 354, torqueRpm: 1700 },
+  },
+  {
+    id: "golf-gti-mk7-ea888",
+    name: "Volkswagen Golf GTI (Mk7)",
+    brand: "Volkswagen",
+    engineCode: "EA888 Gen 3",
+    layoutLabel: "2.0 L turbo inline-4",
+    layoutId: "inline-4",
+    // 2015-2018 USDM Mk7 GTI, base tune (CXCA/CXCB) — not the Performance
+    // Package's 220 hp. Shares its 82.5 x 92.8 mm bore and stroke and its
+    // 144 mm rod with the Audi 2.5 TFSI above: the same cylinder in a four
+    // rather than a five.
+    // Bore, stroke and CR — Volkswagen's own 2015 Golf GTI technical
+    // specifications (media.vw.com), corroborated by FCP Euro's EA888 Gen 3
+    // guide.
+    // rod 144 mm — K1 Technologies, Wiseco, Carrillo, and Integrated
+    // Engineering all list 144 mm for the Gen 3.
+    // Redline 6900 rpm — FCP Euro's guide, corroborated by owner-manual
+    // figures discussed on GOLFMK7; the tachometer's red zone is marked
+    // earlier than the actual cutoff, which is the 6900 figure used here.
+    config: {
+      boreMm: 82.5,
+      strokeMm: 92.8,
+      rodLengthMm: 144.0,
+      compressionRatio: 9.6,
+      redlineRpm: 6900,
+    },
+    // Output 210 hp @ 4500 rpm, 258 lb-ft @ 1500 rpm — SAE net, US-market
+    // base GTI, from Volkswagen's own specification sheet and FCP Euro. The
+    // 1500 rpm torque peak is the lowest in this roster by a wide margin,
+    // which is the whole point of a modern small-displacement turbo.
+    output: { powerHp: 210, powerRpm: 4500, torqueLbFt: 258, torqueRpm: 1500 },
   },
 ];

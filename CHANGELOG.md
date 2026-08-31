@@ -8,6 +8,14 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### feat: an inline-five and a Golf GTI
+
+- **Audi RS3 (8V.2) / TT RS — 2.5 TFSI "evo"**, the roster's first inline-five, firing 1-2-4-5-3 at even 144° intervals. Its geometry and compression come from Audi's own Self-Study Programme 920273, whose spec table names the DAZA engine code outright — the best-sourced entry in the roster.
+- **Volkswagen Golf GTI (Mk7) — EA888 Gen 3**, and the reason it's worth having alongside the Audi: the two share an identical 82.5 × 92.8 mm bore and stroke on an identical 144 mm rod. Same cylinder, five of them versus four. Put them side by side and every difference on screen comes from cylinder count and compression alone.
+- The GTI's 258 lb-ft arrives at 1,500 rpm, the lowest torque peak in the roster by a wide margin, against the RS3's 400 hp holding from 5,850 to 7,000 — two very different answers from one cylinder design.
+- **A note on the RS3's power figure**: Audi quotes 400 PS in Europe and Audi of America quotes 400 hp, so both systems round to the same number even though 400 PS is really about 395 hp. The US SAE-net power and torque figures are used together here, so no PS-derived number is paired with an SAE one — the mistake that produced a wrong F20C figure earlier in this project.
+- **Corrected**: the EJ257's redline note now records that some aggregate listings quote 6,700 rpm, which matches neither the tachometer marking nor the observed fuel cut on this variant; 7,000 rpm is what the model-specific sources agree on. Full suite: 1,123 tests.
+
 ### feat: three Subaru boxers, and a clearer cylinder-view switch
 
 - **Subaru Impreza WRX STI (GD), Impreza WRX (GD), and BRZ / Toyota 86** — the first flat-4s in the roster, all two-source verified. The two Imprezas share the same 130.5 mm EJ-family rod, so the difference between the STI's 99.5 × 79 mm and the WRX's 92 × 75 mm is purely the crank — a clean rod-to-stroke comparison. The BRZ's FA20 is exactly square at 86 × 86 mm, the same bore and stroke as the app's default configuration but on a much shorter rod at 12.5:1, which makes the point that bore and stroke alone don't determine how a mechanism moves.

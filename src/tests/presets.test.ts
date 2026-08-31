@@ -32,6 +32,8 @@ const ADVERTISED: Record<string, { cylinders: number; totalCc: number }> = {
   "wrx-sti-ej257": { cylinders: 4, totalCc: 2457 },
   "wrx-ej205": { cylinders: 4, totalCc: 1994 },
   "brz-fa20": { cylinders: 4, totalCc: 1998 },
+  "rs3-8v2-daza": { cylinders: 5, totalCc: 2480 },
+  "golf-gti-mk7-ea888": { cylinders: 4, totalCc: 1984 },
   "240sx-ka24de": { cylinders: 4, totalCc: 2389 },
   "tsx-k24a2": { cylinders: 4, totalCc: 2354 },
 };
@@ -60,6 +62,8 @@ const ADVERTISED_COMPRESSION_RATIO: Record<string, number> = {
   "wrx-sti-ej257": 8.2,
   "wrx-ej205": 8.0,
   "brz-fa20": 12.5,
+  "rs3-8v2-daza": 10.0,
+  "golf-gti-mk7-ea888": 9.6,
   "240sx-ka24de": 9.5,
   "tsx-k24a2": 10.5,
 };
@@ -87,6 +91,8 @@ const ADVERTISED_REDLINE_RPM: Record<string, number> = {
   "wrx-sti-ej257": 7000,
   "wrx-ej205": 7000,
   "brz-fa20": 7400,
+  "rs3-8v2-daza": 7000,
+  "golf-gti-mk7-ea888": 6900,
   "240sx-ka24de": 6900,
   "tsx-k24a2": 7100,
 };
@@ -110,6 +116,8 @@ const ADVERTISED_BRAND: Record<string, string> = {
   "wrx-sti-ej257": "Subaru",
   "wrx-ej205": "Subaru",
   "brz-fa20": "Subaru",
+  "rs3-8v2-daza": "Audi",
+  "golf-gti-mk7-ea888": "Volkswagen",
   "240sx-ka24de": "Nissan",
   "tsx-k24a2": "Honda",
 };
@@ -239,6 +247,18 @@ const ADVERTISED_OUTPUT: Record<
     powerRpm: 7000,
     torqueLbFt: 151,
     torqueRpm: 6400,
+  },
+  "rs3-8v2-daza": {
+    powerHp: 400,
+    powerRpm: 5850,
+    torqueLbFt: 354,
+    torqueRpm: 1700,
+  },
+  "golf-gti-mk7-ea888": {
+    powerHp: 210,
+    powerRpm: 4500,
+    torqueLbFt: 258,
+    torqueRpm: 1500,
   },
 };
 
