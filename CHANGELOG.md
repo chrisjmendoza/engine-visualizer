@@ -8,6 +8,13 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-09-01
 
+### feat: resizable side panel
+
+- The panel between the viewport and the controls now has a **drag handle** in the two-column layout: drag to taste, arrow keys to step (Shift for larger steps, Home/End to the limits), Enter or double-click to reset. It follows the ARIA window-splitter pattern, so it is the app's first resizer and not its first inaccessible control.
+- Dragging drives a CSS variable directly and commits to React state only on release, so a drag never re-renders the shell or the scene at pointer-move rate; the 3D viewport reflows through the canvas's own ResizeObserver and the camera refits automatically — verified against React Three Fiber's actual internals rather than assumed.
+- The width is **session-local** and resets on reload, like every preference in the app; persisting it would be the app's first use of localStorage and is left as a deliberate follow-up.
+- Two boundaries: comparison mode keeps its own panel split (the handle hides there rather than visibly dragging without effect), and the old auto-widen at very wide windows is gone — the drag replaces it, at any window size. Full suite: 1,511 tests.
+
 ### feat: rotary engines
 
 - **The Wankel rotary joins as a second engine family** — four presets, all two-source verified: the RX-7 FD's 13B-REW, the RX-8's Renesis, the first-generation RX-7's 12A, and the Eunos Cosmo's three-rotor 20B-REW. The triangular rotor orbits inside its peritrochoid housing at one third of shaft speed, with the apexes riding the housing exactly — the apex-on-housing identity is proved in a comment and asserted numerically to 1e-12, the rotary's equivalent of the slider-crank's loop closure.
