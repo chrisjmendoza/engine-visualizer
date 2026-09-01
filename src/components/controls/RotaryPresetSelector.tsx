@@ -10,11 +10,21 @@ import {
 import type { ConfigSlot } from "../shared/configSlot";
 import styles from "./RotaryPresetSelector.module.css";
 
+/**
+ * Full five-field equality, deliberately stricter than the piston
+ * selector's geometry-only match: Mazda reused the exact 105/15/80 trochoid
+ * across the 13B-REW, the Renesis, and the 20B, so R/e/b (even with rotor
+ * count) cannot tell those presets apart — a geometry-only check pressed
+ * the RX-7 FD and RX-8 buttons together. Compression ratio and redline are
+ * what actually distinguish them, so they are part of "is this preset".
+ */
 function configsMatch(a: RotaryConfig, b: RotaryConfig): boolean {
   return (
     a.generatingRadiusMm === b.generatingRadiusMm &&
     a.eccentricityMm === b.eccentricityMm &&
-    a.rotorWidthMm === b.rotorWidthMm
+    a.rotorWidthMm === b.rotorWidthMm &&
+    a.compressionRatio === b.compressionRatio &&
+    a.redlineRpm === b.redlineRpm
   );
 }
 

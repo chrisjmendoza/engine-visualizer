@@ -8,6 +8,11 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-09-01
 
+### fix: the RX-7 FD and RX-8 no longer select together
+
+- The rotary preset picker matched on chamber geometry and rotor count alone — three fields the 13B-REW and the Renesis share exactly, because Mazda reused the same 105/15/80 trochoid across decades. Selecting either pressed both buttons. The results panel's output lookup already compared the full configuration; the picker now does too, so compression ratio and redline — the fields that actually distinguish the two engines — are part of "is this preset selected".
+- The component also gained the test file it should have had: exactly one pressed button for every selection in the roster, and a preset unpresses once any distinguishing field is edited away. Full suite: 1,515 tests.
+
 ### feat: resizable side panel
 
 - The panel between the viewport and the controls now has a **drag handle** in the two-column layout: drag to taste, arrow keys to step (Shift for larger steps, Home/End to the limits), Enter or double-click to reset. It follows the ARIA window-splitter pattern, so it is the app's first resizer and not its first inaccessible control.
