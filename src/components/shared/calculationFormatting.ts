@@ -10,6 +10,9 @@ import { mmToIn } from "../../engine/units";
 import type { CrankMechanismConfig, DisplayUnit } from "../../engine/types";
 import { ENGINE_PRESETS } from "../../engine/presets";
 import type { EnginePreset } from "../../engine/presets";
+import { ROTARY_ENGINE_PRESETS } from "../../engine/rotaryPresets";
+import type { RotaryEnginePreset } from "../../engine/rotaryPresets";
+import type { RotaryConfig } from "../../engine/rotaryTypes";
 import { formatRounded, formatRpm } from "./formatting";
 import { METRIC_INFO } from "./metricInfo";
 import type { MetricInfo } from "./metricInfo";
@@ -82,4 +85,33 @@ export function peakOutputForDisplay(
     return "—";
   }
   return `${formatRounded(value, 0)} ${unit} @ ${formatRpm(rpm)}`;
+}
+
+/**
+ * The verified whole-engine output for whichever rotary preset a config
+ * exactly matches — the rotary `matchingPresetOutput`.
+ *
+ * Unlike the piston version, this compares the FULL config (R, e, rotor
+ * width, compression ratio, AND redline), not just the chamber's physical
+ * dimensions: three of this roster's four presets (13B-REW, 13B-MSP Renesis,
+ * 20B-REW) share the exact same 105/15/80 chamber, differing only in
+ * compression ratio and redline, so R/e/b alone would not tell them apart.
+ * Deliberately ignores rotor count, though, mirroring the piston version's
+ * own asymmetry (`PresetSelector`'s "is this preset selected" check does
+ * look at layout; this output lookup does not) — a hand-selected rotor count
+ * on otherwise-13B-REW geometry still reads as a 13B-REW for output-lookup
+ * purposes.
+ */
+export function matchingRotaryPresetOutput(
+  config: RotaryConfig,
+): RotaryEnginePreset["output"] | undefined {
+  const preset = ROTARY_ENGINE_PRESETS.find(
+    (candidate) =>
+      candidate.config.generatingRadiusMm === config.generatingRadiusMm &&
+      candidate.config.eccentricityMm === config.eccentricityMm &&
+      candidate.config.rotorWidthMm === config.rotorWidthMm &&
+      candidate.config.compressionRatio === config.compressionRatio &&
+      candidate.config.redlineRpm === config.redlineRpm,
+  );
+  return preset?.output;
 }

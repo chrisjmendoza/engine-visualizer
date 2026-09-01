@@ -11,6 +11,11 @@ import {
 } from "../../engine/constants";
 import { DEFAULT_LAYOUT_ID } from "../../engine/engineLayout";
 import { ENGINE_PRESETS } from "../../engine/presets";
+import {
+  DEFAULT_ROTARY_CONFIG,
+  DEFAULT_ROTARY_ROTOR_COUNT,
+} from "../../engine/rotaryConstants";
+import { ROTARY_ENGINE_PRESETS } from "../../engine/rotaryPresets";
 import { METRIC_INFO_BY_ID } from "../shared/calculationFormatting";
 import type { CrankMechanismConfig } from "../../engine/types";
 
@@ -22,6 +27,12 @@ function resetStore() {
     comparisonLayoutId: DEFAULT_LAYOUT_ID,
     singleCylinderView: true,
     comparisonSingleCylinderView: true,
+    engineFamily: "piston",
+    comparisonEngineFamily: "piston",
+    rotaryConfig: { ...DEFAULT_ROTARY_CONFIG },
+    comparisonRotaryConfig: { ...DEFAULT_ROTARY_CONFIG },
+    rotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
+    comparisonRotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
     preferences: {
       displayUnit: "mm",
       showLabels: true,
@@ -550,5 +561,123 @@ describe("ComparisonTable", () => {
 
       expect(trigger).toHaveAttribute("aria-expanded", "false");
     });
+  });
+});
+
+describe("ComparisonTable — cross-family (§27)", () => {
+  const RX7_13B = ROTARY_ENGINE_PRESETS.find((p) => p.id === "13b-rew")!;
+  const RENESIS = ROTARY_ENGINE_PRESETS.find(
+    (p) => p.id === "13b-msp-renesis",
+  )!;
+
+  it("piston vs piston: rotary-only rows stay absent, exactly as before rotary existed", () => {
+    useEngineStore.setState({ comparisonConfig: STROKE_90_CONFIG });
+    render(<ComparisonTable />);
+
+    expect(
+      screen.queryByRole("rowheader", { name: "Chamber displacement" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("rowheader", { name: "K-factor" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("rowheader", { name: "Bore-to-stroke ratio" }),
+    ).toBeInTheDocument();
+  });
+
+  it("rotary vs rotary: chamber displacement and K-factor show real values on both sides; piston-only rows are absent entirely", () => {
+    useEngineStore.setState({
+      comparisonConfig: STROKE_90_CONFIG,
+      engineFamily: "rotary",
+      rotaryConfig: RX7_13B.config,
+      rotaryRotorCount: RX7_13B.rotorCount,
+      comparisonEngineFamily: "rotary",
+      comparisonRotaryConfig: RENESIS.config,
+      comparisonRotaryRotorCount: RENESIS.rotorCount,
+    });
+    render(<ComparisonTable />);
+
+    const [chamberA, chamberB] = getRow("Chamber displacement");
+    expect(chamberA).toContain("cc");
+    expect(chamberB).toContain("cc");
+    expect(chamberA).not.toBe("—");
+    expect(chamberB).not.toBe("—");
+
+    const [kA, kB] = getRow("K-factor");
+    expect(kA).not.toBe("—");
+    expect(kB).not.toBe("—");
+
+    for (const label of [
+      "Cylinder displacement",
+      "Bore-to-stroke ratio",
+      "Rod-to-stroke ratio",
+      "Mean piston speed",
+      "Clearance volume",
+      "Connecting-rod angle",
+    ]) {
+      expect(screen.queryByRole("rowheader", { name: label })).toBeNull();
+    }
+  });
+
+  it("mixed piston-vs-rotary comparison shows both row sets, with — filling the inapplicable side", () => {
+    useEngineStore.setState({
+      comparisonConfig: STROKE_90_CONFIG,
+      engineFamily: "piston",
+      comparisonEngineFamily: "rotary",
+      comparisonRotaryConfig: RX7_13B.config,
+      comparisonRotaryRotorCount: RX7_13B.rotorCount,
+    });
+    render(<ComparisonTable />);
+
+    const [cylA, cylB] = getRow("Cylinder displacement");
+    expect(cylA).not.toBe("—");
+    expect(cylB).toBe("—");
+
+    const [chamberA, chamberB] = getRow("Chamber displacement");
+    expect(chamberA).toBe("—");
+    expect(chamberB).not.toBe("—");
+
+    // Shared rows show real values on both sides even in a mixed comparison.
+    const [crA, crB] = getRow("Compression ratio");
+    expect(crA).not.toBe("—");
+    expect(crB).not.toBe("—");
+
+    const [redlineA, redlineB] = getRow("Redline");
+    expect(redlineA).not.toBe("—");
+    expect(redlineB).not.toBe("—");
+  });
+
+  it("the shared engine-displacement row compares a rotary's rated cc against a piston's whole-engine cc", () => {
+    useEngineStore.setState({
+      comparisonConfig: STROKE_90_CONFIG,
+      layoutId: "inline-4",
+      singleCylinderView: false,
+      engineFamily: "piston",
+      comparisonEngineFamily: "rotary",
+      comparisonRotaryConfig: RX7_13B.config,
+      comparisonRotaryRotorCount: RX7_13B.rotorCount,
+    });
+    render(<ComparisonTable />);
+
+    const [a, b, difference] = getRow("Engine displacement");
+    expect(a).toContain("cc");
+    expect(b).toContain("cc");
+    expect(difference).not.toBe("—");
+  });
+
+  it("peak power/torque resolve each side's output from its own family's preset roster", () => {
+    useEngineStore.setState({
+      comparisonConfig: STROKE_90_CONFIG,
+      engineFamily: "piston",
+      config: ENGINE_PRESETS.find((p) => p.id === "s2000-ap1")!.config,
+      comparisonEngineFamily: "rotary",
+      comparisonRotaryConfig: RX7_13B.config,
+      comparisonRotaryRotorCount: RX7_13B.rotorCount,
+    });
+    render(<ComparisonTable />);
+
+    const [powerA, powerB] = getRow("Peak power");
+    expect(powerA).toContain("240 hp");
+    expect(powerB).toContain("255 hp");
   });
 });

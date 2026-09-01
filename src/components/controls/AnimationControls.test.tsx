@@ -15,6 +15,8 @@ function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
     comparisonConfig: null,
+    engineFamily: "piston",
+    comparisonEngineFamily: "piston",
     preferences: {
       displayUnit: "mm",
       showLabels: true,
@@ -183,6 +185,25 @@ describe("AnimationControls", () => {
     );
 
     expect(useEngineStore.getState().rpm).toBe(DEFAULT_CONFIG.redlineRpm);
+  });
+
+  it("reads the rotary redline when engine A is rotary (§27), not the unshown piston config", async () => {
+    useEngineStore.setState({
+      engineFamily: "rotary",
+      rotaryConfig: {
+        ...useEngineStore.getState().rotaryConfig,
+        redlineRpm: 8000,
+      },
+    });
+    const user = userEvent.setup();
+    render(<AnimationControls />);
+
+    const button = screen.getByRole("button", { name: "At redline (8,000)" });
+    expect(button).toBeInTheDocument();
+
+    await user.click(button);
+
+    expect(useEngineStore.getState().rpm).toBe(8000);
   });
 
   describe("comparison mode: per-engine speed", () => {

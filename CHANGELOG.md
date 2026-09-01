@@ -6,6 +6,17 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ---
 
+## 2026-09-01
+
+### feat: rotary engines
+
+- **The Wankel rotary joins as a second engine family** — four presets, all two-source verified: the RX-7 FD's 13B-REW, the RX-8's Renesis, the first-generation RX-7's 12A, and the Eunos Cosmo's three-rotor 20B-REW. The triangular rotor orbits inside its peritrochoid housing at one third of shaft speed, with the apexes riding the housing exactly — the apex-on-housing identity is proved in a comment and asserted numerically to 1e-12, the rotary's equivalent of the slider-crank's loop closure.
+- **Firing and exhaust light up per face**, reusing the piston tint machinery: each of a rotor's three faces is a chamber firing once per shaft revolution, so a two-rotor fires every 180° and the three-rotor Cosmo every 120° — the tint makes visible how much more often a rotary fires than a four-cylinder at the same revs.
+- Chamber displacement uses the exact closed form Vd = 3√3·e·R·b, checked against Mazda's published figures (654 cc for the 13B geometry, 573 cc for the 12A — both match to under 0.2%). Engine displacement is quoted by the industry convention, Vd × rotor count, stated as the convention it is. The K-factor R/e appears as the rotary's rod-ratio analog.
+- Validation gained the rotary's version of the rod-clears-crank rule: **R > 3e**, below which the housing genuinely self-intersects — the trochoid cusps at exactly R = 3e, a constraint the spec had missed and an agent proved before shipping.
+- Cross-family comparison works: an RX-7 against an S2000 shows the shared rows (compression, redline, displacement, verified peaks) and "—" where a metric belongs to one family only, and a rotary stacks against a piston engine at one shared zoom.
+- Data notes in the roster's tradition: the RX-8 preset uses the original 238 hp 2004 SAE rating with the 2005 re-rating history explained in its comment; the JDM-only Cosmo's 280 PS is flagged as a PS figure, never silently converted; and since the Renesis differs from the 13B-REW only by porting — Mazda reused the same trochoid for decades — rotary preset matching compares all five config fields. Full suite: 1,500 tests.
+
 ## 2026-08-31
 
 ### feat: compression ratio in the results

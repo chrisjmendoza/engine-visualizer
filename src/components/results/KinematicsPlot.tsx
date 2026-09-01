@@ -234,8 +234,24 @@ function xForAngle(crankAngleRad: number): number {
  * frame loop and holds no per-frame state; a cursor stepping at the readout
  * rate is smooth enough, and buying 60 fps here would cost the render budget
  * the whole store-mirroring design exists to protect.
+ *
+ * **Piston-only, for now (§27).** Every curve here is `calculateMechanismState`
+ * and its piston-kinematics derivatives — there is no rotary equivalent to
+ * plug in, because a rotor's chamber volume is a very different function of
+ * shaft angle than a piston's position (`calculateChamberVolumeCc` in
+ * `src/engine/rotaryCalculations.ts`, an exact sinusoid rather than a
+ * slider-crank curve). Renders nothing at all while engine A is rotary — there
+ * is no piston-shaped curve to anchor the plot to. While comparing, engine B's
+ * curve is included only when engine B is itself piston; a rotary engine B
+ * simply contributes no curve, so a piston-vs-rotary comparison still plots
+ * engine A alone rather than hiding the whole plot. A rotary chamber-volume
+ * plot is the natural follow-up, not this task.
  */
 export function KinematicsPlot() {
+  const engineFamily = useEngineStore((state) => state.engineFamily);
+  const comparisonEngineFamily = useEngineStore(
+    (state) => state.comparisonEngineFamily,
+  );
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const rpm = useEngineStore((state) => state.rpm);
@@ -249,8 +265,11 @@ export function KinematicsPlot() {
 
   const samplesA = useMemo(() => sampleCurves(config), [config]);
   const samplesB = useMemo(
-    () => (comparisonConfig ? sampleCurves(comparisonConfig) : null),
-    [comparisonConfig],
+    () =>
+      comparisonConfig && comparisonEngineFamily === "piston"
+        ? sampleCurves(comparisonConfig)
+        : null,
+    [comparisonConfig, comparisonEngineFamily],
   );
 
   const strips = useMemo(() => {
@@ -262,6 +281,10 @@ export function KinematicsPlot() {
     }
     return buildStripGeometry(engines);
   }, [samplesA, samplesB]);
+
+  if (engineFamily === "rotary") {
+    return null;
+  }
 
   const isComparing = samplesB !== null;
   const engineKeys: EngineKey[] = isComparing ? ["a", "b"] : ["a"];

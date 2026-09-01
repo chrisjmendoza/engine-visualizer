@@ -20,6 +20,8 @@ function resetStore() {
     comparisonLayoutId: DEFAULT_LAYOUT_ID,
     singleCylinderView: true,
     comparisonSingleCylinderView: true,
+    engineFamily: "piston",
+    comparisonEngineFamily: "piston",
     preferences: {
       displayUnit: "mm",
       showLabels: true,
@@ -251,5 +253,27 @@ describe("KinematicsPlot", () => {
     expect(charts[0].getAttribute("aria-label")).toBe(
       "Position against crank angle over one revolution. Peak 86.00 mm.",
     );
+  });
+
+  describe("rotary engines (§27, piston-only for now)", () => {
+    it("renders nothing while engine A is rotary", () => {
+      useEngineStore.setState({ engineFamily: "rotary" });
+      const { container } = render(<KinematicsPlot />);
+      expect(container).toBeEmptyDOMElement();
+    });
+
+    it("still plots engine A alone when engine A is piston and engine B is rotary", () => {
+      useEngineStore.setState({
+        comparisonConfig: { ...DEFAULT_CONFIG, boreMm: 95 },
+        comparisonEngineFamily: "rotary",
+      });
+      render(<KinematicsPlot />);
+
+      // Engine A's own curves still render (three strips, one image each)...
+      expect(screen.getAllByRole("img")).toHaveLength(3);
+      // ...but there is no legend, because a rotary engine B contributes no
+      // second curve to distinguish from engine A's.
+      expect(screen.queryByText("Engine B")).not.toBeInTheDocument();
+    });
   });
 });

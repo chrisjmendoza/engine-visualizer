@@ -12,7 +12,8 @@
  * angle passes back through zero, and folds the two together into the
  * cycle's own [0, 4π) domain. Tracking and flipping that bit is loop
  * bookkeeping, not cycle math, so it lives in `useMechanismAnimation.ts`
- * (`advanceRevolutionParity`), not here; this module only ever consumes the
+ * (`advanceRevolutionIndex`, whose mod-6 counter this family reads as `% 2` —
+ * see `revolutionParityOf`), not here; this module only ever consumes the
  * bit, never mutates it.
  *
  * `strokePhaseAt` answers for cylinder 0, whose cycle angle *is* the engine's.

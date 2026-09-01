@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   decodeConfig,
+  decodeRotaryConfig,
   decodeShareState,
   defaultLayoutIdFor,
+  defaultRotaryRotorCountFor,
   encodeConfig,
+  encodeRotaryConfig,
   encodeShareState,
 } from "../engine/shareLink";
 import type { ShareState } from "../engine/shareLink";
@@ -17,6 +20,12 @@ import {
   ENGINE_ARCHITECTURE_IDS,
 } from "../engine/engineLayout";
 import { ENGINE_PRESETS } from "../engine/presets";
+import {
+  DEFAULT_ROTARY_CONFIG,
+  DEFAULT_ROTARY_ROTOR_COUNT,
+} from "../engine/rotaryConstants";
+import { ROTARY_ENGINE_PRESETS } from "../engine/rotaryPresets";
+import type { RotaryConfig, RotaryRotorCount } from "../engine/rotaryTypes";
 import type { CrankMechanismConfig } from "../engine/types";
 
 const CUSTOM: CrankMechanismConfig = {
@@ -44,9 +53,32 @@ function baseState(overrides: Partial<ShareState> = {}): ShareState {
     isPlaying: true,
     crankAngleRad: 0,
     comparisonCrankAngleRad: 0,
+    // §27: the app's own defaults — piston family, the default rotary
+    // geometry a slot would open on if switched to rotary (which most
+    // states here never do).
+    engineFamily: "piston",
+    comparisonEngineFamily: "piston",
+    rotaryConfig: DEFAULT_ROTARY_CONFIG,
+    comparisonRotaryConfig: DEFAULT_ROTARY_CONFIG,
+    rotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
+    comparisonRotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
     ...overrides,
   };
 }
+
+const RX7_13B = ROTARY_ENGINE_PRESETS.find((p) => p.id === "13b-rew")!;
+const RX8_RENESIS = ROTARY_ENGINE_PRESETS.find(
+  (p) => p.id === "13b-msp-renesis",
+)!;
+const COSMO_20B = ROTARY_ENGINE_PRESETS.find((p) => p.id === "20b-rew")!;
+
+const CUSTOM_ROTARY: RotaryConfig = {
+  generatingRadiusMm: 100,
+  eccentricityMm: 16,
+  rotorWidthMm: 90,
+  compressionRatio: 9.5,
+  redlineRpm: 7500,
+};
 
 const LS7 = ENGINE_PRESETS.find((p) => p.id === "corvette-z06-c6-ls7")!.config;
 const F20C = ENGINE_PRESETS.find((p) => p.id === "s2000-ap1")!.config;
@@ -731,5 +763,273 @@ describe("preset-id share links imply the preset's real layout", () => {
         }
       }
     }
+  });
+});
+
+describe("encodeRotaryConfig / decodeRotaryConfig", () => {
+  it("writes a rotary preset as its id", () => {
+    expect(encodeRotaryConfig(RX7_13B.config)).toBe("13b-rew");
+  });
+
+  it("writes a non-preset rotary config as five hyphen-separated numbers", () => {
+    expect(encodeRotaryConfig(CUSTOM_ROTARY)).toBe("100-16-90-9.5-7500");
+  });
+
+  it("round-trips every rotary preset", () => {
+    for (const preset of ROTARY_ENGINE_PRESETS) {
+      expect(decodeRotaryConfig(encodeRotaryConfig(preset.config))).toEqual(
+        preset.config,
+      );
+    }
+  });
+
+  it("round-trips a custom rotary config", () => {
+    expect(decodeRotaryConfig(encodeRotaryConfig(CUSTOM_ROTARY))).toEqual(
+      CUSTOM_ROTARY,
+    );
+  });
+
+  it("rejects an unknown rotary preset id", () => {
+    expect(decodeRotaryConfig("wankel-flux-capacitor")).toBeNull();
+  });
+
+  it("rejects malformed numeric rotary configs", () => {
+    expect(decodeRotaryConfig("105-15-80")).toBeNull();
+    expect(decodeRotaryConfig("105-15-80-9-8000-1")).toBeNull();
+    expect(decodeRotaryConfig("")).toBeNull();
+    expect(decodeRotaryConfig("   ")).toBeNull();
+  });
+
+  it("rejects numerically valid but mechanically invalid rotary geometry", () => {
+    // R <= 3e: the housing crosses itself, so validateRotaryConfig must
+    // reject it (mirrors the piston rod-vs-crank-radius rejection above).
+    expect(decodeRotaryConfig("60-25-80-9-8000")).toBeNull();
+    // Compression ratio outside the practical rotary range.
+    expect(decodeRotaryConfig("105-15-80-30-8000")).toBeNull();
+  });
+});
+
+describe("defaultRotaryRotorCountFor", () => {
+  it("returns a matching preset's own rotor count", () => {
+    expect(defaultRotaryRotorCountFor(RX7_13B.config)).toBe(2);
+    expect(defaultRotaryRotorCountFor(COSMO_20B.config)).toBe(3);
+  });
+
+  it("returns 1 for a non-preset numeric config", () => {
+    expect(defaultRotaryRotorCountFor(CUSTOM_ROTARY)).toBe(1);
+  });
+});
+
+describe("engine families (§27)", () => {
+  it("omits fam/ra/rn while both engines are piston (the default)", () => {
+    const query = encodeShareState(baseState());
+    expect(query).not.toMatch(/(^|&)fam=/);
+    expect(query).not.toMatch(/(^|&)ra=/);
+    expect(query).not.toMatch(/(^|&)rn=/);
+    expect(query).not.toMatch(/(^|&)bfam=/);
+    expect(query).not.toMatch(/(^|&)rb=/);
+    expect(query).not.toMatch(/(^|&)brn=/);
+  });
+
+  it("writes fam=r and ra as a preset id for a rotary engine A", () => {
+    const query = encodeShareState(
+      baseState({ engineFamily: "rotary", rotaryConfig: RX7_13B.config }),
+    );
+    expect(query).toContain("fam=r");
+    expect(query).toContain("ra=13b-rew");
+    // The 13B-REW's own rotor count (2) is what `ra` implies, so `rn` stays
+    // omitted.
+    expect(query).not.toMatch(/(^|&)rn=/);
+  });
+
+  it("writes rn only when the rotor count disagrees with what ra implies", () => {
+    // Same 13B-REW geometry, but only one rotor — disagrees with the
+    // preset's own 2, so `rn` must travel.
+    const query = encodeShareState(
+      baseState({
+        engineFamily: "rotary",
+        rotaryConfig: RX7_13B.config,
+        rotaryRotorCount: 1,
+      }),
+    );
+    expect(query).toContain("rn=1");
+
+    // A non-preset numeric config implies rotor count 1; asking for 3 must
+    // travel, asking for 1 must not.
+    const impliedOne = encodeShareState(
+      baseState({
+        engineFamily: "rotary",
+        rotaryConfig: CUSTOM_ROTARY,
+        rotaryRotorCount: 1,
+      }),
+    );
+    expect(impliedOne).not.toMatch(/(^|&)rn=/);
+
+    const overridden = encodeShareState(
+      baseState({
+        engineFamily: "rotary",
+        rotaryConfig: CUSTOM_ROTARY,
+        rotaryRotorCount: 3,
+      }),
+    );
+    expect(overridden).toContain("rn=3");
+  });
+
+  it("writes bfam/rb/brn only once engine B is present and rotary", () => {
+    const noB = encodeShareState(
+      baseState({ comparisonEngineFamily: "rotary" }), // no comparisonConfig
+    );
+    expect(noB).not.toMatch(/(^|&)bfam=/);
+
+    const bPiston = encodeShareState(
+      baseState({ comparisonConfig: CUSTOM, comparisonEngineFamily: "piston" }),
+    );
+    expect(bPiston).not.toMatch(/(^|&)bfam=/);
+
+    const bRotary = encodeShareState(
+      baseState({
+        comparisonConfig: CUSTOM,
+        comparisonEngineFamily: "rotary",
+        comparisonRotaryConfig: RX8_RENESIS.config,
+      }),
+    );
+    expect(bRotary).toContain("bfam=r");
+    expect(bRotary).toContain("rb=13b-msp-renesis");
+    expect(bRotary).not.toMatch(/(^|&)brn=/);
+  });
+
+  it("decodes fam=r and a preset ra into the rotary config and its implied rotor count", () => {
+    const state = decodeShareState("?a=s2000-ap1&fam=r&ra=20b-rew");
+    expect(state.engineFamily).toBe("rotary");
+    expect(state.rotaryConfig).toEqual(COSMO_20B.config);
+    expect(state.rotaryRotorCount).toBe(3);
+  });
+
+  it("decodes an explicit rn over what ra implies", () => {
+    const state = decodeShareState("?a=s2000-ap1&fam=r&ra=13b-rew&rn=1");
+    expect(state.rotaryRotorCount).toBe(1);
+  });
+
+  it("decodes a numeric ra with no rn as rotor count 1", () => {
+    const state = decodeShareState(
+      `?a=s2000-ap1&fam=r&ra=${encodeRotaryConfig(CUSTOM_ROTARY)}`,
+    );
+    expect(state.rotaryConfig).toEqual(CUSTOM_ROTARY);
+    expect(state.rotaryRotorCount).toBe(1);
+  });
+
+  it("ignores ra/rn when fam says piston or is absent", () => {
+    const explicitPiston = decodeShareState(
+      "?a=s2000-ap1&fam=p&ra=13b-rew&rn=3",
+    );
+    expect(explicitPiston.engineFamily).toBe("piston");
+    expect(explicitPiston.rotaryConfig).toBeUndefined();
+    expect(explicitPiston.rotaryRotorCount).toBeUndefined();
+
+    const noFam = decodeShareState("?a=s2000-ap1&ra=13b-rew&rn=3");
+    expect(noFam.engineFamily).toBeUndefined();
+    expect(noFam.rotaryConfig).toBeUndefined();
+    expect(noFam.rotaryRotorCount).toBeUndefined();
+  });
+
+  it("drops an unusable ra rather than failing the whole link", () => {
+    const state = decodeShareState("?a=s2000-ap1&fam=r&ra=not-a-real-rotary");
+    expect(state.engineFamily).toBe("rotary");
+    expect(state.rotaryConfig).toBeUndefined();
+  });
+
+  it("applies a valid rn even when the link carries no ra", () => {
+    // A slot always exists, so an explicit rotor count needs no geometry
+    // param to be meaningful — unlike brn, which is gated on engine B.
+    const state = decodeShareState("?a=s2000-ap1&fam=r&rn=3");
+    expect(state.engineFamily).toBe("rotary");
+    expect(state.rotaryConfig).toBeUndefined();
+    expect(state.rotaryRotorCount).toBe(3);
+  });
+
+  it("leaves the rotor count alone when rn is invalid and no ra implies one", () => {
+    const state = decodeShareState("?a=s2000-ap1&fam=r&rn=7");
+    expect(state.rotaryRotorCount).toBeUndefined();
+  });
+
+  it("lets an explicit rn override the count the ra preset implies", () => {
+    const state = decodeShareState("?a=s2000-ap1&fam=r&ra=20b-rew&rn=2");
+    expect(state.rotaryRotorCount).toBe(2);
+  });
+
+  it("says nothing about family when the link is about something else", () => {
+    const state = decodeShareState("?rpm=4500");
+    expect(state.engineFamily).toBeUndefined();
+    expect(state.rotaryConfig).toBeUndefined();
+    expect(state.rotaryRotorCount).toBeUndefined();
+  });
+
+  it("ignores bfam/rb/brn when the link carries no usable engine B", () => {
+    const noB = decodeShareState("?a=s2000-ap1&bfam=r&rb=13b-rew&brn=1");
+    expect(noB.comparisonEngineFamily).toBeUndefined();
+    expect(noB.comparisonRotaryConfig).toBeUndefined();
+    expect(noB.comparisonRotaryRotorCount).toBeUndefined();
+
+    const badB = decodeShareState("?a=s2000-ap1&b=not-real&bfam=r&rb=13b-rew");
+    expect(badB.comparisonEngineFamily).toBeUndefined();
+  });
+
+  it("decodes bfam/rb/brn alongside a usable engine B independently of engine A's family", () => {
+    const state = decodeShareState(
+      "?a=s2000-ap1&b=corvette-z06-c6-ls7&bfam=r&rb=12a&brn=1",
+    );
+    expect(state.engineFamily).toBeUndefined();
+    expect(state.comparisonEngineFamily).toBe("rotary");
+    expect(state.comparisonRotaryConfig).toEqual(
+      ROTARY_ENGINE_PRESETS.find((p) => p.id === "12a")!.config,
+    );
+    expect(state.comparisonRotaryRotorCount).toBe(1);
+  });
+
+  it("round-trips a rotary-vs-rotary comparison through encode/decode", () => {
+    const original = baseState({
+      comparisonConfig: CUSTOM,
+      engineFamily: "rotary",
+      rotaryConfig: RX7_13B.config,
+      rotaryRotorCount: RX7_13B.rotorCount,
+      comparisonEngineFamily: "rotary",
+      comparisonRotaryConfig: COSMO_20B.config,
+      comparisonRotaryRotorCount: COSMO_20B.rotorCount,
+    });
+    const decoded = decodeShareState(encodeShareState(original));
+    expect(decoded.engineFamily).toBe("rotary");
+    expect(decoded.rotaryConfig).toEqual(RX7_13B.config);
+    expect(decoded.rotaryRotorCount).toBe(RX7_13B.rotorCount);
+    expect(decoded.comparisonEngineFamily).toBe("rotary");
+    expect(decoded.comparisonRotaryConfig).toEqual(COSMO_20B.config);
+    expect(decoded.comparisonRotaryRotorCount).toBe(COSMO_20B.rotorCount);
+  });
+
+  it("round-trips every rotary preset at every rotor count", () => {
+    const rotorCounts: RotaryRotorCount[] = [1, 2, 3];
+    for (const preset of ROTARY_ENGINE_PRESETS) {
+      for (const rotorCount of rotorCounts) {
+        const state = baseState({
+          engineFamily: "rotary",
+          rotaryConfig: preset.config,
+          rotaryRotorCount: rotorCount,
+        });
+        const decoded = decodeShareState(encodeShareState(state));
+        expect(decoded.engineFamily).toBe("rotary");
+        expect(decoded.rotaryConfig).toEqual(preset.config);
+        expect(decoded.rotaryRotorCount).toBe(rotorCount);
+      }
+    }
+  });
+
+  it("a legacy link with no family params opens on piston, unchanged", () => {
+    const state = decodeShareState(
+      "?a=supra-2jzgte&b=corvette-z06-c6-ls7&rpm=4500&angle=90",
+    );
+    expect(state.engineFamily).toBeUndefined();
+    expect(state.comparisonEngineFamily).toBeUndefined();
+    // Absent from the partial means "leave the fresh session's own
+    // default", which is piston — verified against the store directly in
+    // `engineStore.test.ts`, not re-asserted here.
   });
 });

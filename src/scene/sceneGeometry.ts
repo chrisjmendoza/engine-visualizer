@@ -28,9 +28,14 @@ import type {
   EngineLayoutId,
   EngineLayoutKind,
 } from "../engine/engineLayout";
+import { ROTARY_ROTOR_PHASES } from "../engine/rotaryCycle";
+import type { RotaryConfig, RotaryRotorCount } from "../engine/rotaryTypes";
+import type { EngineFamily } from "../engine/shareLink";
 import type { CrankMechanismConfig } from "../engine/types";
 import { useEngineStore } from "../state/engineStore";
-import { describeConfig } from "./mechanismLabels";
+import { describeConfig, describeRotaryConfig } from "./mechanismLabels";
+import { deriveRotaryProportions } from "./rotarySceneGeometry";
+import type { RotaryProportions } from "./rotarySceneGeometry";
 
 /**
  * Scene palette. Three.js cannot read the CSS custom properties in
@@ -460,22 +465,123 @@ export interface PlacedEngine {
 }
 
 /**
+ * What a rotary stage slot is: a housing geometry and a rotor count (§27).
+ *
+ * The rotary counterpart of the `config` + `layoutId` + `singleCylinderView`
+ * triple a piston slot is described by — and shorter, because a rotary's rotor
+ * count *is* its architecture and there is no partial view of it.
+ */
+export interface RotarySlotSpec {
+  config: RotaryConfig;
+  rotorCount: RotaryRotorCount;
+}
+
+/**
+ * Which stage slots hold a rotary engine, if either does.
+ *
+ * A slot left out (or null) is a piston engine described by `deriveLayout`'s
+ * piston arguments, which is what every caller meant before the rotary family
+ * existed. This is the one place a caller says "slot A is rotary", so it is
+ * also the one place the store's `engineFamily` has to be read — see
+ * `useSceneLayout`.
+ */
+export interface RotarySlots {
+  primary?: RotarySlotSpec | null;
+  secondary?: RotarySlotSpec | null;
+}
+
+/**
+ * One rotor of one rotary engine, placed on the stage (§27) — the rotary's
+ * `PlacedCylinder`.
+ *
+ * Much shorter than its piston counterpart, and the missing fields are the
+ * point: a rotary has no banks to tilt onto (`drawnRotationRad`), no throw
+ * pairs sharing a plane (`throwIndex`, `offsetZMm`), and no pin that a
+ * neighbour might already have drawn (`drawsCrank`). Every rotor of an engine
+ * is an identical mechanism on one shaft, differing only in phase and in where
+ * along the row it sits.
+ */
+export interface PlacedRotor {
+  /** Position along the shaft, front to back. */
+  index: number;
+  /**
+   * This rotor's phase offset in **eccentric-shaft** radians
+   * (`ROTARY_ROTOR_PHASES`) — a two-rotor engine's rotors are 180° of shaft
+   * apart. Divided by three where rotor orientation is computed, never here;
+   * see `rotorAngleRad`.
+   */
+  rotorPhaseRad: number;
+  /** X of this rotor's eccentric-shaft center on the stage, millimeters. */
+  offsetXMm: number;
+  /**
+   * Y of this rotor's shaft center. Always 0 except for the lower engine of a
+   * stacked comparison, exactly as for a cylinder.
+   */
+  offsetYMm: number;
+  /** This rotor's extents relative to its own shaft center. */
+  bounds: SceneBounds;
+}
+
+/** One rotary engine — a row of one to three rotors — on the stage (§27). */
+export interface PlacedRotaryEngine {
+  config: RotaryConfig;
+  rotorCount: RotaryRotorCount;
+  /** One shared proportions object: every rotor of an engine is identical. */
+  proportions: RotaryProportions;
+  /** Its rotors, left to right, in shaft order. */
+  rotors: readonly PlacedRotor[];
+  /** Its name label, or null when labels are hidden. */
+  label: LabelPlacement | null;
+  /** Extents of the whole row in world coordinates. */
+  bounds: SceneBounds;
+}
+
+/**
  * Where each engine sits and what the camera must frame.
  *
  * Both engines are drawn at the same scale — 1 scene unit is 1 mm for
  * everything — so a large engine genuinely towers over a small one. Only the
  * offsets differ; no mechanism is ever scaled to fit.
+ *
+ * ## Two families, parallel fields
+ *
+ * A stage slot holds either a piston engine or a rotary one, and the two have
+ * no drawn part in common, so each slot appears twice here: `primary` /
+ * `primaryRotary` for slot A and `secondary` / `secondaryRotary` for slot B.
+ * **Exactly one of each pair is non-null** whenever that slot is occupied.
+ *
+ * This mirrors the store's own choice (§27): parallel fields rather than a
+ * discriminated union, so that every existing piston consumer keeps working
+ * unchanged and only the consumers that care about the rotary family have to
+ * learn about it. A union refactor across both layers is deliberate future
+ * work once rotary stabilizes, not an option that went unconsidered.
+ *
+ * Note what is *not* duplicated: `arrangement` and `bounds`. Row placement and
+ * camera framing are family-agnostic — every row reduces to a slot count, a
+ * spacing, and an envelope (`RowMetrics`) — which is what lets a piston engine
+ * be compared against a rotary at one shared zoom.
  */
 export interface SceneLayout {
   /**
    * How the stage is arranged: one engine, a side-by-side pair (both showing
-   * a single cylinder), or a stacked pair (either showing more than one).
+   * a single slot), or a stacked pair (either showing more than one).
    */
   arrangement: ComparisonArrangement;
-  /** Engine A: to the left of, or above, engine B when comparing. */
-  primary: PlacedEngine;
-  /** Engine B, to the right of or below A, or null when comparison is off. */
+  /**
+   * Engine A when slot A holds a piston engine — to the left of, or above,
+   * engine B when comparing. Null when slot A holds a rotary, whose content is
+   * in `primaryRotary` instead.
+   */
+  primary: PlacedEngine | null;
+  /**
+   * Engine B when slot B holds a piston engine. Null when comparison is off,
+   * or when slot B holds a rotary.
+   */
   secondary: PlacedEngine | null;
+  /** Slot A's rotary engine, or null when slot A holds a piston engine. */
+  primaryRotary: PlacedRotaryEngine | null;
+  /** Slot B's rotary engine, or null when comparison is off or B is piston. */
+  secondaryRotary: PlacedRotaryEngine | null;
   /** Union of every placed engine's extents, in world coordinates. */
   bounds: SceneBounds;
 }
@@ -616,8 +722,31 @@ interface MeasuredThrow {
   bounds: SceneBounds;
 }
 
-/** An engine's row, measured but not yet positioned on the stage. */
-interface MeasuredRow {
+/**
+ * Everything the stage needs to know about a row in order to *place* it — and
+ * deliberately nothing about what the row is made of (§27).
+ *
+ * Both families reduce to this: a piston engine is a row of throw slots and a
+ * rotary is a row of rotors, but arranging them, spacing a comparison pair, and
+ * fitting the camera to the result are the same arithmetic either way. Keeping
+ * that arithmetic in terms of these six numbers is what makes a piston-versus-
+ * rotary comparison work without a single family test in the placement code.
+ */
+interface RowMetrics {
+  /** How many drawn slots the row has, whatever occupies them. */
+  slotCount: number;
+  /** Distance between adjacent slot centers. */
+  spacingMm: number;
+  /** Left edge of slot 0 to right edge of the last slot. */
+  widthMm: number;
+  /** Leftmost reach of the row, relative to slot 0's own center. */
+  leftReachMm: number;
+  minYMm: number;
+  maxYMm: number;
+}
+
+/** A piston engine's row, measured but not yet positioned on the stage. */
+interface MeasuredRow extends RowMetrics {
   config: CrankMechanismConfig;
   /** The architecture measured, carried through to `PlacedEngine.layout`. */
   layout: EngineLayoutDefinition;
@@ -625,14 +754,15 @@ interface MeasuredRow {
   throws: readonly MeasuredThrow[];
   /** How many cylinders are on stage, across every slot. */
   cylinderCount: number;
-  /** Distance between adjacent crankshaft centers. */
-  spacingMm: number;
-  /** Left edge of slot 0 to right edge of the last slot. */
-  widthMm: number;
-  /** Leftmost reach of the row, relative to slot 0's crankshaft center. */
-  leftReachMm: number;
-  minYMm: number;
-  maxYMm: number;
+}
+
+/** A rotary engine's row, measured but not yet positioned (§27). */
+interface MeasuredRotaryRow extends RowMetrics {
+  config: RotaryConfig;
+  rotorCount: RotaryRotorCount;
+  proportions: RotaryProportions;
+  /** Each rotor's phase in shaft radians, in shaft order. */
+  rotorPhasesRad: readonly number[];
 }
 
 /** How far a row reaches either side of slot 0 at a given spacing. */
@@ -642,21 +772,37 @@ interface RowExtents {
 }
 
 /**
- * A row's horizontal extents at its slot spacing, relative to slot 0's
- * crankshaft center.
+ * A row's horizontal extents at its slot spacing, relative to slot 0's own
+ * center.
  *
- * Every row on stage — lone or compared, stacked or side by side — is laid out
- * at its own `MeasuredRow.spacingMm`, so these extents are computed once in
- * `measureRow` and are the only ones any placement uses (§24a).
+ * Every row on stage — lone or compared, stacked or side by side, piston or
+ * rotary — is laid out at its own `RowMetrics.spacingMm`, so these extents are
+ * computed once when the row is measured and are the only ones any placement
+ * uses (§24a).
  */
 function rowExtentsAt(
-  throws: readonly MeasuredThrow[],
+  slotBounds: readonly SceneBounds[],
   spacingMm: number,
 ): RowExtents {
-  const lefts = throws.map((t, i) => i * spacingMm + t.bounds.minX);
-  const rights = throws.map((t, i) => i * spacingMm + t.bounds.maxX);
+  const lefts = slotBounds.map((b, i) => i * spacingMm + b.minX);
+  const rights = slotBounds.map((b, i) => i * spacingMm + b.maxX);
   const leftReachMm = Math.min(...lefts);
   return { leftReachMm, widthMm: Math.max(...rights) - leftReachMm };
+}
+
+/**
+ * Uniform slot spacing for a row, sized so the widest right-hand reach clears
+ * the widest left-hand reach whichever two slots end up adjacent, plus
+ * `INLINE_GAP_FRACTION` of that combined reach.
+ *
+ * Shared by both families: a rotary's rotors sit along the eccentric shaft
+ * exactly as cylinders sit along a crankshaft, and should read as one engine
+ * for the same reason (§24a).
+ */
+function slotSpacingFor(slotBounds: readonly SceneBounds[]): number {
+  const rightReach = Math.max(...slotBounds.map((b) => b.maxX));
+  const leftReach = Math.max(...slotBounds.map((b) => -b.minX));
+  return (rightReach + leftReach) * (1 + INLINE_GAP_FRACTION);
 }
 
 /**
@@ -775,11 +921,8 @@ function measureRow(
     uprightFlatEngines,
   );
 
-  // Uniform spacing, sized so the widest right-hand reach clears the widest
-  // left-hand reach whichever two slots end up adjacent.
-  const rightReach = Math.max(...throws.map((t) => t.bounds.maxX));
-  const leftReach = Math.max(...throws.map((t) => -t.bounds.minX));
-  const spacingMm = (rightReach + leftReach) * (1 + INLINE_GAP_FRACTION);
+  const slotBounds = throws.map((t) => t.bounds);
+  const spacingMm = slotSpacingFor(slotBounds);
 
   return {
     config,
@@ -787,10 +930,45 @@ function measureRow(
     proportions,
     throws,
     cylinderCount: definitions.length,
+    slotCount: throws.length,
     spacingMm,
-    ...rowExtentsAt(throws, spacingMm),
-    minYMm: Math.min(...throws.map((t) => t.bounds.minY)),
-    maxYMm: Math.max(...throws.map((t) => t.bounds.maxY)),
+    ...rowExtentsAt(slotBounds, spacingMm),
+    minYMm: Math.min(...slotBounds.map((b) => b.minY)),
+    maxYMm: Math.max(...slotBounds.map((b) => b.maxY)),
+  };
+}
+
+/**
+ * Measures a rotary engine as a row of rotors (§27) — the rotary's
+ * `measureRow`, and a much shorter one.
+ *
+ * Every rotor of an engine has the same housing, so every slot has the same
+ * footprint and the row is that footprint repeated at one spacing. There is no
+ * throw grouping to do (a rotor is not paired with anything), no bank tilt to
+ * envelope (`drawnRotationRad` has no rotary counterpart — the housing's major
+ * axis is always along X), and no single-rotor view: an engine's rotor count is
+ * its architecture *and* what is on screen.
+ *
+ * The phases come from `ROTARY_ROTOR_PHASES` in the engine layer, never from
+ * anything invented here — the exact discipline `measureRow` follows in taking
+ * its crank phases from `createEngineLayout`.
+ */
+function measureRotaryRow(spec: RotarySlotSpec): MeasuredRotaryRow {
+  const proportions = deriveRotaryProportions(spec.config);
+  const rotorPhasesRad = ROTARY_ROTOR_PHASES[spec.rotorCount];
+  const slotBounds = rotorPhasesRad.map(() => proportions.bounds);
+  const spacingMm = slotSpacingFor(slotBounds);
+
+  return {
+    config: spec.config,
+    rotorCount: spec.rotorCount,
+    proportions,
+    rotorPhasesRad,
+    slotCount: rotorPhasesRad.length,
+    spacingMm,
+    ...rowExtentsAt(slotBounds, spacingMm),
+    minYMm: proportions.bounds.minY,
+    maxYMm: proportions.bounds.maxY,
   };
 }
 
@@ -811,16 +989,33 @@ function measureRow(
  * slot count.
  */
 function firstCenterForCrankSpanCenteredAt(
-  row: MeasuredRow,
+  row: RowMetrics,
   centerXMm: number,
 ): number {
-  return centerXMm - ((row.throws.length - 1) * row.spacingMm) / 2;
+  return centerXMm - ((row.slotCount - 1) * row.spacingMm) / 2;
 }
 
-/** A row of cylinders placed on the stage, with its world extents. */
-interface PlacedRow {
-  cylinders: PlacedCylinder[];
-  bounds: SceneBounds;
+/** Where a row was put: its left edge and the height of its slot centers. */
+interface RowPosition {
+  leftXMm: number;
+  centerYMm: number;
+}
+
+/**
+ * A row's world extents once positioned.
+ *
+ * Derived from the metrics alone, so a row's footprint on the stage is known
+ * before anything inside it is placed — which is what lets the arrangement,
+ * the label band, and the camera framing be computed once, family-agnostically,
+ * and the two families' contents be laid into the result afterwards.
+ */
+function rowWorldBounds(row: RowMetrics, at: RowPosition): SceneBounds {
+  return {
+    minX: at.leftXMm,
+    maxX: at.leftXMm + row.widthMm,
+    minY: at.centerYMm + row.minYMm,
+    maxY: at.centerYMm + row.maxYMm,
+  };
 }
 
 /**
@@ -838,42 +1033,65 @@ interface PlacedRow {
  * another engine (§24a); a stacked comparison only moves rows, never stretches
  * them.
  */
-function placeRow(row: MeasuredRow, leftXMm: number, centerYMm = 0): PlacedRow {
-  const firstCenterX = leftXMm - row.leftReachMm;
+function placeRow(
+  row: MeasuredRow,
+  at: RowPosition,
+): readonly PlacedCylinder[] {
+  const firstCenterX = at.leftXMm - row.leftReachMm;
   // Half a rod thickness per step behind the slot's first cylinder: enough to
   // break every coincident face, small enough to leave the depth order of the
   // drawn parts alone. See `PlacedCylinder.offsetZMm`.
   const zStepMm = row.proportions.rodDepthMm / 2;
 
-  return {
-    cylinders: row.throws.flatMap((measured, throwIndex) =>
-      measured.cylinders.map((cylinder) => ({
-        ...cylinder.definition,
-        throwIndex,
-        bounds: cylinder.bounds,
-        drawnRotationRad: cylinder.drawnRotationRad,
-        drawsCrank: cylinder.drawsCrank,
-        offsetXMm: firstCenterX + throwIndex * row.spacingMm,
-        offsetYMm: centerYMm,
-        // Spelled out rather than multiplied, so the untouched first cylinder
-        // of every slot gets a plain +0 and an inline row stays byte-identical.
-        offsetZMm:
-          cylinder.slotPosition === 0 ? 0 : -cylinder.slotPosition * zStepMm,
-      })),
-    ),
-    bounds: {
-      minX: leftXMm,
-      maxX: leftXMm + row.widthMm,
-      minY: centerYMm + row.minYMm,
-      maxY: centerYMm + row.maxYMm,
-    },
-  };
+  return row.throws.flatMap((measured, throwIndex) =>
+    measured.cylinders.map((cylinder) => ({
+      ...cylinder.definition,
+      throwIndex,
+      bounds: cylinder.bounds,
+      drawnRotationRad: cylinder.drawnRotationRad,
+      drawsCrank: cylinder.drawsCrank,
+      offsetXMm: firstCenterX + throwIndex * row.spacingMm,
+      offsetYMm: at.centerYMm,
+      // Spelled out rather than multiplied, so the untouched first cylinder
+      // of every slot gets a plain +0 and an inline row stays byte-identical.
+      offsetZMm:
+        cylinder.slotPosition === 0 ? 0 : -cylinder.slotPosition * zStepMm,
+    })),
+  );
+}
+
+/**
+ * Positions a measured rotary row the same way `placeRow` positions a piston
+ * one: slot 0's shaft center lands `leftReachMm` right of the row's left edge,
+ * and each subsequent rotor sits one spacing further along.
+ *
+ * There is no depth step here. Two rotors never share a shaft center — a rotor
+ * is not half of a throw pair — so nothing can be coplanar with anything, and
+ * every rotor draws its own eccentric lobe.
+ */
+function placeRotaryRow(
+  row: MeasuredRotaryRow,
+  at: RowPosition,
+): readonly PlacedRotor[] {
+  const firstCenterX = at.leftXMm - row.leftReachMm;
+
+  return row.rotorPhasesRad.map((rotorPhaseRad, index) => ({
+    index,
+    rotorPhaseRad,
+    offsetXMm: firstCenterX + index * row.spacingMm,
+    offsetYMm: at.centerYMm,
+    bounds: row.proportions.bounds,
+  }));
 }
 
 /** Where the rows ended up, plus everything the label pass needs. */
 interface StagePlacement {
-  placedA: PlacedRow;
-  placedB: PlacedRow | null;
+  positionA: RowPosition;
+  positionB: RowPosition | null;
+  /** Slot A's world extents, from its metrics and its position. */
+  boundsA: SceneBounds;
+  /** Slot B's world extents, or null when comparison is off. */
+  boundsB: SceneBounds | null;
   /** Union of the placed rows, before any label band is reserved. */
   content: SceneBounds;
   /** Baseline for engine A's label; only meaningful when labels are shown. */
@@ -893,8 +1111,8 @@ interface StagePlacement {
  * still gets labels that line up.
  */
 function placeSideBySide(
-  rowA: MeasuredRow,
-  rowB: MeasuredRow | null,
+  rowA: RowMetrics,
+  rowB: RowMetrics | null,
 ): StagePlacement {
   const gap = rowB
     ? (COMPARISON_GAP_FRACTION * (rowA.widthMm + rowB.widthMm)) / 2
@@ -903,17 +1121,21 @@ function placeSideBySide(
   const leftA = -totalWidth / 2;
   const leftB = leftA + rowA.widthMm + gap;
 
-  const placedA = placeRow(rowA, leftA);
-  const placedB = rowB ? placeRow(rowB, leftB) : null;
+  const positionA: RowPosition = { leftXMm: leftA, centerYMm: 0 };
+  const positionB: RowPosition | null = rowB
+    ? { leftXMm: leftB, centerYMm: 0 }
+    : null;
+  const boundsA = rowWorldBounds(rowA, positionA);
+  const boundsB = rowB && positionB ? rowWorldBounds(rowB, positionB) : null;
 
-  const content: SceneBounds = placedB
+  const content: SceneBounds = boundsB
     ? {
-        minX: placedA.bounds.minX,
-        maxX: placedB.bounds.maxX,
-        minY: Math.min(placedA.bounds.minY, placedB.bounds.minY),
-        maxY: Math.max(placedA.bounds.maxY, placedB.bounds.maxY),
+        minX: boundsA.minX,
+        maxX: boundsB.maxX,
+        minY: Math.min(boundsA.minY, boundsB.minY),
+        maxY: Math.max(boundsA.maxY, boundsB.maxY),
       }
-    : placedA.bounds;
+    : boundsA;
 
   const contentHeight = content.maxY - content.minY;
   const labelGap = LABEL_GAP_FRACTION * contentHeight;
@@ -923,8 +1145,10 @@ function placeSideBySide(
   const anchorY = content.minY - labelGap - labelBand / 2;
 
   return {
-    placedA,
-    placedB,
+    positionA,
+    positionB,
+    boundsA,
+    boundsB,
     content,
     labelAnchorYA: anchorY,
     labelAnchorYB: anchorY,
@@ -976,8 +1200,8 @@ function placeSideBySide(
  * the unlabelled stack, so the two are not defined in terms of each other.
  */
 function placeStacked(
-  rowA: MeasuredRow,
-  rowB: MeasuredRow,
+  rowA: RowMetrics,
+  rowB: RowMetrics,
   showLabels: boolean,
 ): StagePlacement {
   // Each row is centered on the stack's own center line, x = 0, by the
@@ -1002,23 +1226,33 @@ function placeStacked(
   // engine A's own label needs.
   const centerYB = rowA.minYMm - verticalGap - labelReserve - rowB.maxYMm;
 
-  const placedA = placeRow(rowA, firstCenterXA + rowA.leftReachMm, 0);
-  const placedB = placeRow(rowB, firstCenterXB + rowB.leftReachMm, centerYB);
+  const positionA: RowPosition = {
+    leftXMm: firstCenterXA + rowA.leftReachMm,
+    centerYMm: 0,
+  };
+  const positionB: RowPosition = {
+    leftXMm: firstCenterXB + rowB.leftReachMm,
+    centerYMm: centerYB,
+  };
+  const boundsA = rowWorldBounds(rowA, positionA);
+  const boundsB = rowWorldBounds(rowB, positionB);
 
   const content: SceneBounds = {
-    minX: Math.min(placedA.bounds.minX, placedB.bounds.minX),
-    maxX: Math.max(placedA.bounds.maxX, placedB.bounds.maxX),
-    minY: placedB.bounds.minY,
-    maxY: placedA.bounds.maxY,
+    minX: Math.min(boundsA.minX, boundsB.minX),
+    maxX: Math.max(boundsA.maxX, boundsB.maxX),
+    minY: boundsB.minY,
+    maxY: boundsA.maxY,
   };
 
   return {
-    placedA,
-    placedB,
+    positionA,
+    positionB,
+    boundsA,
+    boundsB,
     content,
-    labelAnchorYA: placedA.bounds.minY - labelGap - labelBand / 2,
-    labelAnchorYB: placedB.bounds.minY - labelGap - labelBand / 2,
-    labelledMinY: placedB.bounds.minY - labelGap - labelBand,
+    labelAnchorYA: boundsA.minY - labelGap - labelBand / 2,
+    labelAnchorYB: boundsB.minY - labelGap - labelBand / 2,
+    labelledMinY: boundsB.minY - labelGap - labelBand,
   };
 }
 
@@ -1054,6 +1288,25 @@ function placeStacked(
  * name labels and included in the returned bounds, so auto-framing keeps the
  * labels on screen at every configuration. One label sits centered under each
  * engine's whole row.
+ *
+ * ## Rotary slots (§27)
+ *
+ * `rotarySlots` says which stage slots hold a rotary engine instead of a
+ * piston one; the default — neither — is exactly the behavior every caller had
+ * before the rotary family existed, which is why the parameter is last and
+ * optional rather than threaded through the eight positional arguments above.
+ * A slot named there ignores that slot's `config`/`layoutId`/cylinder-view
+ * arguments entirely: they describe a mechanism it is not drawing.
+ *
+ * Whether a *comparison* is running is still governed by `comparisonConfig`,
+ * for the same reason the store keeps parallel fields: the piston
+ * configuration for slot B exists whatever family slot B is showing, and
+ * `comparisonConfig === null` is what "comparison is off" has always meant.
+ *
+ * Cross-family comparison follows for free. Arrangement, spacing, label bands,
+ * and framing are all computed from `RowMetrics`, which knows nothing about
+ * either family, so a rotary compared against a V8 is placed by the same
+ * arithmetic as two V8s and shares the same single zoom.
  */
 export function deriveLayout(
   config: CrankMechanismConfig,
@@ -1064,97 +1317,186 @@ export function deriveLayout(
   singleCylinderView = false,
   comparisonSingleCylinderView = false,
   uprightFlatEngines = false,
+  rotarySlots: RotarySlots = {},
 ): SceneLayout {
-  const rowA = measureRow(
-    config,
-    layoutId,
-    singleCylinderView,
-    uprightFlatEngines,
-  );
-  const rowB = comparisonConfig
-    ? measureRow(
-        comparisonConfig,
-        comparisonLayoutId,
-        comparisonSingleCylinderView,
-        uprightFlatEngines,
-      )
-    : null;
+  const slotA: MeasuredSlot = rotarySlots.primary
+    ? { family: "rotary", row: measureRotaryRow(rotarySlots.primary) }
+    : {
+        family: "piston",
+        row: measureRow(
+          config,
+          layoutId,
+          singleCylinderView,
+          uprightFlatEngines,
+        ),
+      };
+
+  const slotB: MeasuredSlot | null =
+    comparisonConfig === null
+      ? null
+      : rotarySlots.secondary
+        ? { family: "rotary", row: measureRotaryRow(rotarySlots.secondary) }
+        : {
+            family: "piston",
+            row: measureRow(
+              comparisonConfig,
+              comparisonLayoutId,
+              comparisonSingleCylinderView,
+              uprightFlatEngines,
+            ),
+          };
 
   const arrangement: ComparisonArrangement =
-    rowB === null
+    slotB === null
       ? "single"
-      : rowA.cylinderCount > 1 || rowB.cylinderCount > 1
+      : drawnCountOf(slotA) > 1 || drawnCountOf(slotB) > 1
         ? "stacked"
         : "side-by-side";
 
   const placement =
-    arrangement === "stacked"
-      ? placeStacked(rowA, rowB as MeasuredRow, showLabels)
-      : placeSideBySide(rowA, rowB);
-  const { placedA, placedB, content } = placement;
+    slotB !== null && arrangement === "stacked"
+      ? placeStacked(slotA.row, slotB.row, showLabels)
+      : placeSideBySide(slotA.row, slotB === null ? null : slotB.row);
+  const { content } = placement;
 
-  if (!showLabels) {
-    return {
-      arrangement,
-      primary: { ...rowAsEngine(rowA, placedA), label: null },
-      secondary:
-        rowB && placedB ? { ...rowAsEngine(rowB, placedB), label: null } : null,
-      bounds: content,
-    };
-  }
-
-  const comparing = rowB !== null;
+  const comparing = slotB !== null;
+  const placedA = placeSlot(
+    slotA,
+    placement.positionA,
+    placement.boundsA,
+    showLabels
+      ? {
+          slot: comparing ? "A" : null,
+          name: describeSlot(slotA),
+          anchorXMm: centerXOf(placement.boundsA),
+          anchorYMm: placement.labelAnchorYA,
+        }
+      : null,
+  );
+  const placedB =
+    slotB !== null && placement.positionB !== null && placement.boundsB !== null
+      ? placeSlot(
+          slotB,
+          placement.positionB,
+          placement.boundsB,
+          showLabels
+            ? {
+                slot: "B",
+                name: describeSlot(slotB),
+                anchorXMm: centerXOf(placement.boundsB),
+                anchorYMm: placement.labelAnchorYB,
+              }
+            : null,
+        )
+      : null;
 
   return {
     arrangement,
-    primary: {
-      ...rowAsEngine(rowA, placedA),
-      label: {
-        slot: comparing ? "A" : null,
-        name: describeConfig(rowA.config),
-        anchorXMm: centerXOf(placedA.bounds),
-        anchorYMm: placement.labelAnchorYA,
-      },
-    },
-    secondary:
-      rowB && placedB
-        ? {
-            ...rowAsEngine(rowB, placedB),
-            label: {
-              slot: "B",
-              name: describeConfig(rowB.config),
-              anchorXMm: centerXOf(placedB.bounds),
-              anchorYMm: placement.labelAnchorYB,
-            },
-          }
-        : null,
-    bounds: {
-      ...content,
-      minY: placement.labelledMinY,
-    },
-  };
-}
-
-/** Joins a measured row with its placement, less the label the caller adds. */
-function rowAsEngine(
-  row: MeasuredRow,
-  placed: PlacedRow,
-): Omit<PlacedEngine, "label"> {
-  return {
-    config: row.config,
-    layout: row.layout,
-    proportions: row.proportions,
-    cylinders: placed.cylinders,
-    bounds: placed.bounds,
+    primary: placedA.piston,
+    secondary: placedB === null ? null : placedB.piston,
+    primaryRotary: placedA.rotary,
+    secondaryRotary: placedB === null ? null : placedB.rotary,
+    bounds: showLabels ? { ...content, minY: placement.labelledMinY } : content,
   };
 }
 
 /**
- * Subscribes to both engine configurations, both layouts, both cylinder-view
- * preferences, and the label and flat-upright preferences, and memoizes the
- * stage layout. This is the single store subscriber for stage placement:
- * recomputed only when a configuration, layout, or view changes, comparison is
- * toggled, or one of those preferences is switched — never per frame.
+ * One measured stage slot: which family occupies it and the row it measured.
+ *
+ * A genuine discriminated union, unlike `SceneLayout`'s parallel fields — this
+ * one is internal, so narrowing it costs nothing outside this module, and the
+ * two rows share no field beyond `RowMetrics`.
+ */
+type MeasuredSlot =
+  | { family: "piston"; row: MeasuredRow }
+  | { family: "rotary"; row: MeasuredRotaryRow };
+
+/**
+ * How many mechanisms a slot draws — cylinders for a piston engine, rotors for
+ * a rotary — which is what decides whether a comparison stacks (§24a).
+ *
+ * Not the same as `RowMetrics.slotCount`: a V8 shown in full draws eight
+ * cylinders in four throw slots, and it is the eight that make it too wide to
+ * sit beside another engine.
+ */
+function drawnCountOf(slot: MeasuredSlot): number {
+  return slot.family === "piston"
+    ? slot.row.cylinderCount
+    : slot.row.rotorCount;
+}
+
+/** The name shown under a slot's row. */
+function describeSlot(slot: MeasuredSlot): string {
+  return slot.family === "piston"
+    ? describeConfig(slot.row.config)
+    : describeRotaryConfig(slot.row.config, slot.row.rotorCount);
+}
+
+/**
+ * Lays a measured slot's contents into a position the family-agnostic
+ * placement already chose, and returns it as the pair of parallel fields
+ * `SceneLayout` carries — exactly one of which is non-null.
+ */
+function placeSlot(
+  slot: MeasuredSlot,
+  at: RowPosition,
+  bounds: SceneBounds,
+  label: LabelPlacement | null,
+): { piston: PlacedEngine | null; rotary: PlacedRotaryEngine | null } {
+  if (slot.family === "rotary") {
+    return {
+      piston: null,
+      rotary: {
+        config: slot.row.config,
+        rotorCount: slot.row.rotorCount,
+        proportions: slot.row.proportions,
+        rotors: placeRotaryRow(slot.row, at),
+        label,
+        bounds,
+      },
+    };
+  }
+
+  return {
+    piston: {
+      config: slot.row.config,
+      layout: slot.row.layout,
+      proportions: slot.row.proportions,
+      cylinders: placeRow(slot.row, at),
+      label,
+      bounds,
+    },
+    rotary: null,
+  };
+}
+
+/**
+ * Builds the `RotarySlots` argument from one slot's family fields.
+ *
+ * Exported so the mapping from store state to stage input is one named,
+ * testable function rather than a conditional buried in a hook: the whole of
+ * "which family is this slot showing" is this line, for both slots.
+ */
+export function rotarySlotFor(
+  family: EngineFamily,
+  config: RotaryConfig,
+  rotorCount: RotaryRotorCount,
+): RotarySlotSpec | null {
+  return family === "rotary" ? { config, rotorCount } : null;
+}
+
+/**
+ * Subscribes to both engine configurations, both families, both layouts, both
+ * cylinder-view preferences, and the label and flat-upright preferences, and
+ * memoizes the stage layout. This is the single store subscriber for stage
+ * placement: recomputed only when a configuration, family, layout, or view
+ * changes, comparison is toggled, or one of those preferences is switched —
+ * never per frame.
+ *
+ * Every subscription selects a scalar or a stable object reference from the
+ * store, never a freshly built one: a selector returning a new object on every
+ * call would make zustand re-render this on every store write. The two rotary
+ * slot objects are therefore assembled inside the memo, not in a selector.
  */
 export function useSceneLayout(): SceneLayout {
   const config = useEngineStore((s) => s.config);
@@ -1164,6 +1506,18 @@ export function useSceneLayout(): SceneLayout {
   const singleCylinderView = useEngineStore((s) => s.singleCylinderView);
   const comparisonSingleCylinderView = useEngineStore(
     (s) => s.comparisonSingleCylinderView,
+  );
+  const engineFamily = useEngineStore((s) => s.engineFamily);
+  const comparisonEngineFamily = useEngineStore(
+    (s) => s.comparisonEngineFamily,
+  );
+  const rotaryConfig = useEngineStore((s) => s.rotaryConfig);
+  const comparisonRotaryConfig = useEngineStore(
+    (s) => s.comparisonRotaryConfig,
+  );
+  const rotaryRotorCount = useEngineStore((s) => s.rotaryRotorCount);
+  const comparisonRotaryRotorCount = useEngineStore(
+    (s) => s.comparisonRotaryRotorCount,
   );
   const showLabels = useEngineStore((s) => s.preferences.showLabels);
   const uprightFlatEngines = useEngineStore(
@@ -1180,6 +1534,14 @@ export function useSceneLayout(): SceneLayout {
         singleCylinderView,
         comparisonSingleCylinderView,
         uprightFlatEngines,
+        {
+          primary: rotarySlotFor(engineFamily, rotaryConfig, rotaryRotorCount),
+          secondary: rotarySlotFor(
+            comparisonEngineFamily,
+            comparisonRotaryConfig,
+            comparisonRotaryRotorCount,
+          ),
+        },
       ),
     [
       config,
@@ -1190,6 +1552,12 @@ export function useSceneLayout(): SceneLayout {
       singleCylinderView,
       comparisonSingleCylinderView,
       uprightFlatEngines,
+      engineFamily,
+      comparisonEngineFamily,
+      rotaryConfig,
+      comparisonRotaryConfig,
+      rotaryRotorCount,
+      comparisonRotaryRotorCount,
     ],
   );
 }

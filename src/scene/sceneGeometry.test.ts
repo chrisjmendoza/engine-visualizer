@@ -20,6 +20,10 @@ import {
   sharesCrankpin,
 } from "../engine/engineLayout";
 import type { EngineLayoutId } from "../engine/engineLayout";
+import { ROTARY_ROTOR_PHASES } from "../engine/rotaryCycle";
+import type { RotaryConfig, RotaryRotorCount } from "../engine/rotaryTypes";
+import { describeRotaryConfig } from "./mechanismLabels";
+import { deriveRotaryProportions } from "./rotarySceneGeometry";
 import {
   COMPARISON_GAP_FRACTION,
   FRAME_PADDING,
@@ -31,11 +35,14 @@ import {
   deriveLayout,
   deriveProportions,
   drawnRotationRad,
+  rotarySlotFor,
   rotateBounds,
 } from "./sceneGeometry";
 import type {
   PlacedCylinder,
   PlacedEngine,
+  PlacedRotaryEngine,
+  RotarySlots,
   SceneBounds,
 } from "./sceneGeometry";
 
@@ -317,7 +324,8 @@ function slotSpacingAlone(
   singleCylinderView = false,
 ): number {
   const slots = throwSlots(
-    deriveLayout(config, null, false, id, "single", singleCylinderView).primary,
+    deriveLayout(config, null, false, id, "single", singleCylinderView)
+      .primary!,
   );
   expect(slots.length).toBeGreaterThan(1);
   return slots[1].offsetXMm - slots[0].offsetXMm;
@@ -328,20 +336,20 @@ describe("deriveLayout — single engine", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null);
 
     expect(layout.secondary).toBeNull();
-    expect(layout.primary.cylinders).toHaveLength(1);
-    expect(layout.primary.cylinders[0].offsetXMm).toBe(0);
-    expect(layout.primary.config).toBe(DEFAULT_CONFIG);
+    expect(layout.primary!.cylinders).toHaveLength(1);
+    expect(layout.primary!.cylinders[0].offsetXMm).toBe(0);
+    expect(layout.primary!.config).toBe(DEFAULT_CONFIG);
     expect(layout.bounds).toEqual(deriveProportions(DEFAULT_CONFIG).bounds);
   });
 
   it("publishes row bounds matching the single cylinder's own extents", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null);
-    expect(layout.primary.bounds).toEqual(worldBounds(layout.primary));
+    expect(layout.primary!.bounds).toEqual(worldBounds(layout.primary!));
   });
 
   it("gives the one cylinder index 0 and zero phase", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null);
-    const [cylinder] = layout.primary.cylinders;
+    const [cylinder] = layout.primary!.cylinders;
 
     expect(cylinder.index).toBe(0);
     expect(cylinder.crankPhaseRad).toBe(0);
@@ -355,13 +363,13 @@ describe("deriveLayout — comparison pair", () => {
 
     // Identical proportions to each engine on its own: the layout only moves
     // mechanisms, it never rescales them.
-    expect(layout.primary.proportions).toEqual(deriveProportions(LS7));
+    expect(layout.primary!.proportions).toEqual(deriveProportions(LS7));
     expect(layout.secondary?.proportions).toEqual(deriveProportions(B6_1_6));
   });
 
   it("lets the larger engine tower over the smaller one", () => {
     const layout = deriveLayout(LS7, B6_1_6);
-    const big = worldBounds(layout.primary);
+    const big = worldBounds(layout.primary!);
     const small = worldBounds(layout.secondary!);
 
     const bigHeight = big.maxY - big.minY;
@@ -379,7 +387,7 @@ describe("deriveLayout — comparison pair", () => {
 
   it("puts engine A on the left and engine B on the right", () => {
     const layout = deriveLayout(LS7, B6_1_6);
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
 
     expect(a.maxX).toBeLessThan(b.minX);
@@ -387,7 +395,7 @@ describe("deriveLayout — comparison pair", () => {
 
   it("separates them by a gap proportional to their mean width", () => {
     const layout = deriveLayout(LS7, B6_1_6);
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
 
     const widthA = a.maxX - a.minX;
@@ -407,12 +415,12 @@ describe("deriveLayout — comparison pair", () => {
     const forward = deriveLayout(LS7, B6_1_6);
     const reversed = deriveLayout(B6_1_6, LS7);
 
-    expect(reversed.primary.cylinders[0].offsetXMm).toBeCloseTo(
+    expect(reversed.primary!.cylinders[0].offsetXMm).toBeCloseTo(
       -forward.secondary!.cylinders[0].offsetXMm,
       10,
     );
     expect(reversed.secondary!.cylinders[0].offsetXMm).toBeCloseTo(
-      -forward.primary.cylinders[0].offsetXMm,
+      -forward.primary!.cylinders[0].offsetXMm,
       10,
     );
     expect(reversed.bounds.maxX).toBeCloseTo(forward.bounds.maxX, 10);
@@ -425,7 +433,7 @@ describe("deriveLayout — comparison pair", () => {
         const configA = configFor(geometryA, INPUT_RANGES.compressionRatio.min);
         const configB = configFor(geometryB, INPUT_RANGES.compressionRatio.max);
         const layout = deriveLayout(configA, configB);
-        const a = worldBounds(layout.primary);
+        const a = worldBounds(layout.primary!);
         const b = worldBounds(layout.secondary!);
 
         // Neither mechanism's drawn extent may reach into the other's.
@@ -468,7 +476,7 @@ describe("deriveLayout — mechanism labels", () => {
     const hidden = deriveLayout(DEFAULT_CONFIG, null, false);
     const shown = deriveLayout(DEFAULT_CONFIG, null, true);
 
-    expect(hidden.primary.label).toBeNull();
+    expect(hidden.primary!.label).toBeNull();
     expect(hidden.bounds).toEqual(deriveProportions(DEFAULT_CONFIG).bounds);
     // Showing labels is the only difference, and it only extends downward.
     expect(shown.bounds.minY).toBeLessThan(hidden.bounds.minY);
@@ -479,7 +487,7 @@ describe("deriveLayout — mechanism labels", () => {
 
   it("hides both labels in comparison mode when the preference is off", () => {
     const layout = deriveLayout(LS7, B6_1_6, false);
-    expect(layout.primary.label).toBeNull();
+    expect(layout.primary!.label).toBeNull();
     expect(layout.secondary?.label).toBeNull();
   });
 
@@ -487,17 +495,17 @@ describe("deriveLayout — mechanism labels", () => {
     const preset = ENGINE_PRESETS[0];
     const layout = deriveLayout(preset.config, null, true);
 
-    expect(layout.primary.label).not.toBeNull();
-    expect(layout.primary.label?.slot).toBeNull();
-    expect(layout.primary.label?.name).toBe(preset.name);
+    expect(layout.primary!.label).not.toBeNull();
+    expect(layout.primary!.label?.slot).toBeNull();
+    expect(layout.primary!.label?.name).toBe(preset.name);
   });
 
   it("marks the compared engines as A and B, left to right", () => {
     const layout = deriveLayout(LS7, B6_1_6, true);
 
-    expect(layout.primary.label?.slot).toBe("A");
+    expect(layout.primary!.label?.slot).toBe("A");
     expect(layout.secondary?.label?.slot).toBe("B");
-    expect(layout.primary.label!.anchorXMm).toBeLessThan(
+    expect(layout.primary!.label!.anchorXMm).toBeLessThan(
       layout.secondary!.label!.anchorXMm,
     );
   });
@@ -506,14 +514,14 @@ describe("deriveLayout — mechanism labels", () => {
     const z06 = ENGINE_PRESETS.find((p) => p.id === "corvette-z06-c6-ls7")!;
     const layout = deriveLayout(z06.config, CUSTOM, true);
 
-    expect(layout.primary.label?.name).toBe(z06.name);
+    expect(layout.primary!.label?.name).toBe(z06.name);
     expect(layout.secondary?.label?.name).toBe(CUSTOM_ENGINE_LABEL);
   });
 
   it("centers each label under its own mechanism", () => {
     const layout = deriveLayout(LS7, B6_1_6, true);
 
-    for (const placed of [layout.primary, layout.secondary!]) {
+    for (const placed of [layout.primary!, layout.secondary!]) {
       const world = worldBounds(placed);
       const center = (world.minX + world.maxX) / 2;
 
@@ -527,7 +535,7 @@ describe("deriveLayout — mechanism labels", () => {
   it("puts both labels on one baseline even for unequal engines", () => {
     const layout = deriveLayout(LS7, B6_1_6, true);
 
-    expect(layout.primary.label!.anchorYMm).toBeCloseTo(
+    expect(layout.primary!.label!.anchorYMm).toBeCloseTo(
       layout.secondary!.label!.anchorYMm,
       10,
     );
@@ -539,7 +547,7 @@ describe("deriveLayout — mechanism labels", () => {
         const config = configFor(geometry, compressionRatio);
         const layout = deriveLayout(config, null, true);
         const content = deriveProportions(config).bounds;
-        const label = layout.primary.label!;
+        const label = layout.primary!.label!;
 
         const contentHeight = content.maxY - content.minY;
         const gap = LABEL_GAP_FRACTION * contentHeight;
@@ -568,14 +576,14 @@ describe("deriveLayout — mechanism labels", () => {
         const configA = configFor(geometryA, INPUT_RANGES.compressionRatio.min);
         const configB = configFor(geometryB, INPUT_RANGES.compressionRatio.max);
         const layout = deriveLayout(configA, configB, true);
-        const labelA = layout.primary.label!;
+        const labelA = layout.primary!.label!;
         const labelB = layout.secondary!.label!;
 
         for (const label of [labelA, labelB]) {
           expect(Number.isFinite(label.anchorXMm)).toBe(true);
           expect(label.anchorYMm).toBeLessThan(
             Math.min(
-              layout.primary.proportions.bounds.minY,
+              layout.primary!.proportions.bounds.minY,
               layout.secondary!.proportions.bounds.minY,
             ),
           );
@@ -585,7 +593,7 @@ describe("deriveLayout — mechanism labels", () => {
         }
 
         // Each label sits under its own engine, never over the other's.
-        const worldA = worldBounds(layout.primary);
+        const worldA = worldBounds(layout.primary!);
         const worldB = worldBounds(layout.secondary!);
         expect(labelA.anchorXMm).toBeLessThan(worldB.minX);
         expect(labelB.anchorXMm).toBeGreaterThan(worldA.maxX);
@@ -599,8 +607,8 @@ describe("deriveLayout — mechanism labels", () => {
 
     // A physically larger engine reaches further below the crank, so its
     // label anchor sits lower in scene millimeters.
-    expect(large.primary.label!.anchorYMm).toBeLessThan(
-      small.primary.label!.anchorYMm,
+    expect(large.primary!.label!.anchorYMm).toBeLessThan(
+      small.primary!.label!.anchorYMm,
     );
   });
 });
@@ -614,12 +622,12 @@ describe("deriveLayout — multi-cylinder rows", () => {
 
   it("lays an inline-4 out as four cylinders in crankshaft order", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null, false, "inline-4");
-    const indices = layout.primary.cylinders.map((c) => c.index);
+    const indices = layout.primary!.cylinders.map((c) => c.index);
 
-    expect(layout.primary.cylinders).toHaveLength(4);
+    expect(layout.primary!.cylinders).toHaveLength(4);
     expect(indices).toEqual([0, 1, 2, 3]);
     // Left to right, in the same order as along the crankshaft.
-    const offsets = layout.primary.cylinders.map((c) => c.offsetXMm);
+    const offsets = layout.primary!.cylinders.map((c) => c.offsetXMm);
     for (let i = 1; i < offsets.length; i += 1) {
       expect(offsets[i]).toBeGreaterThan(offsets[i - 1]);
     }
@@ -628,25 +636,25 @@ describe("deriveLayout — multi-cylinder rows", () => {
   it("carries the inline-4 crank-throw phases through to the stage", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null, false, "inline-4");
 
-    expect(layout.primary.cylinders.map((c) => c.crankPhaseRad)).toEqual([
+    expect(layout.primary!.cylinders.map((c) => c.crankPhaseRad)).toEqual([
       0,
       Math.PI,
       Math.PI,
       0,
     ]);
-    for (const cylinder of layout.primary.cylinders) {
+    for (const cylinder of layout.primary!.cylinders) {
       expect(cylinder.bankIndex).toBe(0);
       // An inline layout is upright, so nothing is rotated and every
       // cylinder keeps the mechanism's own footprint.
       expect(cylinder.bankOffsetRad).toBe(0);
-      expect(cylinder.bounds).toEqual(layout.primary.proportions.bounds);
+      expect(cylinder.bounds).toEqual(layout.primary!.proportions.bounds);
     }
   });
 
   it("spaces the cylinders evenly by the inline gap fraction", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null, false, "inline-4");
     const spacing = spacingFor(DEFAULT_CONFIG);
-    const offsets = layout.primary.cylinders.map((c) => c.offsetXMm);
+    const offsets = layout.primary!.cylinders.map((c) => c.offsetXMm);
 
     for (let i = 1; i < offsets.length; i += 1) {
       expect(offsets[i] - offsets[i - 1]).toBeCloseTo(spacing, 10);
@@ -658,7 +666,7 @@ describe("deriveLayout — multi-cylinder rows", () => {
       for (const [, geometry] of GEOMETRIES) {
         const config = configFor(geometry, 10.5);
         const layout = deriveLayout(config, null, false, id);
-        const placed = layout.primary.cylinders;
+        const placed = layout.primary!.cylinders;
 
         for (let i = 1; i < placed.length; i += 1) {
           const gap =
@@ -674,11 +682,11 @@ describe("deriveLayout — multi-cylinder rows", () => {
   it("centers a lone row on x = 0 and frames exactly the row", () => {
     for (const id of ["single", "inline-3", "inline-4", "inline-6"] as const) {
       const layout = deriveLayout(DEFAULT_CONFIG, null, false, id);
-      const world = worldBounds(layout.primary);
+      const world = worldBounds(layout.primary!);
 
       expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 10);
-      expect(layout.primary.bounds.minX).toBeCloseTo(world.minX, 10);
-      expect(layout.primary.bounds.maxX).toBeCloseTo(world.maxX, 10);
+      expect(layout.primary!.bounds.minX).toBeCloseTo(world.minX, 10);
+      expect(layout.primary!.bounds.maxX).toBeCloseTo(world.maxX, 10);
       expect(layout.bounds.minX).toBeCloseTo(world.minX, 10);
       expect(layout.bounds.maxX).toBeCloseTo(world.maxX, 10);
     }
@@ -697,7 +705,7 @@ describe("deriveLayout — multi-cylinder rows", () => {
     // rescaled, which the stage never does.
     expect(six.bounds.minY).toBeCloseTo(one.bounds.minY, 10);
     expect(six.bounds.maxY).toBeCloseTo(one.bounds.maxY, 10);
-    expect(six.primary.proportions).toEqual(one.primary.proportions);
+    expect(six.primary!.proportions).toEqual(one.primary!.proportions);
   });
 
   it("matches the pre-multi-cylinder layout for two single cylinders", () => {
@@ -711,11 +719,11 @@ describe("deriveLayout — multi-cylinder rows", () => {
 describe("deriveLayout — comparing engines of different layouts", () => {
   it("stacks an inline-4 above a single-cylinder engine, clear of it", () => {
     const layout = deriveLayout(LS7, B6_1_6, false, "inline-4", "single");
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
 
     expect(layout.arrangement).toBe("stacked");
-    expect(layout.primary.cylinders).toHaveLength(4);
+    expect(layout.primary!.cylinders).toHaveLength(4);
     expect(layout.secondary!.cylinders).toHaveLength(1);
     // Engine A above engine B, with real space between them.
     expect(b.maxY).toBeLessThan(a.minY);
@@ -723,7 +731,7 @@ describe("deriveLayout — comparing engines of different layouts", () => {
 
   it("frames the union of both rows exactly", () => {
     const layout = deriveLayout(LS7, B6_1_6, false, "inline-4", "inline-3");
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
 
     expect(layout.bounds.minX).toBeCloseTo(Math.min(a.minX, b.minX), 10);
@@ -745,7 +753,7 @@ describe("deriveLayout — comparing engines of different layouts", () => {
       true,
       true,
     );
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
 
     expect(layout.arrangement).toBe("side-by-side");
@@ -757,7 +765,7 @@ describe("deriveLayout — comparing engines of different layouts", () => {
   it("centers one label under each engine's whole row", () => {
     const layout = deriveLayout(LS7, B6_1_6, true, "inline-4", "inline-3");
 
-    for (const placed of [layout.primary, layout.secondary!]) {
+    for (const placed of [layout.primary!, layout.secondary!]) {
       const world = worldBounds(placed);
       expect(placed.label!.anchorXMm).toBeCloseTo(
         (world.minX + world.maxX) / 2,
@@ -767,13 +775,13 @@ describe("deriveLayout — comparing engines of different layouts", () => {
 
     // One label per engine. Stacked, each sits under its own row rather than
     // on a shared baseline: A's in the gap above B, B's below the stage.
-    expect(layout.primary.label!.anchorYMm).toBeGreaterThan(
+    expect(layout.primary!.label!.anchorYMm).toBeGreaterThan(
       layout.secondary!.label!.anchorYMm,
     );
-    expect(layout.primary.label!.anchorYMm).toBeLessThan(
-      worldBounds(layout.primary).minY,
+    expect(layout.primary!.label!.anchorYMm).toBeLessThan(
+      worldBounds(layout.primary!).minY,
     );
-    expect(layout.primary.label!.anchorYMm).toBeGreaterThan(
+    expect(layout.primary!.label!.anchorYMm).toBeGreaterThan(
       worldBounds(layout.secondary!).maxY,
     );
   });
@@ -833,7 +841,7 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
 
   it("centers each stacked row on the midpoint of its own crank span", () => {
     const layout = deriveLayout(LS7, B6_1_6, false, "v8-cross", "inline-6");
-    const a = throwSlots(layout.primary);
+    const a = throwSlots(layout.primary!);
     const b = throwSlots(layout.secondary!);
 
     expect(a).toHaveLength(4);
@@ -880,7 +888,7 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
             views[0],
             views[1],
           );
-          const a = worldBounds(layout.primary);
+          const a = worldBounds(layout.primary!);
           const b = worldBounds(layout.secondary!);
 
           if (layout.arrangement === "side-by-side") {
@@ -891,7 +899,7 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
 
           // Nothing drawn for engine A may touch anything drawn for B, even
           // for a tilted bore reaching outside its row's nominal band.
-          for (const boxA of boxes(layout.primary)) {
+          for (const boxA of boxes(layout.primary!)) {
             for (const boxB of boxes(layout.secondary!)) {
               expect(overlaps(boxA, boxB)).toBe(false);
             }
@@ -903,7 +911,7 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
 
   it("separates the stacked rows by a gap scaled to their heights", () => {
     const layout = deriveLayout(LS7, B6_1_6, false, "inline-6", "inline-4");
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
 
     const expectedGap =
@@ -918,10 +926,10 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
     const layout = deriveLayout(LS7, B6_1_6, false, "inline-4", "inline-4");
 
     // Neither engine is rescaled to fit its half of the stage.
-    expect(layout.primary.proportions).toEqual(deriveProportions(LS7));
+    expect(layout.primary!.proportions).toEqual(deriveProportions(LS7));
     expect(layout.secondary!.proportions).toEqual(deriveProportions(B6_1_6));
 
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
     expect(a.maxY - a.minY).toBeGreaterThan(b.maxY - b.minY);
     expect(a.maxX - a.minX).toBeGreaterThan(b.maxX - b.minX);
@@ -930,7 +938,7 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
   it("frames the union of a stacked pair exactly, centered on x = 0", () => {
     for (const id of ["inline-4", "v8-cross", "flat-6"] as const) {
       const layout = deriveLayout(LS7, B6_1_6, false, id, "inline-3");
-      const a = worldBounds(layout.primary);
+      const a = worldBounds(layout.primary!);
       const b = worldBounds(layout.secondary!);
 
       expect(layout.bounds.minX).toBeCloseTo(Math.min(a.minX, b.minX), 10);
@@ -955,9 +963,9 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
         );
         expect(layout.arrangement).toBe("stacked");
 
-        const a = worldBounds(layout.primary);
+        const a = worldBounds(layout.primary!);
         const b = worldBounds(layout.secondary!);
-        const labelA = layout.primary.label!;
+        const labelA = layout.primary!.label!;
         const labelB = layout.secondary!.label!;
 
         for (const label of [labelA, labelB]) {
@@ -1014,9 +1022,9 @@ describe("deriveLayout — stacked vs side-by-side arrangement (§24a)", () => {
           singleCylinderView,
         );
         // A lone row still sits on y = 0, centered on x = 0, framed exactly.
-        const world = worldBounds(layout.primary);
+        const world = worldBounds(layout.primary!);
         expect(layout.secondary).toBeNull();
-        expect(layout.primary.cylinders.every((c) => c.offsetYMm === 0)).toBe(
+        expect(layout.primary!.cylinders.every((c) => c.offsetYMm === 0)).toBe(
           true,
         );
         expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 10);
@@ -1084,7 +1092,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
   ) {
     const alone = slotXs(
       deriveLayout(config, null, false, id, "single", singleCylinderView)
-        .primary,
+        .primary!,
     );
     const staged = slotXs(placed);
 
@@ -1112,8 +1120,8 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
       const layout = deriveLayout(LS7, LS7, false, a, b);
       expect(layout.arrangement).toBe("stacked");
 
-      const inlineRow = a === "inline-6" ? layout.primary : layout.secondary!;
-      const vRow = a === "inline-6" ? layout.secondary! : layout.primary;
+      const inlineRow = a === "inline-6" ? layout.primary! : layout.secondary!;
+      const vRow = a === "inline-6" ? layout.secondary! : layout.primary!;
       const inlineSlots = slotXs(inlineRow);
       const vSlots = slotXs(vRow);
 
@@ -1142,7 +1150,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
         );
 
         expect(layout.arrangement).toBe("stacked");
-        expectPureTranslationOfLoneRow(layout.primary, LS7, idA, viewA);
+        expectPureTranslationOfLoneRow(layout.primary!, LS7, idA, viewA);
         expectPureTranslationOfLoneRow(layout.secondary!, configB, idB, viewB);
       }
     }
@@ -1154,7 +1162,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
     // their columns line up exactly as the old shared spacing made them.
     for (const id of ["inline-4", "inline-6", "v8-cross", "flat-4"] as const) {
       const layout = deriveLayout(LS7, LS7, false, id, id);
-      const a = slotXs(layout.primary);
+      const a = slotXs(layout.primary!);
       const b = slotXs(layout.secondary!);
 
       expect(a).toHaveLength(b.length);
@@ -1163,11 +1171,11 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
       }
       // Both rows are also identical to that engine's lone row, and the pair
       // is centered, so the two sit squarely one above the other.
-      expect(layout.primary.bounds.minX).toBeCloseTo(
+      expect(layout.primary!.bounds.minX).toBeCloseTo(
         layout.secondary!.bounds.minX,
         9,
       );
-      expect(layout.primary.bounds.maxX).toBeCloseTo(
+      expect(layout.primary!.bounds.maxX).toBeCloseTo(
         layout.secondary!.bounds.maxX,
         9,
       );
@@ -1179,7 +1187,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
     // engine's own size, so the smaller engine draws a tighter row rather
     // than being stretched to the larger one's pitch.
     const layout = deriveLayout(LS7, B6_1_6, false, "inline-4", "inline-4");
-    const a = slotXs(layout.primary);
+    const a = slotXs(layout.primary!);
     const b = slotXs(layout.secondary!);
 
     expect(a[1] - a[0]).toBeCloseTo(slotSpacingAlone(LS7, "inline-4"), 9);
@@ -1209,7 +1217,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
         );
 
         // Within each row, no slot's footprint may touch its neighbour's.
-        for (const placed of [layout.primary, layout.secondary!]) {
+        for (const placed of [layout.primary!, layout.secondary!]) {
           const slots = throwSlots(placed);
           for (let i = 1; i < slots.length; i += 1) {
             const gap =
@@ -1221,7 +1229,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
         }
 
         // And nothing drawn for A may touch anything drawn for B.
-        const a = worldBounds(layout.primary);
+        const a = worldBounds(layout.primary!);
         const b = worldBounds(layout.secondary!);
         expect(b.maxY).toBeLessThan(a.minY);
       }
@@ -1231,7 +1239,7 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
   it("frames the union of the two rows exactly, centered on x = 0", () => {
     for (const [idA, idB, viewA, viewB] of STACKED_PAIRS) {
       const layout = deriveLayout(LS7, B6_1_6, false, idA, idB, viewA, viewB);
-      const a = worldBounds(layout.primary);
+      const a = worldBounds(layout.primary!);
       const b = worldBounds(layout.secondary!);
 
       expect(layout.bounds.minX).toBeCloseTo(Math.min(a.minX, b.minX), 9);
@@ -1241,8 +1249,8 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
       expect((layout.bounds.minX + layout.bounds.maxX) / 2).toBeCloseTo(0, 9);
 
       // Each engine's published row bounds still describe its own cylinders.
-      expect(layout.primary.bounds.minX).toBeCloseTo(a.minX, 9);
-      expect(layout.primary.bounds.maxX).toBeCloseTo(a.maxX, 9);
+      expect(layout.primary!.bounds.minX).toBeCloseTo(a.minX, 9);
+      expect(layout.primary!.bounds.maxX).toBeCloseTo(a.maxX, 9);
       expect(layout.secondary!.bounds.minX).toBeCloseTo(b.minX, 9);
       expect(layout.secondary!.bounds.maxX).toBeCloseTo(b.maxX, 9);
     }
@@ -1260,8 +1268,8 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
     idB: EngineLayoutId,
   ): number {
     const rows = [
-      throwSlots(deriveLayout(configA, null, false, idA).primary),
-      throwSlots(deriveLayout(configB, null, false, idB).primary),
+      throwSlots(deriveLayout(configA, null, false, idA).primary!),
+      throwSlots(deriveLayout(configB, null, false, idB).primary!),
     ];
     const spacing = Math.max(
       ...rows.map((slots) => slots[1].offsetXMm - slots[0].offsetXMm),
@@ -1334,14 +1342,14 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
             "single",
             singleCylinderView,
           );
-          const slots = throwSlots(layout.primary);
-          const world = worldBounds(layout.primary);
+          const slots = throwSlots(layout.primary!);
+          const world = worldBounds(layout.primary!);
 
           expect(layout.secondary).toBeNull();
           expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 9);
-          expect(layout.bounds).toEqual(layout.primary.bounds);
-          expect(layout.primary.bounds.minX).toBeCloseTo(world.minX, 9);
-          expect(layout.primary.bounds.maxX).toBeCloseTo(world.maxX, 9);
+          expect(layout.bounds).toEqual(layout.primary!.bounds);
+          expect(layout.primary!.bounds.minX).toBeCloseTo(world.minX, 9);
+          expect(layout.primary!.bounds.maxX).toBeCloseTo(world.maxX, 9);
 
           if (slots.length < 2) {
             continue;
@@ -1356,9 +1364,9 @@ describe("deriveLayout — each stacked row keeps its own spacing (§24a)", () =
               9,
             );
           }
-          expect(layout.primary.cylinders.every((c) => c.offsetYMm === 0)).toBe(
-            true,
-          );
+          expect(
+            layout.primary!.cylinders.every((c) => c.offsetYMm === 0),
+          ).toBe(true);
         }
       }
     }
@@ -1409,7 +1417,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
         const layout = deriveLayout(LS7, configB, false, idA, idB);
 
         expect(layout.arrangement).toBe("stacked");
-        expect(crankSpanCenterXMm(layout.primary)).toBeCloseTo(0, 9);
+        expect(crankSpanCenterXMm(layout.primary!)).toBeCloseTo(0, 9);
         expect(crankSpanCenterXMm(layout.secondary!)).toBeCloseTo(0, 9);
       }
     }
@@ -1425,19 +1433,19 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
       "inline-6",
       "v6-60",
     );
-    const inline = throwSlots(layout.primary);
+    const inline = throwSlots(layout.primary!);
     const vee = throwSlots(layout.secondary!);
 
     expect(layout.arrangement).toBe("stacked");
     expect(inline).toHaveLength(6);
     expect(vee).toHaveLength(3);
-    expect(crankSpanCenterXMm(layout.primary)).toBeCloseTo(0, 9);
+    expect(crankSpanCenterXMm(layout.primary!)).toBeCloseTo(0, 9);
     expect(crankSpanCenterXMm(layout.secondary!)).toBeCloseTo(0, 9);
 
     // The shorter row is the inline-6 here — six narrow cylinders span less
     // than three wide V throws — and it now sits symmetrically inside the V's
     // row rather than trailing off its left end.
-    const a = worldBounds(layout.primary);
+    const a = worldBounds(layout.primary!);
     const b = worldBounds(layout.secondary!);
     expect(a.maxX - a.minX).toBeLessThan(b.maxX - b.minX);
     expect(a.minX).toBeGreaterThan(b.minX);
@@ -1461,7 +1469,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
         ],
       ] as const) {
         const layout = layoutFor();
-        const lone = primaryFirst ? layout.primary : layout.secondary!;
+        const lone = primaryFirst ? layout.primary! : layout.secondary!;
 
         expect(layout.arrangement).toBe("stacked");
         expect(lone.cylinders).toHaveLength(1);
@@ -1492,7 +1500,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
         null,
         false,
         id as EngineLayoutId,
-      ).primary;
+      ).primary!;
       const slots = throwSlots(placed);
       const world = worldBounds(placed);
       // Relative to that row's own slot-0 crank center.
@@ -1525,7 +1533,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
       );
       const layout = deriveLayout(configA, configB, false, idA, idB);
       const after = [
-        crankSpanCenterXMm(layout.primary),
+        crankSpanCenterXMm(layout.primary!),
         crankSpanCenterXMm(layout.secondary!),
       ];
 
@@ -1542,7 +1550,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
     for (const [idA, idB] of CENTERED_PAIRS) {
       const layout = deriveLayout(LS7, B6_1_6, false, idA, idB);
 
-      expect(layout.primary.proportions).toEqual(deriveProportions(LS7));
+      expect(layout.primary!.proportions).toEqual(deriveProportions(LS7));
       expect(layout.secondary!.proportions).toEqual(deriveProportions(B6_1_6));
     }
   });
@@ -1556,9 +1564,9 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
         idA,
         idB,
       );
-      const a = worldBounds(layout.primary);
+      const a = worldBounds(layout.primary!);
       const b = worldBounds(layout.secondary!);
-      const labelA = layout.primary.label!;
+      const labelA = layout.primary!.label!;
       const labelB = layout.secondary!.label!;
 
       // Framing is recomputed from where the rows actually ended up.
@@ -1603,7 +1611,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
         expect(lone.arrangement).toBe("single");
         expect(lone.secondary).toBeNull();
 
-        const slots = throwSlots(lone.primary);
+        const slots = throwSlots(lone.primary!);
         const spacing =
           slots.length > 1 ? slots[1].offsetXMm - slots[0].offsetXMm : 0;
         const leftReach = Math.min(
@@ -1619,7 +1627,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
           expect(slot.offsetXMm).toBeCloseTo(firstCenterXMm + i * spacing, 9);
           expect(slot.offsetYMm).toBe(0);
         });
-        expect(lone.bounds).toEqual(lone.primary.bounds);
+        expect(lone.bounds).toEqual(lone.primary!.bounds);
       }
 
       // Both engines showing one cylinder: still side by side, still the
@@ -1634,7 +1642,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
       const leftB = leftA + widthA + gap;
 
       expect(pair.arrangement).toBe("side-by-side");
-      expect(pair.primary.cylinders[0].offsetXMm).toBeCloseTo(
+      expect(pair.primary!.cylinders[0].offsetXMm).toBeCloseTo(
         leftA - boundsA.minX,
         9,
       );
@@ -1642,7 +1650,7 @@ describe("deriveLayout — each stacked row is centered on its crank span (§24a
         leftB - boundsB.minX,
         9,
       );
-      expect(pair.primary.cylinders[0].offsetYMm).toBe(0);
+      expect(pair.primary!.cylinders[0].offsetYMm).toBe(0);
       expect(pair.secondary!.cylinders[0].offsetYMm).toBe(0);
     }
   });
@@ -1654,16 +1662,16 @@ describe("deriveLayout — the single-cylinder view (§24a)", () => {
       const whole = deriveLayout(DEFAULT_CONFIG, null, false, id);
       const one = deriveLayout(DEFAULT_CONFIG, null, false, id, "single", true);
 
-      expect(one.primary.cylinders).toHaveLength(1);
-      expect(one.primary.cylinders[0].index).toBe(0);
-      expect(one.primary.cylinders[0].crankPhaseRad).toBe(
-        whole.primary.cylinders[0].crankPhaseRad,
+      expect(one.primary!.cylinders).toHaveLength(1);
+      expect(one.primary!.cylinders[0].index).toBe(0);
+      expect(one.primary!.cylinders[0].crankPhaseRad).toBe(
+        whole.primary!.cylinders[0].crankPhaseRad,
       );
-      expect(one.primary.cylinders[0].bankOffsetRad).toBe(
-        whole.primary.cylinders[0].bankOffsetRad,
+      expect(one.primary!.cylinders[0].bankOffsetRad).toBe(
+        whole.primary!.cylinders[0].bankOffsetRad,
       );
       // Same mechanism, drawn at the same size: only the row got shorter.
-      expect(one.primary.proportions).toEqual(whole.primary.proportions);
+      expect(one.primary!.proportions).toEqual(whole.primary!.proportions);
       expect(one.bounds.maxX - one.bounds.minX).toBeLessThan(
         whole.bounds.maxX - whole.bounds.minX,
       );
@@ -1685,8 +1693,8 @@ describe("deriveLayout — the single-cylinder view (§24a)", () => {
     );
 
     expect(viewed.bounds).toEqual(legacy.bounds);
-    expect(viewed.primary.cylinders).toEqual(legacy.primary.cylinders);
-    expect(viewed.primary.label).toEqual(legacy.primary.label);
+    expect(viewed.primary!.cylinders).toEqual(legacy.primary!.cylinders);
+    expect(viewed.primary!.label).toEqual(legacy.primary!.label);
   });
 });
 
@@ -1732,7 +1740,7 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
       const layout = deriveLayout(DEFAULT_CONFIG, null, false, id);
       const definition = createEngineLayout(id);
 
-      layout.primary.cylinders.forEach((cylinder, i) => {
+      layout.primary!.cylinders.forEach((cylinder, i) => {
         expect(cylinder.bankOffsetRad).toBe(
           definition.cylinders[i].bankOffsetRad,
         );
@@ -1745,9 +1753,9 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
 
   it("measures a tilted cylinder by its rotated footprint, not its upright one", () => {
     const layout = deriveLayout(DEFAULT_CONFIG, null, false, "flat-4");
-    const upright = layout.primary.proportions.bounds;
+    const upright = layout.primary!.proportions.bounds;
 
-    for (const cylinder of layout.primary.cylinders) {
+    for (const cylinder of layout.primary!.cylinders) {
       expect(cylinder.bounds).toEqual(
         rotateBounds(upright, cylinder.bankOffsetRad),
       );
@@ -1764,7 +1772,9 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
     for (const id of BANKED) {
       for (const [, geometry] of GEOMETRIES) {
         const config = configFor(geometry, 10.5);
-        const slots = throwSlots(deriveLayout(config, null, false, id).primary);
+        const slots = throwSlots(
+          deriveLayout(config, null, false, id).primary!,
+        );
 
         // Nothing drawn in one throw's plane may reach into the next one's,
         // even though a V pair's two tilted mechanisms both count toward the
@@ -1783,11 +1793,11 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
   it("frames the whole tilted row exactly, centered on x = 0", () => {
     for (const id of BANKED) {
       const layout = deriveLayout(DEFAULT_CONFIG, null, false, id);
-      const world = worldBounds(layout.primary);
+      const world = worldBounds(layout.primary!);
 
       expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 10);
-      expect(layout.primary.bounds.minX).toBeCloseTo(world.minX, 10);
-      expect(layout.primary.bounds.maxX).toBeCloseTo(world.maxX, 10);
+      expect(layout.primary!.bounds.minX).toBeCloseTo(world.minX, 10);
+      expect(layout.primary!.bounds.maxX).toBeCloseTo(world.maxX, 10);
       expect(layout.bounds.minX).toBeCloseTo(world.minX, 10);
       expect(layout.bounds.maxX).toBeCloseTo(world.maxX, 10);
       expect(layout.bounds.minY).toBeCloseTo(world.minY, 10);
@@ -1815,7 +1825,7 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
         const config = configFor(geometry, 10.5);
         const layout = deriveLayout(config, null, false, id);
 
-        for (const cylinder of layout.primary.cylinders) {
+        for (const cylinder of layout.primary!.cylinders) {
           expect(
             cylinder.offsetXMm + cylinder.bounds.minX,
           ).toBeGreaterThanOrEqual(layout.bounds.minX - 1e-9);
@@ -1837,7 +1847,7 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
     for (const id of BANKED) {
       // Two multi-cylinder engines: the stacked arrangement (§24a).
       const layout = deriveLayout(LS7, B6_1_6, true, id, "flat-4");
-      const a = worldBounds(layout.primary);
+      const a = worldBounds(layout.primary!);
       const b = worldBounds(layout.secondary!);
 
       // No overlap, engine A above engine B, and the union framed exactly
@@ -1851,7 +1861,7 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
       expect((layout.bounds.minX + layout.bounds.maxX) / 2).toBeCloseTo(0, 10);
 
       // Each label stays centered under its own tilted row.
-      expect(layout.primary.label!.anchorXMm).toBeCloseTo(
+      expect(layout.primary!.label!.anchorXMm).toBeCloseTo(
         (a.minX + a.maxX) / 2,
         10,
       );
@@ -1865,15 +1875,15 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
   it("still places two banked engines side by side when both show one cylinder", () => {
     for (const id of BANKED) {
       const layout = deriveLayout(LS7, B6_1_6, true, id, "flat-4", true, true);
-      const a = worldBounds(layout.primary);
+      const a = worldBounds(layout.primary!);
       const b = worldBounds(layout.secondary!);
 
       expect(layout.arrangement).toBe("side-by-side");
       expect(a.maxX).toBeLessThan(b.minX);
       // Both crankshafts stay on y = 0, as they always have.
-      expect(layout.primary.cylinders[0].offsetYMm).toBe(0);
+      expect(layout.primary!.cylinders[0].offsetYMm).toBe(0);
       expect(layout.secondary!.cylinders[0].offsetYMm).toBe(0);
-      expect(layout.primary.label!.anchorYMm).toBeCloseTo(
+      expect(layout.primary!.label!.anchorYMm).toBeCloseTo(
         layout.secondary!.label!.anchorYMm,
         10,
       );
@@ -1884,8 +1894,8 @@ describe("deriveLayout — V and flat layouts (§24a)", () => {
     const single = deriveLayout(LS7, null, false, "single");
     const v8 = deriveLayout(LS7, null, false, "v8-cross");
 
-    expect(v8.primary.proportions).toEqual(single.primary.proportions);
-    expect(v8.primary.cylinders).toHaveLength(8);
+    expect(v8.primary!.proportions).toEqual(single.primary!.proportions);
+    expect(v8.primary!.cylinders).toHaveLength(8);
   });
 });
 
@@ -1953,14 +1963,14 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
 
   it("draws the two cylinders of each throw around one crank center", () => {
     for (const id of PAIRED) {
-      const cylinders = deriveLayout(DEFAULT_CONFIG, null, false, id).primary
+      const cylinders = deriveLayout(DEFAULT_CONFIG, null, false, id).primary!
         .cylinders;
       const definition = createEngineLayout(id);
 
       // Half as many planes as cylinders, and the pair on throw k — indices
       // 2k and 2k+1, which is how the layout orders its banks — shares one.
       expect(
-        throwSlots(deriveLayout(DEFAULT_CONFIG, null, false, id).primary),
+        throwSlots(deriveLayout(DEFAULT_CONFIG, null, false, id).primary!),
       ).toHaveLength(definition.cylinders.length / 2);
 
       for (let k = 0; 2 * k + 1 < cylinders.length; k += 1) {
@@ -1986,9 +1996,9 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
         null,
         false,
         id,
-      ).primary;
+      ).primary!;
       expect(
-        throwSlots(deriveLayout(DEFAULT_CONFIG, null, false, id).primary),
+        throwSlots(deriveLayout(DEFAULT_CONFIG, null, false, id).primary!),
       ).toHaveLength(cylinders.length);
       for (const cylinder of cylinders) {
         expect(cylinder.throwIndex).toBe(cylinder.index);
@@ -2016,7 +2026,7 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
 
     for (const id of PAIRED) {
       for (const slot of throwSlots(
-        deriveLayout(DEFAULT_CONFIG, null, false, id).primary,
+        deriveLayout(DEFAULT_CONFIG, null, false, id).primary!,
       )) {
         expect(slot.cylinders).toHaveLength(2);
         expect(slot.cylinders.filter((c) => c.drawsCrank)).toHaveLength(
@@ -2037,10 +2047,10 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
     for (const [, geometry] of GEOMETRIES) {
       const config = configFor(geometry, 10.5);
       const layout = deriveLayout(config, null, false, "flat-4");
-      const p = layout.primary.proportions;
+      const p = layout.primary!.proportions;
       const step = p.rodDepthMm / 2;
 
-      for (const slot of throwSlots(layout.primary)) {
+      for (const slot of throwSlots(layout.primary!)) {
         expect(slot.cylinders[0].offsetZMm).toBe(0);
         expect(slot.cylinders[1].offsetZMm).toBe(-step);
       }
@@ -2073,7 +2083,7 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
         null,
         false,
         id,
-      ).primary;
+      ).primary!;
       const front = cylinders.filter((c) => c.index === 0);
 
       expect(front).toHaveLength(1);
@@ -2090,7 +2100,7 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
 
     // Four V-shaped slots instead of eight upright ones, at unchanged slot
     // spacing: the row loses four whole slots of width.
-    const slots = throwSlots(after.primary);
+    const slots = throwSlots(after.primary!);
     expect(slots).toHaveLength(4);
     expect(slots[1].offsetXMm - slots[0].offsetXMm).toBeCloseTo(
       before.spacingMm,
@@ -2121,14 +2131,14 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
         const expected = perCylinderRow(config, id);
         const layout = deriveLayout(config, null, false, id);
 
-        expect(layout.primary.cylinders.map((c) => c.offsetXMm)).toEqual(
+        expect(layout.primary!.cylinders.map((c) => c.offsetXMm)).toEqual(
           expected.offsetsXMm,
         );
-        expect(layout.primary.cylinders.map((c) => c.offsetYMm)).toEqual(
+        expect(layout.primary!.cylinders.map((c) => c.offsetYMm)).toEqual(
           expected.offsetsXMm.map(() => 0),
         );
         expect(layout.bounds).toEqual(expected.bounds);
-        expect(layout.primary.bounds).toEqual(expected.bounds);
+        expect(layout.primary!.bounds).toEqual(expected.bounds);
       }
     }
   });
@@ -2137,7 +2147,7 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
     // A V8 over a flat-6: four slots against three, each row at its own
     // spacing and centered on its own crank span (§24a).
     const layout = deriveLayout(LS7, B6_1_6, false, "v8-cross", "flat-6");
-    const a = throwSlots(layout.primary);
+    const a = throwSlots(layout.primary!);
     const b = throwSlots(layout.secondary!);
 
     expect(layout.arrangement).toBe("stacked");
@@ -2158,7 +2168,7 @@ describe("deriveLayout — one plane per throw for V and flat engines (§24a)", 
 
     // Engine A still sits above engine B, with every cylinder of each row on
     // its own engine's crankshaft height.
-    for (const cylinder of layout.primary.cylinders) {
+    for (const cylinder of layout.primary!.cylinders) {
       expect(cylinder.offsetYMm).toBe(0);
     }
     const centerYB = layout.secondary!.cylinders[0].offsetYMm;
@@ -2214,12 +2224,12 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
           false,
           upright,
         );
-        const cylinder = layout.primary.cylinders[0];
+        const cylinder = layout.primary!.cylinders[0];
 
-        expect(layout.primary.cylinders).toHaveLength(1);
+        expect(layout.primary!.cylinders).toHaveLength(1);
         expect(cylinder.drawnRotationRad).toBe(0);
         // Measured upright too, so framing and spacing follow the drawing.
-        expect(cylinder.bounds).toEqual(layout.primary.proportions.bounds);
+        expect(cylinder.bounds).toEqual(layout.primary!.proportions.bounds);
         // ...while the engine's own geometry is reported untouched.
         expect(cylinder.bankOffsetRad).toBe(
           createEngineLayout(id).cylinders[0].bankOffsetRad,
@@ -2243,8 +2253,8 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
     for (const id of ALL) {
       const one = deriveLayout(DEFAULT_CONFIG, null, true, id, "single", true);
       expect(one.bounds).toEqual(reference.bounds);
-      expect(one.primary.cylinders[0].bounds).toEqual(
-        reference.primary.cylinders[0].bounds,
+      expect(one.primary!.cylinders[0].bounds).toEqual(
+        reference.primary!.cylinders[0].bounds,
       );
     }
   });
@@ -2263,9 +2273,9 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
     // Part 1 is about rotation only: the arrangement rule keys off how many
     // cylinders are shown, which it does not touch.
     expect(layout.arrangement).toBe("side-by-side");
-    expect(layout.primary.cylinders[0].drawnRotationRad).toBe(0);
+    expect(layout.primary!.cylinders[0].drawnRotationRad).toBe(0);
     expect(layout.secondary!.cylinders[0].drawnRotationRad).toBe(0);
-    expect(worldBounds(layout.primary).maxX).toBeLessThan(
+    expect(worldBounds(layout.primary!).maxX).toBeLessThan(
       worldBounds(layout.secondary!).minX,
     );
   });
@@ -2275,13 +2285,13 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
       const layout = deriveLayout(DEFAULT_CONFIG, null, false, id);
       const definition = createEngineLayout(id);
 
-      layout.primary.cylinders.forEach((cylinder, i) => {
+      layout.primary!.cylinders.forEach((cylinder, i) => {
         expect(cylinder.drawnRotationRad).toBe(
           definition.cylinders[i].bankOffsetRad,
         );
         expect(cylinder.bounds).toEqual(
           rotateBounds(
-            layout.primary.proportions.bounds,
+            layout.primary!.proportions.bounds,
             cylinder.bankOffsetRad,
           ),
         );
@@ -2304,15 +2314,15 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
       );
       const flat = (FLAT as readonly string[]).includes(id);
 
-      on.primary.cylinders.forEach((cylinder, i) => {
+      on.primary!.cylinders.forEach((cylinder, i) => {
         expect(cylinder.drawnRotationRad).toBeCloseTo(
-          off.primary.cylinders[i].drawnRotationRad +
+          off.primary!.cylinders[i].drawnRotationRad +
             (flat ? UPRIGHT_FLAT_ROTATION_RAD : 0),
           12,
         );
         // The engine layer keeps describing the real engine either way.
         expect(cylinder.bankOffsetRad).toBe(
-          off.primary.cylinders[i].bankOffsetRad,
+          off.primary!.cylinders[i].bankOffsetRad,
         );
       });
     }
@@ -2347,7 +2357,7 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
         true,
       );
 
-      for (const slot of throwSlots(layout.primary)) {
+      for (const slot of throwSlots(layout.primary!)) {
         expect(slot.cylinders).toHaveLength(2);
         const up = boreDirection(slot.cylinders[0].drawnRotationRad);
         const down = boreDirection(slot.cylinders[1].drawnRotationRad);
@@ -2379,15 +2389,15 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
         true,
       );
 
-      on.primary.cylinders.forEach((cylinder, i) => {
-        expect(cylinder.drawsCrank).toBe(off.primary.cylinders[i].drawsCrank);
-        expect(cylinder.throwIndex).toBe(off.primary.cylinders[i].throwIndex);
+      on.primary!.cylinders.forEach((cylinder, i) => {
+        expect(cylinder.drawsCrank).toBe(off.primary!.cylinders[i].drawsCrank);
+        expect(cylinder.throwIndex).toBe(off.primary!.cylinders[i].throwIndex);
         expect(cylinder.crankPhaseRad).toBe(
-          off.primary.cylinders[i].crankPhaseRad,
+          off.primary!.cylinders[i].crankPhaseRad,
         );
       });
 
-      for (const slot of throwSlots(on.primary)) {
+      for (const slot of throwSlots(on.primary!)) {
         expect(slot.cylinders[0].drawsCrank).toBe(true);
         if (slot.cylinders.length === 2) {
           expect(slot.cylinders[1].drawsCrank).toBe(
@@ -2397,8 +2407,10 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
       }
       // ...and the crank-direction ring is still drawn exactly once, on the
       // cylinder `MechanismStage` gates it on.
-      expect(on.primary.cylinders.filter((c) => c.index === 0)).toHaveLength(1);
-      expect(on.primary.cylinders[0].index).toBe(0);
+      expect(on.primary!.cylinders.filter((c) => c.index === 0)).toHaveLength(
+        1,
+      );
+      expect(on.primary!.cylinders[0].index).toBe(0);
     }
   });
 
@@ -2415,8 +2427,8 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
       true,
     );
 
-    const lying = throwSlots(flat.primary)[0].bounds;
-    const standing = throwSlots(upright.primary)[0].bounds;
+    const lying = throwSlots(flat.primary!)[0].bounds;
+    const standing = throwSlots(upright.primary!)[0].bounds;
 
     // A quarter turn swaps the footprint's axes exactly.
     expect(standing.maxX - standing.minX).toBeCloseTo(
@@ -2450,7 +2462,7 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
           false,
           true,
         );
-        const slots = throwSlots(layout.primary);
+        const slots = throwSlots(layout.primary!);
 
         // Adjacent throws stay clear of one another at the new footprint.
         for (let i = 1; i < slots.length; i += 1) {
@@ -2463,7 +2475,7 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
 
         // ...and the published bounds are exactly the union of what is drawn,
         // centered on x = 0, so the camera fit cannot clip a standing bore.
-        const world = worldBounds(layout.primary);
+        const world = worldBounds(layout.primary!);
         expect((world.minX + world.maxX) / 2).toBeCloseTo(0, 9);
         expect(layout.bounds.minX).toBeCloseTo(world.minX, 9);
         expect(layout.bounds.maxX).toBeCloseTo(world.maxX, 9);
@@ -2498,7 +2510,7 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
         expect(layout.arrangement).toBe(expected);
 
         // Whatever the axis, the two engines never overlap.
-        const a = worldBounds(layout.primary);
+        const a = worldBounds(layout.primary!);
         const b = worldBounds(layout.secondary!);
         if (expected === "stacked") {
           expect(b.maxY).toBeLessThan(a.minY);
@@ -2521,7 +2533,7 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
       true,
     );
 
-    for (const engine of [layout.primary, layout.secondary!]) {
+    for (const engine of [layout.primary!, layout.secondary!]) {
       for (const cylinder of engine.cylinders) {
         expect(cylinder.drawnRotationRad).toBeCloseTo(
           cylinder.bankOffsetRad + UPRIGHT_FLAT_ROTATION_RAD,
@@ -2548,7 +2560,7 @@ describe("drawn orientation — presentation, not the layout's real geometry (§
             false,
             upright,
           );
-          for (const cylinder of layout.primary.cylinders) {
+          for (const cylinder of layout.primary!.cylinders) {
             expect(cylinder.drawnRotationRad).toBe(
               drawnRotationRad(cylinder, definition.kind, single, upright),
             );
@@ -2574,7 +2586,7 @@ describe("deriveLayout — the architecture rides out with the row (§24a)", () 
       "inline-6",
     );
 
-    expect(layout.primary.layout).toBe(createEngineLayout("v8-cross"));
+    expect(layout.primary!.layout).toBe(createEngineLayout("v8-cross"));
     expect(layout.secondary?.layout).toBe(createEngineLayout("inline-6"));
   });
 
@@ -2591,8 +2603,389 @@ describe("deriveLayout — the architecture rides out with the row (§24a)", () 
       true,
     );
 
-    expect(layout.primary.cylinders).toHaveLength(1);
-    expect(layout.primary.layout).toBe(createEngineLayout("v6-90-odd"));
-    expect(layout.primary.layout.cylinders).toHaveLength(6);
+    expect(layout.primary!.cylinders).toHaveLength(1);
+    expect(layout.primary!.layout).toBe(createEngineLayout("v6-90-odd"));
+    expect(layout.primary!.layout.cylinders).toHaveLength(6);
+  });
+});
+
+/**
+ * The rotary family on stage (§27).
+ *
+ * Two things to prove. First, that a rotary row is spaced and framed by the
+ * same rules a piston row is — same gap fraction, same centering, same union
+ * bounds — because those rules were extracted into `RowMetrics` specifically so
+ * both families could share them. Second, and the real risk, that a piston
+ * engine and a rotary can share one stage: nothing in the placement code
+ * branches on family, so a cross-family comparison is either correct or the
+ * extraction was wrong.
+ */
+
+const ROTARY_13B: RotaryConfig = {
+  generatingRadiusMm: 105,
+  eccentricityMm: 15,
+  rotorWidthMm: 80,
+  compressionRatio: 9,
+  redlineRpm: 8000,
+};
+
+/** A narrower rotor: same housing outline, less width. */
+const ROTARY_12A: RotaryConfig = { ...ROTARY_13B, rotorWidthMm: 70 };
+
+function rotarySlot(
+  rotorCount: RotaryRotorCount,
+  config: RotaryConfig = ROTARY_13B,
+) {
+  return { config, rotorCount };
+}
+
+/** World extents rebuilt from a rotary row's own rotor placements. */
+function rotaryWorldBounds(placed: PlacedRotaryEngine): SceneBounds {
+  const { rotors } = placed;
+  return {
+    minX: Math.min(...rotors.map((r) => r.offsetXMm + r.bounds.minX)),
+    maxX: Math.max(...rotors.map((r) => r.offsetXMm + r.bounds.maxX)),
+    minY: Math.min(...rotors.map((r) => r.offsetYMm + r.bounds.minY)),
+    maxY: Math.max(...rotors.map((r) => r.offsetYMm + r.bounds.maxY)),
+  };
+}
+
+/** `deriveLayout` with every piston argument at its default, plus rotary slots. */
+function rotaryLayout(
+  slots: RotarySlots,
+  comparisonConfig: CrankMechanismConfig | null = null,
+  showLabels = false,
+) {
+  return deriveLayout(
+    DEFAULT_CONFIG,
+    comparisonConfig,
+    showLabels,
+    "single",
+    "single",
+    false,
+    false,
+    false,
+    slots,
+  );
+}
+
+describe("deriveLayout - a rotary engine alone", () => {
+  it("fills the rotary slot and leaves the piston one empty", () => {
+    const layout = rotaryLayout({ primary: rotarySlot(2) });
+
+    expect(layout.primary).toBeNull();
+    expect(layout.secondary).toBeNull();
+    expect(layout.secondaryRotary).toBeNull();
+    expect(layout.primaryRotary).not.toBeNull();
+    expect(layout.arrangement).toBe("single");
+  });
+
+  it("ignores the piston arguments entirely for a rotary slot", () => {
+    // A rotary slot's `config`, `layoutId`, and cylinder view describe a
+    // mechanism it is not drawing, so changing any of them must not move it.
+    const plain = rotaryLayout({ primary: rotarySlot(2) });
+    const noisy = deriveLayout(
+      LS7,
+      null,
+      false,
+      "inline-6",
+      "v8-cross",
+      true,
+      false,
+      true,
+      { primary: rotarySlot(2) },
+    );
+
+    expect(noisy.primaryRotary!.rotors).toEqual(plain.primaryRotary!.rotors);
+    expect(noisy.bounds).toEqual(plain.bounds);
+  });
+
+  it.each([1, 2, 3] as const)(
+    "draws %i rotor(s), phased from the engine layer",
+    (count) => {
+      const rotary = rotaryLayout({
+        primary: rotarySlot(count),
+      }).primaryRotary!;
+
+      expect(rotary.rotorCount).toBe(count);
+      expect(rotary.rotors).toHaveLength(count);
+      expect(rotary.rotors.map((r) => r.index)).toEqual(
+        ROTARY_ROTOR_PHASES[count].map((_, i) => i),
+      );
+      // Phases are the engine layer's, never invented here.
+      expect(rotary.rotors.map((r) => r.rotorPhaseRad)).toEqual([
+        ...ROTARY_ROTOR_PHASES[count],
+      ]);
+    },
+  );
+
+  it.each([1, 2, 3] as const)(
+    "spaces %i rotor(s) by the same rule an inline row uses",
+    (count) => {
+      const rotary = rotaryLayout({
+        primary: rotarySlot(count),
+      }).primaryRotary!;
+      const p = deriveRotaryProportions(ROTARY_13B);
+      const expectedSpacing =
+        (p.bounds.maxX - p.bounds.minX) * (1 + INLINE_GAP_FRACTION);
+
+      for (let i = 1; i < rotary.rotors.length; i += 1) {
+        expect(
+          rotary.rotors[i].offsetXMm - rotary.rotors[i - 1].offsetXMm,
+        ).toBeCloseTo(expectedSpacing, 9);
+      }
+      // Spacing exceeds a housing's own width, so no two housings can overlap.
+      expect(expectedSpacing).toBeGreaterThan(p.bounds.maxX - p.bounds.minX);
+    },
+  );
+
+  it.each([1, 2, 3] as const)("centers a %i-rotor row on x = 0", (count) => {
+    const rotary = rotaryLayout({ primary: rotarySlot(count) }).primaryRotary!;
+    const centers = rotary.rotors.map((r) => r.offsetXMm);
+
+    expect((Math.min(...centers) + Math.max(...centers)) / 2).toBeCloseTo(0, 9);
+    // A housing is symmetric about its shaft center, so the drawn row is too.
+    expect(rotary.bounds.minX).toBeCloseTo(-rotary.bounds.maxX, 9);
+  });
+
+  it.each([1, 2, 3] as const)(
+    "publishes bounds that really contain %i rotor(s)",
+    (count) => {
+      const layout = rotaryLayout({ primary: rotarySlot(count) });
+      const rotary = layout.primaryRotary!;
+      const rebuilt = rotaryWorldBounds(rotary);
+
+      expect(rotary.bounds.minX).toBeCloseTo(rebuilt.minX, 9);
+      expect(rotary.bounds.maxX).toBeCloseTo(rebuilt.maxX, 9);
+      expect(rotary.bounds.minY).toBeCloseTo(rebuilt.minY, 9);
+      expect(rotary.bounds.maxY).toBeCloseTo(rebuilt.maxY, 9);
+      // And the camera frames at least that much.
+      expect(layout.bounds.minX).toBeLessThanOrEqual(rotary.bounds.minX);
+      expect(layout.bounds.maxX).toBeGreaterThanOrEqual(rotary.bounds.maxX);
+      expect(layout.bounds.maxY).toBeGreaterThanOrEqual(rotary.bounds.maxY);
+    },
+  );
+
+  it("spaces from the housing outline, which rotor width does not change", () => {
+    // Two engines differing only in b share a housing outline, so they must be
+    // spaced identically — the same statement as an inline row's spacing
+    // depending on the bore rather than on the stroke.
+    const wide = rotaryLayout({ primary: rotarySlot(2, ROTARY_13B) });
+    const narrow = rotaryLayout({ primary: rotarySlot(2, ROTARY_12A) });
+
+    expect(narrow.primaryRotary!.rotors[1].offsetXMm).toBeCloseTo(
+      wide.primaryRotary!.rotors[1].offsetXMm,
+      9,
+    );
+
+    // A genuinely bigger housing does space further apart, though.
+    const big = rotaryLayout({
+      primary: rotarySlot(2, { ...ROTARY_13B, generatingRadiusMm: 140 }),
+    });
+    expect(big.primaryRotary!.rotors[1].offsetXMm).toBeGreaterThan(
+      wide.primaryRotary!.rotors[1].offsetXMm,
+    );
+  });
+
+  it("labels a rotary row by rotor count and rated displacement", () => {
+    const layout = rotaryLayout({ primary: rotarySlot(2) }, null, true);
+    const label = layout.primaryRotary!.label!;
+
+    expect(label.slot).toBeNull();
+    expect(label.name).toBe(describeRotaryConfig(ROTARY_13B, 2));
+    expect(label.name).toMatch(/1,309 cc/);
+    // Centered under the row, and below it.
+    expect(label.anchorXMm).toBeCloseTo(0, 9);
+    expect(label.anchorYMm).toBeLessThan(layout.primaryRotary!.bounds.minY);
+    // The label band is reserved in the framed bounds, exactly as for a piston.
+    expect(layout.bounds.minY).toBeLessThan(label.anchorYMm);
+  });
+
+  it("omits the label when labels are hidden", () => {
+    expect(rotaryLayout({ primary: rotarySlot(2) }).primaryRotary!.label).toBe(
+      null,
+    );
+  });
+});
+
+describe("deriveLayout - comparing across families", () => {
+  it("puts a single-rotor engine beside a single cylinder", () => {
+    // Both slots draw exactly one mechanism, so the side-by-side arrangement
+    // applies whichever family each of them is.
+    const layout = deriveLayout(
+      DEFAULT_CONFIG,
+      LS7,
+      false,
+      "single",
+      "single",
+      true,
+      true,
+      false,
+      { primary: rotarySlot(1) },
+    );
+
+    expect(layout.arrangement).toBe("side-by-side");
+    expect(layout.primaryRotary).not.toBeNull();
+    expect(layout.secondary).not.toBeNull();
+    expect(layout.primary).toBeNull();
+    expect(layout.secondaryRotary).toBeNull();
+    // A is left of B, and they do not overlap.
+    expect(layout.primaryRotary!.bounds.maxX).toBeLessThan(
+      layout.secondary!.bounds.minX,
+    );
+  });
+
+  it("stacks as soon as either side draws more than one mechanism", () => {
+    const twoRotors = deriveLayout(
+      DEFAULT_CONFIG,
+      LS7,
+      false,
+      "single",
+      "single",
+      true,
+      true,
+      false,
+      { primary: rotarySlot(2) },
+    );
+    expect(twoRotors.arrangement).toBe("stacked");
+
+    const wholeV8 = deriveLayout(
+      DEFAULT_CONFIG,
+      LS7,
+      false,
+      "single",
+      "v8-cross",
+      true,
+      false,
+      false,
+      { primary: rotarySlot(1) },
+    );
+    expect(wholeV8.arrangement).toBe("stacked");
+  });
+
+  it("stacks a rotary above a V8 without either row colliding or escaping the frame", () => {
+    const layout = deriveLayout(
+      DEFAULT_CONFIG,
+      LS7,
+      false,
+      "single",
+      "v8-cross",
+      true,
+      false,
+      false,
+      { primary: rotarySlot(2) },
+    );
+    const rotary = layout.primaryRotary!;
+    const piston = layout.secondary!;
+
+    expect(layout.arrangement).toBe("stacked");
+    // A above B, with clear air between them.
+    expect(piston.bounds.maxY).toBeLessThan(rotary.bounds.minY);
+    // Engine A keeps its shaft centerline on y = 0, exactly as it does alone.
+    expect(rotary.rotors.every((r) => r.offsetYMm === 0)).toBe(true);
+    // One shared frame covering both.
+    expect(layout.bounds.minX).toBeLessThanOrEqual(
+      Math.min(rotary.bounds.minX, piston.bounds.minX),
+    );
+    expect(layout.bounds.maxX).toBeGreaterThanOrEqual(
+      Math.max(rotary.bounds.maxX, piston.bounds.maxX),
+    );
+    expect(layout.bounds.minY).toBeLessThanOrEqual(piston.bounds.minY);
+    expect(layout.bounds.maxY).toBeGreaterThanOrEqual(rotary.bounds.maxY);
+  });
+
+  it("frames a cross-family pair identically whichever slot the rotary is in", () => {
+    // The placement code cannot branch on family, so swapping the two slots
+    // must mirror the stage rather than change its size.
+    const rotaryFirst = deriveLayout(
+      DEFAULT_CONFIG,
+      LS7,
+      false,
+      "single",
+      "single",
+      true,
+      true,
+      false,
+      { primary: rotarySlot(1) },
+    );
+    const rotarySecond = deriveLayout(
+      LS7,
+      DEFAULT_CONFIG,
+      false,
+      "single",
+      "single",
+      true,
+      true,
+      false,
+      { secondary: rotarySlot(1) },
+    );
+
+    expect(rotarySecond.bounds.maxX - rotarySecond.bounds.minX).toBeCloseTo(
+      rotaryFirst.bounds.maxX - rotaryFirst.bounds.minX,
+      9,
+    );
+    expect(rotarySecond.secondaryRotary!.bounds.maxX).toBeCloseTo(
+      -rotaryFirst.primaryRotary!.bounds.minX,
+      9,
+    );
+  });
+
+  it("compares two rotaries, each spaced by its own housing", () => {
+    const layout = deriveLayout(
+      DEFAULT_CONFIG,
+      DEFAULT_CONFIG,
+      true,
+      "single",
+      "single",
+      true,
+      true,
+      false,
+      {
+        primary: rotarySlot(2),
+        secondary: rotarySlot(3, {
+          ...ROTARY_13B,
+          generatingRadiusMm: 60,
+          eccentricityMm: 8,
+        }),
+      },
+    );
+
+    expect(layout.primary).toBeNull();
+    expect(layout.secondary).toBeNull();
+    expect(layout.arrangement).toBe("stacked");
+    expect(layout.primaryRotary!.rotors).toHaveLength(2);
+    expect(layout.secondaryRotary!.rotors).toHaveLength(3);
+    // Each row keeps its own spacing: the smaller engine's rotors sit closer
+    // together, exactly as an inline-6 keeps its own beside a V8's.
+    const spacingA =
+      layout.primaryRotary!.rotors[1].offsetXMm -
+      layout.primaryRotary!.rotors[0].offsetXMm;
+    const spacingB =
+      layout.secondaryRotary!.rotors[1].offsetXMm -
+      layout.secondaryRotary!.rotors[0].offsetXMm;
+    expect(spacingB).toBeLessThan(spacingA);
+    // Both labels present, one per slot.
+    expect(layout.primaryRotary!.label?.slot).toBe("A");
+    expect(layout.secondaryRotary!.label?.slot).toBe("B");
+  });
+
+  it("leaves slot B empty when comparison is off, even if a rotary is named", () => {
+    // Comparison is governed by `comparisonConfig`, as it always has been; a
+    // named slot B with no comparison must not conjure a second engine.
+    const layout = rotaryLayout({ secondary: rotarySlot(2) });
+
+    expect(layout.secondary).toBeNull();
+    expect(layout.secondaryRotary).toBeNull();
+    expect(layout.arrangement).toBe("single");
+  });
+});
+
+describe("rotarySlotFor", () => {
+  it("names a slot only when its family is rotary", () => {
+    expect(rotarySlotFor("rotary", ROTARY_13B, 2)).toEqual({
+      config: ROTARY_13B,
+      rotorCount: 2,
+    });
+    expect(rotarySlotFor("piston", ROTARY_13B, 2)).toBeNull();
   });
 });

@@ -12,7 +12,12 @@ import type {
 } from "../engine/types";
 import { DEFAULT_LAYOUT_ID } from "../engine/engineLayout";
 import type { EngineLayoutId } from "../engine/engineLayout";
-import type { PartialShareState } from "../engine/shareLink";
+import type { EngineFamily, PartialShareState } from "../engine/shareLink";
+import {
+  DEFAULT_ROTARY_CONFIG,
+  DEFAULT_ROTARY_ROTOR_COUNT,
+} from "../engine/rotaryConstants";
+import type { RotaryConfig, RotaryRotorCount } from "../engine/rotaryTypes";
 
 /**
  * Global application store.
@@ -95,23 +100,73 @@ interface EngineStore {
    */
   comparisonCrankAngleRad: number;
   /**
-   * Which of the two crank revolutions in engine A's 720° four-stroke cycle
-   * is current (`src/engine/cycle.ts`'s pedagogical overlay): 0 for the first
-   * revolution since the last cycle boundary, 1 for the second. Like
-   * `crankAngleRad`, this is authoritative while paused or scrubbing; while
-   * playing, the animation loop owns it in the same ref as the live angle
-   * and mirrors it here only at the throttled READOUT_SYNC_HZ cadence, never
-   * per frame. Scrubbing (§11.1) deliberately never resets it: the scrub
-   * slider is 0–360° and cannot express which of the two revolutions the
-   * crank is on, so whatever parity was last playing is what resumes.
+   * Which whole shaft revolution of engine A's cycle is current, counted mod
+   * 6 (`CrankRevolutionIndex` in `src/scene/useMechanismAnimation.ts`, where
+   * the counter lives and where the reason for 6 is set out).
+   *
+   * One counter serves both engine families: a piston engine reads `% 2` to
+   * get the four-stroke revolution parity it used to keep here directly
+   * (`src/engine/cycle.ts`), and a rotary reads `% 3` to get which of the
+   * three eccentric-shaft revolutions of its 1080° face cycle is current
+   * (`src/engine/rotaryCycle.ts`). Both derivations are exact, because 6 is
+   * lcm(2, 3).
+   *
+   * Typed as a literal union here rather than imported from the scene layer:
+   * the store must not depend on `src/scene/`, and the two declarations are
+   * kept honest by the sync actions below, which only ever receive a value
+   * the loop produced.
+   *
+   * Like `crankAngleRad`, this is authoritative while paused or scrubbing;
+   * while playing, the animation loop owns it in the same ref as the live
+   * angle and mirrors it here only at the throttled READOUT_SYNC_HZ cadence,
+   * never per frame. Scrubbing (§11.1) deliberately never resets it: the
+   * scrub slider is 0–360° and cannot express which revolution of a
+   * multi-revolution cycle the shaft is on, so whatever was last playing is
+   * what resumes.
    */
-  crankRevolutionParity: 0 | 1;
+  crankRevolutionIndex: 0 | 1 | 2 | 3 | 4 | 5;
   /**
-   * Engine B's parity bit. Equal to `crankRevolutionParity` while
+   * Engine B's revolution index. Equal to `crankRevolutionIndex` while
    * rpm-linked; once unlinked the animation loop advances and mirrors it
    * independently, exactly like `comparisonCrankAngleRad`.
    */
-  comparisonCrankRevolutionParity: 0 | 1;
+  comparisonCrankRevolutionIndex: 0 | 1 | 2 | 3 | 4 | 5;
+  /**
+   * Which engine family slot A shows (TECHNICAL_DESIGN.md §27): `"piston"`
+   * (the default, `config`/`layoutId`/...) or `"rotary"` (`rotaryConfig`/
+   * `rotaryRotorCount`). A second parallel set of fields, not a discriminated
+   * union — every existing piston field stays exactly as it was, untouched by
+   * a family switch, so a consumer that doesn't yet know about rotary keeps
+   * working unmodified. Switching family is a geometry-class change (§11.1):
+   * it must never reset `crankAngleRad` or playback, exactly like
+   * `setLayoutId`. The store's `crankAngleRad` keeps meaning the ECCENTRIC-
+   * SHAFT angle for a rotary slot — same field, same rpm semantics, same
+   * scrub slider — because a rotary tachometer reads shaft rpm too; only the
+   * scene's interpretation of that angle differs per family.
+   */
+  engineFamily: EngineFamily;
+  /**
+   * Engine B's family. `enableComparison` seeds it from engine A's current
+   * `engineFamily`, alongside `comparisonLayoutId` and `comparisonRpm`, so a
+   * comparison starts as two copies of what engine A is currently showing.
+   * `disableComparison` leaves it alone, so a later re-enable re-seeds from
+   * engine A's family at that time rather than restoring a stale value.
+   */
+  comparisonEngineFamily: EngineFamily;
+  /**
+   * Engine A's rotary geometry (R, e, rotor width, compression ratio,
+   * redline). Carried regardless of `engineFamily` — exactly like `config`,
+   * which is likewise kept even while a slot shows rotary — so switching a
+   * slot's family back and forth never loses whichever geometry isn't
+   * currently on screen.
+   */
+  rotaryConfig: RotaryConfig;
+  /** Engine B's rotary geometry; seeded from `rotaryConfig` by `enableComparison`. */
+  comparisonRotaryConfig: RotaryConfig;
+  /** Engine A's rotor count (1, 2, or 3) — the rotary's architecture, alongside `rotaryConfig`. */
+  rotaryRotorCount: RotaryRotorCount;
+  /** Engine B's rotor count; seeded from `rotaryRotorCount` by `enableComparison`. */
+  comparisonRotaryRotorCount: RotaryRotorCount;
 
   setConfig: (partial: Partial<CrankMechanismConfig>) => void;
   /**
@@ -137,6 +192,24 @@ interface EngineStore {
   setSingleCylinderView: (single: boolean) => void;
   /** Engine B's equivalent; no-op-safe while comparison is off. */
   setComparisonSingleCylinderView: (single: boolean) => void;
+  /**
+   * Family change (§27, §11.1): switches engine A between piston and
+   * rotary. A geometry-class change like `setLayoutId` — it never resets
+   * `crankAngleRad` or playback, and it never touches the piston or rotary
+   * config fields themselves, so the geometry each family last had is
+   * exactly what reappears when you switch back.
+   */
+  setEngineFamily: (family: EngineFamily) => void;
+  /** Engine B's equivalent. */
+  setComparisonEngineFamily: (family: EngineFamily) => void;
+  /** Geometry change (§11.1): never resets crank angle or playback. */
+  setRotaryConfig: (partial: Partial<RotaryConfig>) => void;
+  /** Engine B's equivalent. */
+  setComparisonRotaryConfig: (partial: Partial<RotaryConfig>) => void;
+  /** Architecture change (§11.1), the rotary analog of `setLayoutId`: never resets crank angle or playback. */
+  setRotaryRotorCount: (count: RotaryRotorCount) => void;
+  /** Engine B's equivalent. */
+  setComparisonRotaryRotorCount: (count: RotaryRotorCount) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setDisplayUnit: (unit: DisplayUnit) => void;
   setShowLabels: (show: boolean) => void;
@@ -160,8 +233,8 @@ interface EngineStore {
   setRpm: (rpm: number) => void;
   setComparisonRpm: (rpm: number) => void;
   /**
-   * Linking re-synchronizes engine B onto engine A's angle (and cycle
-   * parity) immediately, so the two mechanisms never sit visibly out of
+   * Linking re-synchronizes engine B onto engine A's angle (and revolution
+   * index) immediately, so the two mechanisms never sit visibly out of
    * phase while claiming to share a speed.
    */
   setRpmLinked: (linked: boolean) => void;
@@ -177,13 +250,13 @@ interface EngineStore {
   syncCrankAngle: (angleRad: number) => void;
   /** Throttled mirror of engine B's angle; only meaningful while unlinked. */
   syncComparisonCrankAngle: (angleRad: number) => void;
-  /** Throttled mirror of engine A's revolution-parity bit, alongside the angle. */
-  syncCrankRevolutionParity: (parity: 0 | 1) => void;
+  /** Throttled mirror of engine A's revolution index, alongside the angle. */
+  syncCrankRevolutionIndex: (index: 0 | 1 | 2 | 3 | 4 | 5) => void;
   /**
-   * Throttled mirror of engine B's revolution-parity bit; only meaningful
+   * Throttled mirror of engine B's revolution index; only meaningful
    * while unlinked, exactly like `syncComparisonCrankAngle`.
    */
-  syncComparisonCrankRevolutionParity: (parity: 0 | 1) => void;
+  syncComparisonCrankRevolutionIndex: (index: 0 | 1 | 2 | 3 | 4 | 5) => void;
   /**
    * Applies a decoded share link (`decodeShareState`) to the store. Every
    * field is optional and independent: whatever the link carried is
@@ -226,8 +299,14 @@ export const useEngineStore = create<EngineStore>((set) => ({
   isPlaying: initialIsPlaying(),
   crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
   comparisonCrankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
-  crankRevolutionParity: 0,
-  comparisonCrankRevolutionParity: 0,
+  crankRevolutionIndex: 0,
+  comparisonCrankRevolutionIndex: 0,
+  engineFamily: "piston",
+  comparisonEngineFamily: "piston",
+  rotaryConfig: DEFAULT_ROTARY_CONFIG,
+  comparisonRotaryConfig: DEFAULT_ROTARY_CONFIG,
+  rotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
+  comparisonRotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
 
   setConfig: (partial) =>
     set((state) => ({ config: { ...state.config, ...partial } })),
@@ -246,6 +325,12 @@ export const useEngineStore = create<EngineStore>((set) => ({
       // while studying one cylinder gives you two single cylinders, not one
       // cylinder beside a whole engine.
       comparisonSingleCylinderView: state.singleCylinderView,
+      // §27: comparison starts as two copies of engine A's family and rotary
+      // geometry too, same reasoning as the piston fields above — a fresh
+      // comparison shows the same engine twice, whichever family that is.
+      comparisonEngineFamily: state.engineFamily,
+      comparisonRotaryConfig: state.rotaryConfig,
+      comparisonRotaryRotorCount: state.rotaryRotorCount,
     })),
   disableComparison: () => set({ comparisonConfig: null }),
   setComparisonConfig: (partial) =>
@@ -259,6 +344,18 @@ export const useEngineStore = create<EngineStore>((set) => ({
   setSingleCylinderView: (single) => set({ singleCylinderView: single }),
   setComparisonSingleCylinderView: (single) =>
     set({ comparisonSingleCylinderView: single }),
+  setEngineFamily: (family) => set({ engineFamily: family }),
+  setComparisonEngineFamily: (family) =>
+    set({ comparisonEngineFamily: family }),
+  setRotaryConfig: (partial) =>
+    set((state) => ({ rotaryConfig: { ...state.rotaryConfig, ...partial } })),
+  setComparisonRotaryConfig: (partial) =>
+    set((state) => ({
+      comparisonRotaryConfig: { ...state.comparisonRotaryConfig, ...partial },
+    })),
+  setRotaryRotorCount: (count) => set({ rotaryRotorCount: count }),
+  setComparisonRotaryRotorCount: (count) =>
+    set({ comparisonRotaryRotorCount: count }),
   setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
   setDisplayUnit: (unit) =>
     set((state) => ({
@@ -284,7 +381,7 @@ export const useEngineStore = create<EngineStore>((set) => ({
         ? {
             rpmLinked,
             comparisonCrankAngleRad: state.crankAngleRad,
-            comparisonCrankRevolutionParity: state.crankRevolutionParity,
+            comparisonCrankRevolutionIndex: state.crankRevolutionIndex,
           }
         : { rpmLinked },
     ),
@@ -299,9 +396,9 @@ export const useEngineStore = create<EngineStore>((set) => ({
   syncCrankAngle: (angleRad) => set({ crankAngleRad: angleRad }),
   syncComparisonCrankAngle: (angleRad) =>
     set({ comparisonCrankAngleRad: angleRad }),
-  syncCrankRevolutionParity: (parity) => set({ crankRevolutionParity: parity }),
-  syncComparisonCrankRevolutionParity: (parity) =>
-    set({ comparisonCrankRevolutionParity: parity }),
+  syncCrankRevolutionIndex: (index) => set({ crankRevolutionIndex: index }),
+  syncComparisonCrankRevolutionIndex: (index) =>
+    set({ comparisonCrankRevolutionIndex: index }),
   hydrateFromShareState: (partial) =>
     set((state) => ({
       config: partial.config ?? state.config,
@@ -321,6 +418,22 @@ export const useEngineStore = create<EngineStore>((set) => ({
       // in which case the current view stands.
       singleCylinderView:
         partial.singleCylinderView ?? state.singleCylinderView,
+      // §27: same `??` pattern once more — a link either named a family
+      // (`fam`/`bfam`) or it didn't, in which case the current family
+      // stands (a legacy link with no family params therefore leaves a
+      // fresh session on its default, piston). Rotary geometry and rotor
+      // count follow the same rule, independent of which family is actually
+      // showing right now — they are carried, not gated, exactly like
+      // `config`/`comparisonConfig` above.
+      engineFamily: partial.engineFamily ?? state.engineFamily,
+      comparisonEngineFamily:
+        partial.comparisonEngineFamily ?? state.comparisonEngineFamily,
+      rotaryConfig: partial.rotaryConfig ?? state.rotaryConfig,
+      comparisonRotaryConfig:
+        partial.comparisonRotaryConfig ?? state.comparisonRotaryConfig,
+      rotaryRotorCount: partial.rotaryRotorCount ?? state.rotaryRotorCount,
+      comparisonRotaryRotorCount:
+        partial.comparisonRotaryRotorCount ?? state.comparisonRotaryRotorCount,
       comparisonSingleCylinderView:
         partial.comparisonSingleCylinderView ??
         state.comparisonSingleCylinderView,

@@ -12,6 +12,15 @@ import {
 import { calculateCylinderDisplacementCc } from "../../engine/calculations";
 import { DEFAULT_LAYOUT_ID } from "../../engine/engineLayout";
 import { ENGINE_PRESETS } from "../../engine/presets";
+import {
+  calculateChamberDisplacementCc,
+  calculateKFactor,
+} from "../../engine/rotaryCalculations";
+import {
+  DEFAULT_ROTARY_CONFIG,
+  DEFAULT_ROTARY_ROTOR_COUNT,
+} from "../../engine/rotaryConstants";
+import { ROTARY_ENGINE_PRESETS } from "../../engine/rotaryPresets";
 import { formatRounded } from "../shared/formatting";
 import { METRIC_INFO_BY_ID } from "../shared/calculationFormatting";
 import type { CrankMechanismConfig } from "../../engine/types";
@@ -24,6 +33,12 @@ function resetStore() {
     comparisonLayoutId: DEFAULT_LAYOUT_ID,
     singleCylinderView: true,
     comparisonSingleCylinderView: true,
+    engineFamily: "piston",
+    comparisonEngineFamily: "piston",
+    rotaryConfig: { ...DEFAULT_ROTARY_CONFIG },
+    comparisonRotaryConfig: { ...DEFAULT_ROTARY_CONFIG },
+    rotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
+    comparisonRotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
     preferences: {
       displayUnit: "mm",
       showLabels: true,
@@ -439,5 +454,124 @@ describe("CalculationPanel", () => {
       expect(controlsId).toBeTruthy();
       expect(document.getElementById(controlsId!)).not.toBeNull();
     });
+  });
+});
+
+describe("CalculationPanel — rotary slots (§27)", () => {
+  const RX7_13B = ROTARY_ENGINE_PRESETS.find((p) => p.id === "13b-rew")!;
+
+  it("shows chamber displacement, K-factor, compression ratio, and redline for a rotary slot", () => {
+    useEngineStore.setState({
+      engineFamily: "rotary",
+      rotaryConfig: RX7_13B.config,
+      rotaryRotorCount: RX7_13B.rotorCount,
+    });
+    render(<CalculationPanel />);
+
+    const expectedChamberCc = calculateChamberDisplacementCc(RX7_13B.config);
+    expect(getResultValue("Chamber displacement")).toBe(
+      `${formatRounded(expectedChamberCc, 1)} cc`,
+    );
+    expect(getResultValue("K-factor")).toBe(
+      `${formatRounded(calculateKFactor(RX7_13B.config), 2)}:1`,
+    );
+    expect(getResultValue("Compression ratio")).toBe(
+      `${formatRounded(RX7_13B.config.compressionRatio, 1)}:1`,
+    );
+    expect(getResultValue("Redline")).toContain("8,000");
+  });
+
+  it("shows engine displacement (Vd × rotor count) only once rotor count exceeds 1", () => {
+    useEngineStore.setState({
+      engineFamily: "rotary",
+      rotaryConfig: DEFAULT_ROTARY_CONFIG,
+      rotaryRotorCount: 1,
+    });
+    render(<CalculationPanel />);
+    expect(
+      screen.queryByRole("button", { name: "Engine displacement" }),
+    ).not.toBeInTheDocument();
+
+    useEngineStore.setState({ rotaryRotorCount: 2 });
+    // A store-driven re-render: CalculationPanel subscribes directly, so a
+    // fresh render reflects the new state without an explicit rerender call
+    // in this test suite's existing pattern (see other tests in this file).
+    cleanup();
+    render(<CalculationPanel />);
+    expect(
+      screen.getByRole("button", { name: "Engine displacement" }),
+    ).toBeInTheDocument();
+    expect(getResultValue("Engine displacement")).toBe(
+      `${formatRounded(calculateChamberDisplacementCc(DEFAULT_ROTARY_CONFIG) * 2, 1)} cc`,
+    );
+  });
+
+  it("shows peak power/torque for a matched rotary preset, and — for an unmatched one", () => {
+    useEngineStore.setState({
+      engineFamily: "rotary",
+      rotaryConfig: RX7_13B.config,
+      rotaryRotorCount: RX7_13B.rotorCount,
+    });
+    const matched = render(<CalculationPanel />);
+    expect(getResultValue("Peak power")).toContain("255 hp");
+    expect(getResultValue("Peak torque")).toContain("217 lb-ft");
+    matched.unmount();
+
+    useEngineStore.setState({
+      rotaryConfig: {
+        ...RX7_13B.config,
+        eccentricityMm: RX7_13B.config.eccentricityMm + 1,
+      },
+    });
+    render(<CalculationPanel />);
+    expect(getResultValue("Peak power")).toBe("—");
+    expect(getResultValue("Peak torque")).toBe("—");
+  });
+
+  it("hides every piston-only row for a rotary slot", () => {
+    useEngineStore.setState({
+      engineFamily: "rotary",
+      rotaryConfig: RX7_13B.config,
+      rotaryRotorCount: RX7_13B.rotorCount,
+    });
+    render(<CalculationPanel />);
+
+    for (const label of [
+      "Cylinder displacement",
+      "Bore-to-stroke ratio",
+      "Rod-to-stroke ratio",
+      "Mean piston speed",
+      "Mean piston speed at redline",
+      "Clearance volume",
+      "Clearance height (TDC)",
+      "Current crank angle",
+      "Piston-to-head distance",
+      "Piston displacement from TDC",
+      "Current piston-to-head distance",
+      "Connecting-rod angle",
+    ]) {
+      expect(screen.queryByRole("button", { name: label })).toBeNull();
+    }
+  });
+
+  it("hides rotary-only rows again once the slot switches back to piston", () => {
+    useEngineStore.setState({ engineFamily: "rotary" });
+    const rotary = render(<CalculationPanel />);
+    expect(
+      screen.getByRole("button", { name: "Chamber displacement" }),
+    ).toBeInTheDocument();
+    rotary.unmount();
+
+    useEngineStore.setState({ engineFamily: "piston" });
+    render(<CalculationPanel />);
+    expect(
+      screen.queryByRole("button", { name: "Chamber displacement" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "K-factor" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cylinder displacement" }),
+    ).toBeInTheDocument();
   });
 });

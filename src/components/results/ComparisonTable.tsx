@@ -15,6 +15,12 @@ import {
   createEngineLayout,
   visibleCylinderCount,
 } from "../../engine/engineLayout";
+import {
+  calculateChamberDisplacementCc,
+  calculateKFactor,
+  calculateRotaryEngineDisplacementCc,
+} from "../../engine/rotaryCalculations";
+import type { EngineFamily } from "../../engine/shareLink";
 import type { CrankMechanismConfig, MechanismState } from "../../engine/types";
 import {
   classifyBoreStrokeRatio,
@@ -26,11 +32,42 @@ import {
   lengthForDisplay,
   lengthRangeForDisplay,
   matchingPresetOutput,
+  matchingRotaryPresetOutput,
   peakOutputForDisplay,
 } from "../shared/calculationFormatting";
 import { useMetricInfoToggle } from "../shared/useMetricInfoToggle";
 import { MetricLabelButton } from "../shared/MetricLabelButton";
 import styles from "./ComparisonTable.module.css";
+
+/** Shown in a family-specific column/difference cell that does not apply to that side. */
+const NOT_APPLICABLE = "—";
+
+/** A row's cell for a family-gated metric: the real value on the matching family's side, else "—". */
+function familyCell(
+  family: EngineFamily,
+  requiredFamily: EngineFamily,
+  value: string,
+): string {
+  return family === requiredFamily ? value : NOT_APPLICABLE;
+}
+
+/**
+ * A family-gated row's difference: only meaningful when BOTH sides belong to
+ * the family the row describes (comparing a real piston-only figure against
+ * "—" is not a percentage of anything).
+ */
+function familyDifference(
+  familyA: EngineFamily,
+  familyB: EngineFamily,
+  requiredFamily: EngineFamily,
+  numA: number,
+  numB: number,
+): string {
+  if (familyA !== requiredFamily || familyB !== requiredFamily) {
+    return NOT_APPLICABLE;
+  }
+  return percentDifference(numA, numB);
+}
 
 interface EngineMetrics {
   mechanism: MechanismState;
@@ -153,6 +190,17 @@ interface TableRow {
  * `crankAngleRad` the way an earlier version of this table did.
  */
 export function ComparisonTable() {
+  const familyA = useEngineStore((state) => state.engineFamily);
+  const familyB = useEngineStore((state) => state.comparisonEngineFamily);
+  const rotaryConfigA = useEngineStore((state) => state.rotaryConfig);
+  const rotaryConfigB = useEngineStore((state) => state.comparisonRotaryConfig);
+  const rotorCountA = useEngineStore((state) => state.rotaryRotorCount);
+  const rotorCountB = useEngineStore(
+    (state) => state.comparisonRotaryRotorCount,
+  );
+  const showPistonRows = familyA === "piston" || familyB === "piston";
+  const showRotaryRows = familyA === "rotary" || familyB === "rotary";
+
   const config = useEngineStore((state) => state.config);
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const layoutId = useEngineStore((state) => state.layoutId);
@@ -191,8 +239,23 @@ export function ComparisonTable() {
 
   const metricsA = computeMetrics(config, rpm, crankAngleRad);
   const metricsB = computeMetrics(configB, rpmB, angleRadB);
-  const outputA = matchingPresetOutput(config);
-  const outputB = matchingPresetOutput(configB);
+  // Each side's peak output comes from whichever family that side actually
+  // shows (§27) — a piston preset match for a piston side, a rotary preset
+  // match for a rotary one — so "peak power"/"peak torque" stay meaningful
+  // even in a mixed piston-vs-rotary comparison.
+  const outputA =
+    familyA === "rotary"
+      ? matchingRotaryPresetOutput(rotaryConfigA)
+      : matchingPresetOutput(config);
+  const outputB =
+    familyB === "rotary"
+      ? matchingRotaryPresetOutput(rotaryConfigB)
+      : matchingPresetOutput(configB);
+
+  const chamberDisplacementCcA = calculateChamberDisplacementCc(rotaryConfigA);
+  const chamberDisplacementCcB = calculateChamberDisplacementCc(rotaryConfigB);
+  const kFactorA = calculateKFactor(rotaryConfigA);
+  const kFactorB = calculateKFactor(rotaryConfigB);
 
   const angleDegA = `${formatRounded(radToDeg(crankAngleRad), 1)}°`;
   const angleDegB = `${formatRounded(radToDeg(angleRadB), 1)}°`;
@@ -210,29 +273,89 @@ export function ComparisonTable() {
     createEngineLayout(comparisonLayoutId),
     comparisonSingleCylinderView,
   );
-  const engineDisplacementCcA = metricsA.displacementCc * cylinderCountA;
-  const engineDisplacementCcB = metricsB.displacementCc * cylinderCountB;
-  // Engine displacement only says something beyond cylinder displacement
-  // once at least one side has more than one cylinder on stage; with both
-  // sides single-cylinder the row would just repeat the row above it, so it
-  // is left out rather than shown as pure duplication. The moment either
-  // side is multi-cylinder, though, the row is exactly the comparison being
-  // made (e.g. a 4-cylinder's smaller total vs. a 6-cylinder's larger one)
-  // and must appear even though the other side's own total still equals its
-  // cylinder figure.
-  const showEngineDisplacement = cylinderCountA > 1 || cylinderCountB > 1;
+  // Each side's engine displacement and "unit" count (cylinders for piston,
+  // rotors for rotary) come from that side's own family (§27) — a shared
+  // row, unlike the family-gated ones below, because both families have a
+  // genuine whole-engine displacement figure and comparing them (a rotary's
+  // rated cc against a piston's) is exactly the kind of comparison this
+  // table exists for.
+  const engineDisplacementCcA =
+    familyA === "rotary"
+      ? calculateRotaryEngineDisplacementCc(rotaryConfigA, rotorCountA)
+      : metricsA.displacementCc * cylinderCountA;
+  const engineDisplacementCcB =
+    familyB === "rotary"
+      ? calculateRotaryEngineDisplacementCc(rotaryConfigB, rotorCountB)
+      : metricsB.displacementCc * cylinderCountB;
+  const unitCountA = familyA === "rotary" ? rotorCountA : cylinderCountA;
+  const unitCountB = familyB === "rotary" ? rotorCountB : cylinderCountB;
+  // Engine displacement only says something beyond cylinder/chamber
+  // displacement once at least one side has more than one unit (cylinder or
+  // rotor) on stage; with both sides single-unit the row would just repeat
+  // the row above it, so it is left out rather than shown as pure
+  // duplication. The moment either side has more than one, though, the row
+  // is exactly the comparison being made and must appear even though the
+  // other side's own total still equals its single-unit figure.
+  const showEngineDisplacement = unitCountA > 1 || unitCountB > 1;
 
+  // Piston-only and rotary-only rows appear only when at least one side
+  // actually belongs to that family (§27) — a piston-vs-piston comparison
+  // therefore shows exactly the row set it always has, and a rotary-vs-rotary
+  // comparison shows only the rotary set, with the piston rows never
+  // cluttering the table with an all-"—" column nobody asked to see. Only a
+  // genuinely mixed piston-vs-rotary comparison shows both sets side by
+  // side, "—" filling the gap on whichever side that row doesn't apply to.
   const rows: TableRow[] = [
-    {
-      id: "cylinderDisplacement",
-      label: "Cylinder displacement",
-      a: `${formatRounded(metricsA.displacementCc, 1)} cc`,
-      b: `${formatRounded(metricsB.displacementCc, 1)} cc`,
-      difference: percentDifference(
-        metricsA.displacementCc,
-        metricsB.displacementCc,
-      ),
-    },
+    ...(showPistonRows
+      ? [
+          {
+            id: "cylinderDisplacement",
+            label: "Cylinder displacement",
+            a: familyCell(
+              familyA,
+              "piston",
+              `${formatRounded(metricsA.displacementCc, 1)} cc`,
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              `${formatRounded(metricsB.displacementCc, 1)} cc`,
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.displacementCc,
+              metricsB.displacementCc,
+            ),
+          },
+        ]
+      : []),
+    ...(showRotaryRows
+      ? [
+          {
+            id: "chamberDisplacement",
+            label: "Chamber displacement",
+            a: familyCell(
+              familyA,
+              "rotary",
+              `${formatRounded(chamberDisplacementCcA, 1)} cc`,
+            ),
+            b: familyCell(
+              familyB,
+              "rotary",
+              `${formatRounded(chamberDisplacementCcB, 1)} cc`,
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "rotary",
+              chamberDisplacementCcA,
+              chamberDisplacementCcB,
+            ),
+          },
+        ]
+      : []),
     ...(showEngineDisplacement
       ? [
           {
@@ -240,11 +363,12 @@ export function ComparisonTable() {
             label: "Engine displacement",
             a: `${formatRounded(engineDisplacementCcA, 1)} cc`,
             b: `${formatRounded(engineDisplacementCcB, 1)} cc`,
-            // Unlike every row above, this difference is computed on each
-            // side's own total (per-cylinder cc times that side's own
-            // visible cylinder count) — the whole point of this row's
-            // existence is to compare the two engines' actual swept
-            // volumes, not their per-cylinder geometry a second time.
+            // Unlike the family-gated rows above, this is a shared row: both
+            // families have a genuine whole-engine displacement, computed by
+            // each side's own convention (cylinder count for piston, rotor
+            // count for rotary — see this metric's METRIC_INFO_BY_ID entry
+            // for the rotary convention's own controversy), so the
+            // difference is real even across a mixed comparison.
             difference: percentDifference(
               engineDisplacementCcA,
               engineDisplacementCcB,
@@ -252,155 +376,335 @@ export function ComparisonTable() {
           },
         ]
       : []),
+    ...(showPistonRows
+      ? [
+          {
+            id: "boreStrokeRatio",
+            label: "Bore-to-stroke ratio",
+            a: familyCell(
+              familyA,
+              "piston",
+              `${formatRounded(metricsA.boreStrokeRatio, 2)}:1 · ${classifyBoreStrokeRatio(metricsA.boreStrokeRatio)}`,
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              `${formatRounded(metricsB.boreStrokeRatio, 2)}:1 · ${classifyBoreStrokeRatio(metricsB.boreStrokeRatio)}`,
+            ),
+            // The classification label is descriptive, not numeric — the percent
+            // difference still comes from the underlying numeric ratio alone.
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.boreStrokeRatio,
+              metricsB.boreStrokeRatio,
+            ),
+          },
+          {
+            id: "rodStrokeRatio",
+            label: "Rod-to-stroke ratio",
+            a: familyCell(
+              familyA,
+              "piston",
+              `${formatRounded(metricsA.rodStrokeRatio, 2)}:1`,
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              `${formatRounded(metricsB.rodStrokeRatio, 2)}:1`,
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.rodStrokeRatio,
+              metricsB.rodStrokeRatio,
+            ),
+          },
+        ]
+      : []),
+    ...(showRotaryRows
+      ? [
+          {
+            id: "kFactor",
+            label: "K-factor",
+            a: familyCell(familyA, "rotary", `${formatRounded(kFactorA, 2)}:1`),
+            b: familyCell(familyB, "rotary", `${formatRounded(kFactorB, 2)}:1`),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "rotary",
+              kFactorA,
+              kFactorB,
+            ),
+          },
+        ]
+      : []),
     {
-      id: "boreStrokeRatio",
-      label: "Bore-to-stroke ratio",
-      a: `${formatRounded(metricsA.boreStrokeRatio, 2)}:1 · ${classifyBoreStrokeRatio(metricsA.boreStrokeRatio)}`,
-      b: `${formatRounded(metricsB.boreStrokeRatio, 2)}:1 · ${classifyBoreStrokeRatio(metricsB.boreStrokeRatio)}`,
-      // The classification label is descriptive, not numeric — the percent
-      // difference still comes from the underlying numeric ratio alone.
-      difference: percentDifference(
-        metricsA.boreStrokeRatio,
-        metricsB.boreStrokeRatio,
-      ),
-    },
-    {
-      id: "rodStrokeRatio",
-      label: "Rod-to-stroke ratio",
-      a: `${formatRounded(metricsA.rodStrokeRatio, 2)}:1`,
-      b: `${formatRounded(metricsB.rodStrokeRatio, 2)}:1`,
-      difference: percentDifference(
-        metricsA.rodStrokeRatio,
-        metricsB.rodStrokeRatio,
-      ),
-    },
-    {
+      // Shared row (§27): both families have a rated redline (a rotary's is
+      // the eccentric-shaft rpm a rotary tachometer reads), so this compares
+      // meaningfully across a mixed comparison too.
       id: "redline",
       label: "Redline",
-      a: formatRpm(config.redlineRpm),
-      b: formatRpm(configB.redlineRpm),
-      difference: percentDifference(config.redlineRpm, configB.redlineRpm),
-    },
-    {
-      id: "meanPistonSpeed",
-      label: "Mean piston speed",
-      a: `${formatRounded(metricsA.meanPistonSpeedMps, 2)} m/s`,
-      b: `${formatRounded(metricsB.meanPistonSpeedMps, 2)} m/s`,
+      a: formatRpm(
+        familyA === "rotary" ? rotaryConfigA.redlineRpm : config.redlineRpm,
+      ),
+      b: formatRpm(
+        familyB === "rotary" ? rotaryConfigB.redlineRpm : configB.redlineRpm,
+      ),
       difference: percentDifference(
-        metricsA.meanPistonSpeedMps,
-        metricsB.meanPistonSpeedMps,
+        familyA === "rotary" ? rotaryConfigA.redlineRpm : config.redlineRpm,
+        familyB === "rotary" ? rotaryConfigB.redlineRpm : configB.redlineRpm,
       ),
     },
+    ...(showPistonRows
+      ? [
+          {
+            id: "meanPistonSpeed",
+            label: "Mean piston speed",
+            a: familyCell(
+              familyA,
+              "piston",
+              `${formatRounded(metricsA.meanPistonSpeedMps, 2)} m/s`,
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              `${formatRounded(metricsB.meanPistonSpeedMps, 2)} m/s`,
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.meanPistonSpeedMps,
+              metricsB.meanPistonSpeedMps,
+            ),
+          },
+          {
+            id: "meanPistonSpeedRedline",
+            label: "Mean piston speed at redline",
+            a: familyCell(
+              familyA,
+              "piston",
+              `${formatRounded(metricsA.meanPistonSpeedAtRedlineMps, 2)} m/s`,
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              `${formatRounded(metricsB.meanPistonSpeedAtRedlineMps, 2)} m/s`,
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.meanPistonSpeedAtRedlineMps,
+              metricsB.meanPistonSpeedAtRedlineMps,
+            ),
+          },
+        ]
+      : []),
     {
-      id: "meanPistonSpeedRedline",
-      label: "Mean piston speed at redline",
-      a: `${formatRounded(metricsA.meanPistonSpeedAtRedlineMps, 2)} m/s`,
-      b: `${formatRounded(metricsB.meanPistonSpeedAtRedlineMps, 2)} m/s`,
-      difference: percentDifference(
-        metricsA.meanPistonSpeedAtRedlineMps,
-        metricsB.meanPistonSpeedAtRedlineMps,
-      ),
-    },
-    {
-      // Compression ratio is what produces the two rows below it (clearance
-      // volume, then clearance height) — grouped here, right above them,
-      // rather than with bore-to-stroke/rod-to-stroke above, so the ratio
-      // and the two figures it implies read as one sequence: ratio, the
-      // volume it implies, the height at TDC that volume implies. Like
-      // redline below, this is an input value rather than a derived one,
-      // but the table already shows redline this way, so this is consistent
-      // with existing precedent rather than a new category of row.
+      // Shared row (§27): both families have a compression ratio, computed
+      // the same way (swept volume over clearance volume), so it compares
+      // meaningfully across a mixed comparison too. Grouped here, right
+      // above the piston-only clearance rows it produces, exactly as it was
+      // before rotary existed.
       id: "compressionRatio",
       label: "Compression ratio",
-      a: `${formatRounded(config.compressionRatio, 1)}:1`,
-      b: `${formatRounded(configB.compressionRatio, 1)}:1`,
+      a: `${formatRounded(
+        familyA === "rotary"
+          ? rotaryConfigA.compressionRatio
+          : config.compressionRatio,
+        1,
+      )}:1`,
+      b: `${formatRounded(
+        familyB === "rotary"
+          ? rotaryConfigB.compressionRatio
+          : configB.compressionRatio,
+        1,
+      )}:1`,
       difference: percentDifference(
-        config.compressionRatio,
-        configB.compressionRatio,
+        familyA === "rotary"
+          ? rotaryConfigA.compressionRatio
+          : config.compressionRatio,
+        familyB === "rotary"
+          ? rotaryConfigB.compressionRatio
+          : configB.compressionRatio,
       ),
     },
+    ...(showPistonRows
+      ? [
+          {
+            id: "clearanceVolume",
+            label: "Clearance volume",
+            a: familyCell(
+              familyA,
+              "piston",
+              `${formatRounded(metricsA.clearanceVolumeCc, 1)} cc`,
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              `${formatRounded(metricsB.clearanceVolumeCc, 1)} cc`,
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.clearanceVolumeCc,
+              metricsB.clearanceVolumeCc,
+            ),
+          },
+          {
+            id: "clearanceHeight",
+            label: "Clearance height (TDC)",
+            a: familyCell(
+              familyA,
+              "piston",
+              lengthForDisplay(metricsA.clearanceHeightMm, displayUnit),
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              lengthForDisplay(metricsB.clearanceHeightMm, displayUnit),
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.clearanceHeightMm,
+              metricsB.clearanceHeightMm,
+            ),
+          },
+          {
+            id: "currentCrankAngle",
+            label: "Current crank angle",
+            a: familyCell(familyA, "piston", angleDegA),
+            b: familyCell(familyB, "piston", angleDegB),
+            // Linked engines share one crank angle by definition — not a
+            // per-engine comparison, so no percentage there (a real "0.0%"
+            // would misleadingly suggest this happens to match rather than can
+            // never differ). Unlinked, the two angles genuinely drift apart, so
+            // this is a real, meaningful difference like any other row's.
+            difference:
+              familyA !== "piston" || familyB !== "piston"
+                ? NOT_APPLICABLE
+                : rpmLinked
+                  ? NOT_APPLICABLE
+                  : percentDifference(
+                      radToDeg(crankAngleRad),
+                      radToDeg(angleRadB),
+                    ),
+          },
+          {
+            id: "pistonToHeadRange",
+            label: "Piston-to-head distance",
+            a: familyCell(
+              familyA,
+              "piston",
+              lengthRangeForDisplay(
+                metricsA.pistonToHeadMinMm,
+                metricsA.pistonToHeadMaxMm,
+                displayUnit,
+              ),
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              lengthRangeForDisplay(
+                metricsB.pistonToHeadMinMm,
+                metricsB.pistonToHeadMaxMm,
+                displayUnit,
+              ),
+            ),
+            // A min-max range, not a single scalar — no one percentage applies.
+            difference: NOT_APPLICABLE,
+          },
+          {
+            id: "pistonDisplacement",
+            label: "Piston displacement from TDC",
+            a: familyCell(
+              familyA,
+              "piston",
+              lengthForDisplay(
+                metricsA.mechanism.pistonDisplacementMm,
+                displayUnit,
+              ),
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              lengthForDisplay(
+                metricsB.mechanism.pistonDisplacementMm,
+                displayUnit,
+              ),
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.mechanism.pistonDisplacementMm,
+              metricsB.mechanism.pistonDisplacementMm,
+            ),
+          },
+          {
+            id: "currentPistonToHead",
+            label: "Current piston-to-head distance",
+            a: familyCell(
+              familyA,
+              "piston",
+              lengthForDisplay(metricsA.pistonToHeadCurrentMm, displayUnit),
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              lengthForDisplay(metricsB.pistonToHeadCurrentMm, displayUnit),
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              metricsA.pistonToHeadCurrentMm,
+              metricsB.pistonToHeadCurrentMm,
+            ),
+          },
+        ]
+      : []),
+    ...(showPistonRows
+      ? [
+          {
+            id: "rodAngle",
+            label: "Connecting-rod angle",
+            a: familyCell(
+              familyA,
+              "piston",
+              `${formatRounded(radToDeg(metricsA.mechanism.rodAngleRad), 1)}°`,
+            ),
+            b: familyCell(
+              familyB,
+              "piston",
+              `${formatRounded(radToDeg(metricsB.mechanism.rodAngleRad), 1)}°`,
+            ),
+            difference: familyDifference(
+              familyA,
+              familyB,
+              "piston",
+              radToDeg(metricsA.mechanism.rodAngleRad),
+              radToDeg(metricsB.mechanism.rodAngleRad),
+            ),
+          },
+        ]
+      : []),
     {
-      id: "clearanceVolume",
-      label: "Clearance volume",
-      a: `${formatRounded(metricsA.clearanceVolumeCc, 1)} cc`,
-      b: `${formatRounded(metricsB.clearanceVolumeCc, 1)} cc`,
-      difference: percentDifference(
-        metricsA.clearanceVolumeCc,
-        metricsB.clearanceVolumeCc,
-      ),
-    },
-    {
-      id: "clearanceHeight",
-      label: "Clearance height (TDC)",
-      a: lengthForDisplay(metricsA.clearanceHeightMm, displayUnit),
-      b: lengthForDisplay(metricsB.clearanceHeightMm, displayUnit),
-      difference: percentDifference(
-        metricsA.clearanceHeightMm,
-        metricsB.clearanceHeightMm,
-      ),
-    },
-    {
-      id: "currentCrankAngle",
-      label: "Current crank angle",
-      a: angleDegA,
-      b: angleDegB,
-      // Linked engines share one crank angle by definition — not a
-      // per-engine comparison, so no percentage there (a real "0.0%"
-      // would misleadingly suggest this happens to match rather than can
-      // never differ). Unlinked, the two angles genuinely drift apart, so
-      // this is a real, meaningful difference like any other row's.
-      difference: rpmLinked
-        ? "—"
-        : percentDifference(radToDeg(crankAngleRad), radToDeg(angleRadB)),
-    },
-    {
-      id: "pistonToHeadRange",
-      label: "Piston-to-head distance",
-      a: lengthRangeForDisplay(
-        metricsA.pistonToHeadMinMm,
-        metricsA.pistonToHeadMaxMm,
-        displayUnit,
-      ),
-      b: lengthRangeForDisplay(
-        metricsB.pistonToHeadMinMm,
-        metricsB.pistonToHeadMaxMm,
-        displayUnit,
-      ),
-      // A min-max range, not a single scalar — no one percentage applies.
-      difference: "—",
-    },
-    {
-      id: "pistonDisplacement",
-      label: "Piston displacement from TDC",
-      a: lengthForDisplay(metricsA.mechanism.pistonDisplacementMm, displayUnit),
-      b: lengthForDisplay(metricsB.mechanism.pistonDisplacementMm, displayUnit),
-      difference: percentDifference(
-        metricsA.mechanism.pistonDisplacementMm,
-        metricsB.mechanism.pistonDisplacementMm,
-      ),
-    },
-    {
-      id: "currentPistonToHead",
-      label: "Current piston-to-head distance",
-      a: lengthForDisplay(metricsA.pistonToHeadCurrentMm, displayUnit),
-      b: lengthForDisplay(metricsB.pistonToHeadCurrentMm, displayUnit),
-      difference: percentDifference(
-        metricsA.pistonToHeadCurrentMm,
-        metricsB.pistonToHeadCurrentMm,
-      ),
-    },
-    {
-      id: "rodAngle",
-      label: "Connecting-rod angle",
-      a: `${formatRounded(radToDeg(metricsA.mechanism.rodAngleRad), 1)}°`,
-      b: `${formatRounded(radToDeg(metricsB.mechanism.rodAngleRad), 1)}°`,
-      difference: percentDifference(
-        radToDeg(metricsA.mechanism.rodAngleRad),
-        radToDeg(metricsB.mechanism.rodAngleRad),
-      ),
-    },
-    {
-      // Whole-engine figures (all cylinders), unlike every other row above —
+      // Whole-engine figures (all cylinders/rotors), unlike every family-gated
+      // row above — see this metric's METRIC_INFO_BY_ID entry, which says so
+      // plainly. A shared row (§27): `outputA`/`outputB` already resolve to
+      // each side's own family's preset match, so this compares meaningfully
+      // across a mixed comparison too. "—" on a side when that side's
+      // geometry matches no preset with published output, same convention as
+      // every other preset-derived value; the difference follows suit when
+      // either side is missing.
       // see this metric's METRIC_INFO_BY_ID entry, which says so plainly.
       // "—" on a side when that side's geometry matches no preset with
       // published output, same convention as every other preset-derived
@@ -412,7 +716,7 @@ export function ComparisonTable() {
       difference:
         outputA && outputB
           ? percentDifference(outputA.powerHp, outputB.powerHp)
-          : "—",
+          : NOT_APPLICABLE,
     },
     {
       id: "peakTorque",
@@ -422,7 +726,7 @@ export function ComparisonTable() {
       difference:
         outputA && outputB
           ? percentDifference(outputA.torqueLbFt, outputB.torqueLbFt)
-          : "—",
+          : NOT_APPLICABLE,
     },
   ];
 

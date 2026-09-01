@@ -29,6 +29,12 @@ export function getShareState(): ShareState {
     isPlaying: state.isPlaying,
     crankAngleRad: state.crankAngleRad,
     comparisonCrankAngleRad: state.comparisonCrankAngleRad,
+    engineFamily: state.engineFamily,
+    comparisonEngineFamily: state.comparisonEngineFamily,
+    rotaryConfig: state.rotaryConfig,
+    comparisonRotaryConfig: state.comparisonRotaryConfig,
+    rotaryRotorCount: state.rotaryRotorCount,
+    comparisonRotaryRotorCount: state.comparisonRotaryRotorCount,
   };
 }
 

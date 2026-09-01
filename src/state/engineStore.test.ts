@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { useEngineStore } from "./engineStore";
 import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../engine/constants";
 import { DEFAULT_LAYOUT_ID } from "../engine/engineLayout";
+import {
+  DEFAULT_ROTARY_CONFIG,
+  DEFAULT_ROTARY_ROTOR_COUNT,
+} from "../engine/rotaryConstants";
+import { ROTARY_ENGINE_PRESETS } from "../engine/rotaryPresets";
 
 /** Resets the store to its module-level initial state before each test. */
 function resetStore() {
@@ -23,6 +28,12 @@ function resetStore() {
     rpmLinked: true,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
     comparisonCrankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
+    engineFamily: "piston",
+    comparisonEngineFamily: "piston",
+    rotaryConfig: { ...DEFAULT_ROTARY_CONFIG },
+    comparisonRotaryConfig: { ...DEFAULT_ROTARY_CONFIG },
+    rotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
+    comparisonRotaryRotorCount: DEFAULT_ROTARY_ROTOR_COUNT,
   });
 }
 
@@ -292,6 +303,128 @@ describe("hydrateFromShareState — cylinder views", () => {
 
     expect(useEngineStore.getState().singleCylinderView).toBe(false);
     expect(useEngineStore.getState().comparisonSingleCylinderView).toBe(true);
+    expect(useEngineStore.getState().rpm).toBe(4500);
+  });
+});
+
+const RX7_13B = ROTARY_ENGINE_PRESETS.find((p) => p.id === "13b-rew")!;
+
+describe("engineFamily / rotaryConfig / rotaryRotorCount (§27)", () => {
+  it("opens on the piston family with the default rotary geometry ready to switch to", () => {
+    const fresh = useEngineStore.getInitialState();
+    expect(fresh.engineFamily).toBe("piston");
+    expect(fresh.comparisonEngineFamily).toBe("piston");
+    expect(fresh.rotaryConfig).toEqual(DEFAULT_ROTARY_CONFIG);
+    expect(fresh.rotaryRotorCount).toBe(DEFAULT_ROTARY_ROTOR_COUNT);
+  });
+
+  it("setEngineFamily switches families without touching crank angle, playback, or the piston config", () => {
+    useEngineStore.setState({
+      config: { ...DEFAULT_CONFIG, boreMm: 91 },
+      crankAngleRad: 1.23,
+      isPlaying: true,
+    });
+
+    useEngineStore.getState().setEngineFamily("rotary");
+
+    expect(useEngineStore.getState().engineFamily).toBe("rotary");
+    expect(useEngineStore.getState().crankAngleRad).toBe(1.23);
+    expect(useEngineStore.getState().isPlaying).toBe(true);
+    // The piston geometry is untouched — switching back would show it
+    // exactly as it was.
+    expect(useEngineStore.getState().config.boreMm).toBe(91);
+  });
+
+  it("switching family and back preserves both families' geometry (parallel fields, not a union)", () => {
+    useEngineStore.getState().setRotaryConfig({ eccentricityMm: 17 });
+    useEngineStore.getState().setEngineFamily("rotary");
+    useEngineStore.getState().setEngineFamily("piston");
+
+    expect(useEngineStore.getState().rotaryConfig.eccentricityMm).toBe(17);
+    expect(useEngineStore.getState().config).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("setRotaryConfig merges a partial update onto the existing rotary config", () => {
+    useEngineStore.getState().setRotaryConfig({ compressionRatio: 8.5 });
+
+    const rotaryConfig = useEngineStore.getState().rotaryConfig;
+    expect(rotaryConfig.compressionRatio).toBe(8.5);
+    expect(rotaryConfig.generatingRadiusMm).toBe(
+      DEFAULT_ROTARY_CONFIG.generatingRadiusMm,
+    );
+  });
+
+  it("setComparisonRotaryConfig is a no-op-safe partial merge, like setComparisonConfig", () => {
+    useEngineStore.getState().setComparisonRotaryConfig({ redlineRpm: 7200 });
+    expect(useEngineStore.getState().comparisonRotaryConfig.redlineRpm).toBe(
+      7200,
+    );
+  });
+
+  it("setRotaryRotorCount / setComparisonRotaryRotorCount update independently", () => {
+    useEngineStore.getState().setRotaryRotorCount(3);
+    expect(useEngineStore.getState().rotaryRotorCount).toBe(3);
+    expect(useEngineStore.getState().comparisonRotaryRotorCount).toBe(
+      DEFAULT_ROTARY_ROTOR_COUNT,
+    );
+
+    useEngineStore.getState().setComparisonRotaryRotorCount(1);
+    expect(useEngineStore.getState().comparisonRotaryRotorCount).toBe(1);
+    expect(useEngineStore.getState().rotaryRotorCount).toBe(3);
+  });
+
+  it("enableComparison seeds engine B's family, rotary config, and rotor count from engine A's current values", () => {
+    useEngineStore.getState().setEngineFamily("rotary");
+    useEngineStore.getState().setRotaryConfig(RX7_13B.config);
+    useEngineStore.getState().setRotaryRotorCount(RX7_13B.rotorCount);
+
+    useEngineStore.getState().enableComparison();
+
+    expect(useEngineStore.getState().comparisonEngineFamily).toBe("rotary");
+    expect(useEngineStore.getState().comparisonRotaryConfig).toEqual(
+      RX7_13B.config,
+    );
+    expect(useEngineStore.getState().comparisonRotaryRotorCount).toBe(
+      RX7_13B.rotorCount,
+    );
+  });
+
+  it("disableComparison leaves engine B's family and rotary fields alone; a later re-enable re-seeds them", () => {
+    useEngineStore.getState().enableComparison();
+    useEngineStore.getState().setComparisonEngineFamily("rotary");
+    useEngineStore.getState().setComparisonRotaryRotorCount(3);
+
+    useEngineStore.getState().disableComparison();
+    expect(useEngineStore.getState().comparisonEngineFamily).toBe("rotary");
+
+    useEngineStore.getState().setEngineFamily("rotary");
+    useEngineStore.getState().enableComparison();
+    expect(useEngineStore.getState().comparisonEngineFamily).toBe("rotary");
+    expect(useEngineStore.getState().comparisonRotaryRotorCount).toBe(
+      DEFAULT_ROTARY_ROTOR_COUNT,
+    );
+  });
+
+  it("hydrateFromShareState applies family/rotary fields when the link carried them", () => {
+    useEngineStore.getState().hydrateFromShareState({
+      engineFamily: "rotary",
+      rotaryConfig: RX7_13B.config,
+      rotaryRotorCount: RX7_13B.rotorCount,
+    });
+
+    expect(useEngineStore.getState().engineFamily).toBe("rotary");
+    expect(useEngineStore.getState().rotaryConfig).toEqual(RX7_13B.config);
+    expect(useEngineStore.getState().rotaryRotorCount).toBe(RX7_13B.rotorCount);
+  });
+
+  it("hydrateFromShareState leaves family/rotary fields alone when the link said nothing about them", () => {
+    useEngineStore.getState().setEngineFamily("rotary");
+    useEngineStore.getState().setRotaryConfig({ compressionRatio: 8.7 });
+
+    useEngineStore.getState().hydrateFromShareState({ rpm: 4500 });
+
+    expect(useEngineStore.getState().engineFamily).toBe("rotary");
+    expect(useEngineStore.getState().rotaryConfig.compressionRatio).toBe(8.7);
     expect(useEngineStore.getState().rpm).toBe(4500);
   });
 });

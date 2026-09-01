@@ -1186,3 +1186,28 @@ The first implementation task after project initialization is:
 > Create and test the pure TypeScript slider-crank calculation that returns crankpin position, piston-pin position, piston displacement, and connecting-rod angle for a valid engine configuration and crank angle.
 
 This establishes the mechanical source of truth before any animated geometry is created.
+
+---
+
+## 28. Rotary (Wankel) Engine Family
+
+_Added 2026-09-01._
+
+The rotary is a second engine **family**, not a fourteenth layout: its configuration — generating radius R (rotor center to apex), eccentricity e (shaft center to rotor center), rotor width b, compression ratio, eccentric-shaft redline — shares nothing with bore/stroke/rod. The pure model lives in `src/engine/rotary*.ts`, alongside (never inside) the slider-crank modules.
+
+**State shape.** The store carries the rotary configuration in parallel fields behind a per-slot `engineFamily` switch rather than replacing `config` with a discriminated union. This was a deliberate trade, not an oversight: the union is the cleaner end-state, but parallel fields left every existing piston consumer untouched while the family landed. A union refactor is sensible future work once the rotary surface stabilizes.
+
+**Kinematic conventions.**
+
+- The store's `crankAngleRad` **is** the eccentric-shaft angle for a rotary slot — same field, same rpm semantics (a rotary tachometer reads shaft speed), same scrub slider, same animation loop. The rotor turns at exactly one third of it.
+- The housing is the peritrochoid `P(α) = (e·cos3α + R·cosα, e·sin3α + R·sinα)`; the rotor center orbits at `C(θ) = e·(cosθ, sinθ)`; apex k sits at `C(θ) + R·(cos(θ/3 + 2πk/3), sin(θ/3 + 2πk/3))`. Substituting the apex angle into P collapses `e·cos3α` to `e·cosθ`, so **every apex lies exactly on the housing at every shaft angle** — the rotary's loop-closure identity, asserted numerically to 1e-12 in `rotaryGeometry.test.ts`.
+- Chamber area has an exact closed form (a sinusoid in the trochoid parameter), whose peak-to-peak yields **Vd = 3√3·e·R·b** — verified against Mazda's published 654 cc (13B: 105/15/80) and 573 cc (12A: 105/15/70) chambers.
+- Validation carries the cross-field rule **R > 3e**: at R = 3e the trochoid cusps and below it the housing self-intersects — the rotary analog of `rodLength > strokeMm / 2`. The K = R/e range (3, 6) draws ugly but valid geometry and is deliberately allowed.
+- Each of a rotor's three faces completes one four-phase cycle per rotor revolution (1080° of shaft), phases 270° of shaft each, faces offset 360° apart, so a rotor fires once per shaft revolution; two rotors phased 180° fire every 180°, three at 120° every 120°. The mod-2 revolution-parity bit therefore generalized to a **mod-6 revolution index** (`crankRevolutionIndex`): piston parity is `index % 2`, the rotor's revolution-of-three is `index % 3`.
+- Which of a face's two per-cycle volume minima is the _firing_ one is not determined by the trochoid — it depends on port placement, exactly as a piston crank table cannot imply a firing order. It is fixed as a documented convention (face 0 fires at shaft angle 90°); the other choice would relabel intake↔power without changing firing order or intervals.
+
+**Rendering.** The housing outline is sampled once per configuration (its height has no closed form — the curve bulges past the R−e waist whenever K < 9); the rotor draws with circular-arc flanks whose maximum theoretical bulge is exactly R/2 − 2e (concave below K = 4, and rendered so), held inside the housing by a tested margin. Face tints reuse the piston chamber-tint machinery verbatim: red on the power quarter, blue on exhaust, written only on phase change. Rotor placement is driven from the total shaft angle via the revolution index, never from the wrapped angle alone — a rotor placed from θ mod 2π is correct only one revolution in three.
+
+**Results.** Rotary slots report chamber displacement, engine displacement by the industry convention (Vd × rotor count, the way Mazda rates a 13B at 1,308 cc — a convention, and stated as one, since a chamber-count argument would triple it), the K-factor R/e (the rotary's rod-ratio analog), compression ratio, redline, and matched-preset peak figures. Cross-family comparison shows the shared rows and "—" elsewhere. Piston kinematic curves and the stroke badge have no rotary equivalent yet; chamber-volume curves are the natural follow-up.
+
+**Share links** (§25a append-only): `fam`/`bfam` (`r`, omitted for piston), `ra`/`rb` (preset id or `R-e-b-CR-redline`), `rn`/`brn` (rotor counts, omitted at the implied value). Engine A's rotor count applies on its own — the "only alongside a decoded engine" guard exists for engine B, which may be absent, and has no analog for a slot that always exists. Links without family params mean piston, so every pre-rotary link is unchanged.

@@ -23,9 +23,14 @@ export const METRIC_INFO: readonly MetricInfo[] = [
     body: "The volume one piston sweeps between top and bottom dead center (π/4 × bore² × stroke). More swept volume means more air and fuel one cylinder can burn per cycle, which is what actually determines that individual mechanism's behavior — piston speed, torque per cylinder, how the rod loads up. See engine displacement, just below, for what all the cylinders add up to.",
   },
   {
+    id: "chamberDisplacement",
+    label: "Chamber displacement",
+    body: "The volume one rotor face sweeps between its minimum and maximum, per the closed-form 3√3 × eccentricity × generating radius × rotor width. This is a rotary's analog of cylinder displacement — the figure that actually determines one chamber's behavior — but the comparison is not one-to-one: a rotor's three faces each fire once per rotor revolution (three shaft revolutions), where a piston cylinder fires once every two crank revolutions. See engine displacement, just below, for what the chambers add up to and why that total is a genuine convention, not an obvious one.",
+  },
+  {
     id: "engineDisplacement",
     label: "Engine displacement",
-    body: "The whole engine's total swept volume: cylinder displacement multiplied by the number of cylinders. This is the figure a car is usually sold by — a \"2.0 litre\" or \"6.2 litre\" engine is being named by its engine displacement, not any one cylinder's — while cylinder displacement above is what determines the individual mechanism's behavior. Eight of the LS3's 770 cc cylinders make its 6.2 liters.",
+    body: 'The whole engine\'s total swept volume. For a piston engine: cylinder displacement multiplied by the number of cylinders — eight of the LS3\'s 770 cc cylinders make its 6.2 liters. For a rotary: chamber displacement multiplied by rotor count, the industry convention Mazda itself uses (a two-rotor 13B is rated 1,308 cc). That convention is genuinely contested: each rotor sweeps three chambers per rotor revolution, so "a 13B is really 2.6 liters" is one honest way to count, and "654 cc per shaft revolution, twice over" is another. This figure quotes the industry convention — the number on the badge — not a resolution of that argument.',
   },
   {
     id: "boreStrokeRatio",
@@ -85,7 +90,7 @@ export const METRIC_INFO: readonly MetricInfo[] = [
   {
     id: "redline",
     label: "Redline",
-    body: "The engine's rated maximum speed. It isn't arbitrary: it's set by what the reciprocating parts survive — chiefly piston speed (stroke × rpm) and valvetrain control. That's why short-stroke engines like the S2000's F20C can be rated to 9,000 rpm while the long-stroke LS7 is done at 7,000, yet both reach similar piston speeds at their limits.",
+    body: "The engine's rated maximum speed — for a rotary, the eccentric-shaft rpm a rotary tachometer reads. It isn't arbitrary: for a piston engine it's set by what the reciprocating parts survive, chiefly piston speed (stroke × rpm) and valvetrain control, which is why short-stroke engines like the S2000's F20C can be rated to 9,000 rpm while the long-stroke LS7 is done at 7,000, yet both reach similar piston speeds at their limits. A rotary has no reciprocating mass to protect the same way — its ceiling instead comes from apex-seal loads and the eccentric shaft's own bearing speeds, which is how a rotor turning at only a third of shaft speed still lets engines like the RX-8's Renesis rev to 9,000 rpm.",
   },
   {
     id: "peakPower",
@@ -101,5 +106,10 @@ export const METRIC_INFO: readonly MetricInfo[] = [
     id: "rodAngle",
     label: "Connecting-rod angle",
     body: "How far the rod is tilted from the cylinder's centerline, positive when the crankpin has swung toward the right of the scene. The tilt is what converts rotation into straight-line piston motion, but it also presses the piston sideways into the cylinder wall — the dominant source of piston friction and skirt wear. Engines with short rods relative to stroke swing to larger angles.",
+  },
+  {
+    id: "kFactor",
+    label: "K-factor",
+    body: "Generating radius divided by eccentricity (R/e) — a rotary's shape parameter, and its closest analog to rod-to-stroke ratio: dimensionless, and it changes the housing's character without changing its size. A 13B sits at K = 7.0. Lower K deepens the housing's waist into a more pronounced peanut shape, lengthening the chamber and worsening its surface-to-volume ratio; below K = 3 the housing crosses itself and stops being a housing at all, which is why every rotary configuration here keeps a comfortable margin above that floor.",
   },
 ] as const;

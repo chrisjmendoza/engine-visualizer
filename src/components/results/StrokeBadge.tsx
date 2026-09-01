@@ -24,7 +24,7 @@ const PHASE_LABEL: Record<StrokePhase, string> = {
  * per §19's "avoid color as the only way to communicate state."
  *
  * Engine A only, tonight: this reads engine A's `crankAngleRad` and
- * `crankRevolutionParity` directly rather than taking a `slot` prop the way
+ * `crankRevolutionIndex` directly rather than taking a `slot` prop the way
  * `CalculationPanel`/`ComparisonTable` do, because `AnimationControls` is
  * itself a single shared instance in both comparison and non-comparison mode
  * (§16) — there is no per-engine copy of it to extend the badge into. Giving
@@ -44,19 +44,37 @@ const PHASE_LABEL: Record<StrokePhase, string> = {
  * can actually be *seen*. The two can never disagree — the tint routes cylinder
  * 0 through `cylinderStrokePhaseAt`, which reduces to exactly this
  * `strokePhaseAt` call for that cylinder.
+ *
+ * Piston-only, for now (section 27): a rotary's four "phases" are a real,
+ * analogous pedagogical overlay (`rotaryPhaseAt` in
+ * `src/engine/rotaryCycle.ts` mirrors `strokePhaseAt` exactly), but this
+ * badge is wired specifically to `cycleAngleRad`/`strokePhaseAt`'s
+ * 720-degree-crank framing, which has no rotary-cycle-angle counterpart
+ * here yet. Extending it is the natural follow-up once a rotary
+ * chamber-volume readout exists, not this task, so it simply renders
+ * nothing while engine A is rotary rather than showing a piston-shaped
+ * badge for a mechanism with no piston.
  */
 export function StrokeBadge() {
   const showCycle = useEngineStore((state) => state.preferences.showCycle);
+  const engineFamily = useEngineStore((state) => state.engineFamily);
   const crankAngleRad = useEngineStore((state) => state.crankAngleRad);
-  const crankRevolutionParity = useEngineStore(
-    (state) => state.crankRevolutionParity,
+  // The loop's revolution counter runs mod 6 so one counter can serve both
+  // engine families (`CrankRevolutionIndex`); a four-stroke cycle only cares
+  // which of two crank revolutions it is on, so the parity is `% 2`. Six is
+  // even, so that derivation is exact at every wrap.
+  const crankRevolutionIndex = useEngineStore(
+    (state) => state.crankRevolutionIndex,
   );
 
-  if (!showCycle) {
+  if (!showCycle || engineFamily === "rotary") {
     return null;
   }
 
-  const cycleAngle = cycleAngleRad(crankAngleRad, crankRevolutionParity);
+  const cycleAngle = cycleAngleRad(
+    crankAngleRad,
+    crankRevolutionIndex % 2 === 0 ? 0 : 1,
+  );
   const phase = strokePhaseAt(cycleAngle);
   const cycleDeg = radToDeg(cycleAngle);
 

@@ -138,6 +138,25 @@ export function AnimationControls() {
   const comparisonConfig = useEngineStore((state) => state.comparisonConfig);
   const isComparing = comparisonConfig !== null;
 
+  // §27: "At redline" has to read whichever family a slot is actually
+  // showing — a rotary slot's meaningful redline lives on `rotaryConfig`,
+  // not on the (parallel, currently-unshown) piston `config` sitting
+  // underneath it.
+  const engineFamily = useEngineStore((state) => state.engineFamily);
+  const comparisonEngineFamily = useEngineStore(
+    (state) => state.comparisonEngineFamily,
+  );
+  const rotaryConfig = useEngineStore((state) => state.rotaryConfig);
+  const comparisonRotaryConfig = useEngineStore(
+    (state) => state.comparisonRotaryConfig,
+  );
+  const redlineRpmA =
+    engineFamily === "rotary" ? rotaryConfig.redlineRpm : config.redlineRpm;
+  const redlineRpmB =
+    comparisonEngineFamily === "rotary"
+      ? comparisonRotaryConfig.redlineRpm
+      : (comparisonConfig?.redlineRpm ?? config.redlineRpm);
+
   const rpm = useEngineStore((state) => state.rpm);
   const setRpm = useEngineStore((state) => state.setRpm);
   const comparisonRpm = useEngineStore((state) => state.comparisonRpm);
@@ -184,7 +203,7 @@ export function AnimationControls() {
   );
 
   function handleSetRedlineA() {
-    setRpm(config.redlineRpm);
+    setRpm(redlineRpmA);
   }
 
   function handleSetRedlineB() {
@@ -194,9 +213,9 @@ export function AnimationControls() {
     // While linked, engine B has no independent rpm — jumping "to B's
     // redline" moves the one shared speed both engines run at.
     if (rpmLinked) {
-      setRpm(comparisonConfig.redlineRpm);
+      setRpm(redlineRpmB);
     } else {
-      setComparisonRpm(comparisonConfig.redlineRpm);
+      setComparisonRpm(redlineRpmB);
     }
   }
 
@@ -245,7 +264,7 @@ export function AnimationControls() {
             field={rpmField}
             errorId={rpmErrorId}
             onChange={handleRpmChange}
-            redlineRpm={config.redlineRpm}
+            redlineRpm={redlineRpmA}
             onSetRedline={handleSetRedlineA}
           />
         ) : null}
@@ -272,7 +291,7 @@ export function AnimationControls() {
                 field={rpmField}
                 errorId={rpmErrorId}
                 onChange={handleRpmChange}
-                redlineRpm={config.redlineRpm}
+                redlineRpm={redlineRpmA}
                 onSetRedline={handleSetRedlineA}
               />
               {comparisonConfig ? (
@@ -282,8 +301,7 @@ export function AnimationControls() {
                     className={styles.redlineButton}
                     onClick={handleSetRedlineB}
                   >
-                    Engine B at redline (
-                    {formatRedlineValue(comparisonConfig.redlineRpm)})
+                    Engine B at redline ({formatRedlineValue(redlineRpmB)})
                   </button>
                 </div>
               ) : null}
@@ -296,7 +314,7 @@ export function AnimationControls() {
                 field={rpmField}
                 errorId={rpmAErrorId}
                 onChange={handleRpmChange}
-                redlineRpm={config.redlineRpm}
+                redlineRpm={redlineRpmA}
                 onSetRedline={handleSetRedlineA}
               />
               {comparisonConfig ? (
@@ -306,7 +324,7 @@ export function AnimationControls() {
                   field={comparisonRpmField}
                   errorId={rpmBErrorId}
                   onChange={handleComparisonRpmChange}
-                  redlineRpm={comparisonConfig.redlineRpm}
+                  redlineRpm={redlineRpmB}
                   onSetRedline={handleSetRedlineB}
                 />
               ) : null}

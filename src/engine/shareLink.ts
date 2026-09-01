@@ -30,6 +30,12 @@
  * | `sp`     | Playback speed multiplier                        | default |
  * | `angle`  | Crank angle in degrees; implies paused           | playing |
  * | `bangle` | Engine B's crank angle in degrees                | playing, or linked |
+ * | `fam`    | Engine A's family (§27): `r` rotary, `p` piston  | piston (the default) |
+ * | `bfam`   | Engine B's family                                | piston, or not comparing |
+ * | `ra`     | Engine A's rotary config: a preset id, or `R-e-b-cr-redline` | engine A's family is piston |
+ * | `rb`     | Engine B's rotary config                         | engine B's family is piston, or not comparing |
+ * | `rn`     | Engine A's rotor count (1, 2, or 3)              | engine A's family is piston, or matches what `ra` implies |
+ * | `brn`    | Engine B's rotor count                           | engine B's family is piston, or matches what `rb` implies, or not comparing |
  *
  * A config is written as its preset id when it matches one exactly
  * (`?a=s2000-ap1` reads better than five numbers and keeps meaning if that
@@ -69,6 +75,28 @@
  * while leaving the common links short. A link that names no architecture is
  * describing one cylinder of whatever `a` implies; a link that names one is
  * describing that whole engine.
+ *
+ * ## `fam`/`ra`/`rn` — the rotary family (§27)
+ *
+ * Rotary is a second engine family, not a fourteenth layout (its config
+ * shares nothing with `CrankMechanismConfig` beyond compression ratio and
+ * redline), so it gets its own trio of params per engine rather than folding
+ * into `a`/`l`/`c`. `fam`/`bfam` name the family; `ra`/`rb` carry that
+ * family's geometry in the same "preset id, or hyphenated numbers" form `a`/
+ * `b` use (here: `generatingRadius-eccentricity-rotorWidth-compressionRatio-
+ * redline`); `rn`/`brn` carry the rotor count, omitted when it matches what
+ * `ra`/`rb` implies — a matching preset's own rotor count, or `1` for a
+ * numeric (non-preset) rotary config, the same "the config's own preset, else
+ * a documented default" inference `l` uses for layouts (`defaultLayoutIdFor`;
+ * see `defaultRotaryRotorCountFor` here).
+ *
+ * `a`/`config` and `b`/`comparisonConfig` are unaffected by any of this and
+ * keep meaning exactly what they always have: parallel store fields (§27),
+ * not a discriminated union, so a slot's piston geometry is never discarded
+ * just because that slot is currently showing rotary — it is only not shown.
+ * A legacy link with no `fam`/`bfam` therefore still opens exactly as it
+ * always did, on the piston family, because that is what a fresh session
+ * already defaults to before hydration runs.
  */
 
 import {
@@ -83,8 +111,23 @@ import { DEFAULT_LAYOUT_ID, isEngineLayoutId } from "./engineLayout";
 import type { EngineLayoutId } from "./engineLayout";
 import { ENGINE_PRESETS } from "./presets";
 import type { EnginePreset } from "./presets";
+import { ROTARY_ENGINE_PRESETS } from "./rotaryPresets";
+import type { RotaryEnginePreset } from "./rotaryPresets";
+import { isRotaryRotorCount, validateRotaryConfig } from "./rotaryValidation";
+import type { RotaryConfig, RotaryRotorCount } from "./rotaryTypes";
 import type { CrankMechanismConfig, DisplayUnit } from "./types";
 import { validateConfig } from "./validation";
+
+/**
+ * Which engine family a slot shows (TECHNICAL_DESIGN.md §27's architecture
+ * note): parallel store fields, not a discriminated union, so this is its own
+ * small type rather than something the piston `types.ts` or the rotary
+ * `rotaryTypes.ts` would need to know about each other to share. Defined here
+ * (rather than in either engine-family's own type module) because this is the
+ * one module both `engineStore.ts` and every family's share-link encoding
+ * already have to agree on.
+ */
+export type EngineFamily = "piston" | "rotary";
 
 /** The shareable slice of application state. */
 export interface ShareState {
@@ -108,6 +151,18 @@ export interface ShareState {
   crankAngleRad: number;
   /** Engine B's angle; differs from engine A's only while unlinked. */
   comparisonCrankAngleRad: number;
+  /** Which family engine A shows (§27). */
+  engineFamily: EngineFamily;
+  /** Which family engine B shows; only meaningful while `comparisonConfig` is set. */
+  comparisonEngineFamily: EngineFamily;
+  /** Engine A's rotary geometry, carried regardless of `engineFamily` (§27's parallel-fields design). */
+  rotaryConfig: RotaryConfig;
+  /** Engine B's rotary geometry. */
+  comparisonRotaryConfig: RotaryConfig;
+  /** Engine A's rotor count. */
+  rotaryRotorCount: RotaryRotorCount;
+  /** Engine B's rotor count. */
+  comparisonRotaryRotorCount: RotaryRotorCount;
 }
 
 /** Whatever a link actually carried; absent fields keep their current value. */
@@ -165,6 +220,88 @@ export function defaultLayoutIdFor(
   config: CrankMechanismConfig,
 ): EngineLayoutId {
   return presetForConfig(config)?.layoutId ?? DEFAULT_LAYOUT_ID;
+}
+
+function rotaryConfigsEqual(a: RotaryConfig, b: RotaryConfig): boolean {
+  return (
+    a.generatingRadiusMm === b.generatingRadiusMm &&
+    a.eccentricityMm === b.eccentricityMm &&
+    a.rotorWidthMm === b.rotorWidthMm &&
+    a.compressionRatio === b.compressionRatio &&
+    a.redlineRpm === b.redlineRpm
+  );
+}
+
+/** The rotary preset (if any) whose geometry exactly matches `config` — the rotary `presetForConfig`. */
+function rotaryPresetForConfig(
+  config: RotaryConfig,
+): RotaryEnginePreset | undefined {
+  return ROTARY_ENGINE_PRESETS.find((entry) =>
+    rotaryConfigsEqual(entry.config, config),
+  );
+}
+
+/**
+ * The rotor count a link implies for `config` when it carries no explicit
+ * `rn`/`brn`: a matching preset's own rotor count, or `1` for a numeric
+ * (non-preset) rotary config — the rotary analog of `defaultLayoutIdFor`.
+ * The fallback is `1` rather than the store's own default rotor count
+ * (`DEFAULT_ROTARY_ROTOR_COUNT`, 2): a bare numeric `ra` describes geometry
+ * alone, and the simplest architecture that geometry could mean is a single
+ * rotor, exactly as a bare numeric `a` implies `DEFAULT_LAYOUT_ID` rather
+ * than "whatever architecture happens to be showing" (§27).
+ */
+export function defaultRotaryRotorCountFor(
+  config: RotaryConfig,
+): RotaryRotorCount {
+  return rotaryPresetForConfig(config)?.rotorCount ?? 1;
+}
+
+/** Encodes one rotary config as a preset id when possible, else as five numbers. */
+export function encodeRotaryConfig(config: RotaryConfig): string {
+  const preset = rotaryPresetForConfig(config);
+  if (preset) {
+    return preset.id;
+  }
+  return [
+    config.generatingRadiusMm,
+    config.eccentricityMm,
+    config.rotorWidthMm,
+    config.compressionRatio,
+    config.redlineRpm,
+  ]
+    .map(formatNumber)
+    .join(CONFIG_SEPARATOR);
+}
+
+/** Decodes one rotary config, returning null for anything unusable — the rotary `decodeConfig`. */
+export function decodeRotaryConfig(raw: string): RotaryConfig | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return null;
+  }
+
+  // Rotary preset ids contain letters, exactly like the piston roster's;
+  // numeric configs never do.
+  if (/[a-z]/i.test(trimmed)) {
+    const preset = ROTARY_ENGINE_PRESETS.find((entry) => entry.id === trimmed);
+    return preset ? preset.config : null;
+  }
+
+  const parts = trimmed.split(CONFIG_SEPARATOR);
+  if (parts.length !== 5) {
+    return null;
+  }
+  const [generatingRadius, eccentricity, rotorWidth, ratio, redline] =
+    parts.map(Number);
+  const result = validateRotaryConfig({
+    generatingRadiusMm: generatingRadius,
+    eccentricityMm: eccentricity,
+    rotorWidthMm: rotorWidth,
+    compressionRatio: ratio,
+    redlineRpm: redline,
+  });
+  return result.ok ? result.config : null;
 }
 
 /**
@@ -325,6 +462,36 @@ function writeLayoutParams(
 }
 
 /**
+ * Writes one engine's family, rotary geometry, and rotor count (§27), each
+ * omitted when it does not apply or agrees with what the rest of the link
+ * implies. Shared by engines A (`fam`/`ra`/`rn`) and B (`bfam`/`rb`/`brn`).
+ *
+ * Piston is the default family, so a piston slot writes nothing here at
+ * all — not even a stray `ra` for geometry nobody is looking at — exactly
+ * as the param table promises. Only once a slot is rotary does its geometry
+ * and (non-implied) rotor count travel.
+ */
+function writeFamilyParams(
+  params: URLSearchParams,
+  familyKey: string,
+  rotaryKey: string,
+  rotorKey: string,
+  family: EngineFamily,
+  rotaryConfig: RotaryConfig,
+  rotorCount: RotaryRotorCount,
+): void {
+  if (family !== "rotary") {
+    return;
+  }
+  params.set(familyKey, "r");
+  params.set(rotaryKey, encodeRotaryConfig(rotaryConfig));
+  const impliedRotorCount = defaultRotaryRotorCountFor(rotaryConfig);
+  if (rotorCount !== impliedRotorCount) {
+    params.set(rotorKey, String(rotorCount));
+  }
+}
+
+/**
  * Builds the query string (without a leading "?") for the given state.
  * Values at their defaults are omitted to keep shared links short.
  */
@@ -360,6 +527,29 @@ export function encodeShareState(state: ShareState): string {
       state.comparisonConfig,
       state.comparisonLayoutId,
       state.comparisonSingleCylinderView,
+    );
+  }
+  // Family/rotary-geometry/rotor-count params (§27): engine A's always
+  // apply (a slot always has a family); engine B's only mean anything once
+  // engine B itself is in the link, same reasoning as `bl` above.
+  writeFamilyParams(
+    params,
+    "fam",
+    "ra",
+    "rn",
+    state.engineFamily,
+    state.rotaryConfig,
+    state.rotaryRotorCount,
+  );
+  if (state.comparisonConfig) {
+    writeFamilyParams(
+      params,
+      "bfam",
+      "rb",
+      "brn",
+      state.comparisonEngineFamily,
+      state.comparisonRotaryConfig,
+      state.comparisonRotaryRotorCount,
     );
   }
   if (state.rpm !== DEFAULT_ANIMATION.rpm) {
@@ -462,6 +652,76 @@ function readLayoutParams(
   return result;
 }
 
+/** Reads a `fam`/`bfam` value: `"r"` rotary, `"p"` piston, else null. */
+function parseFamilyParam(raw: string | null): EngineFamily | null {
+  if (raw === "r") {
+    return "rotary";
+  }
+  if (raw === "p") {
+    return "piston";
+  }
+  return null;
+}
+
+/**
+ * Reads one engine's family, rotary geometry, and rotor count back out of a
+ * link (§27) — the inverse of `writeFamilyParams`.
+ *
+ * `ra`/`rn` (or `rb`/`brn`) are only consulted once their own `fam`/`bfam`
+ * actually says "rotary" for *this* link: a link that names no family, or
+ * explicitly names piston, says nothing about rotary geometry even if a
+ * stray `ra` is present (a malformed or hand-edited link), so the current
+ * session's rotary geometry is left standing rather than silently swapped in
+ * for a family that isn't even showing. An absent `rn` defaults to whatever
+ * `ra` implies (`defaultRotaryRotorCountFor`), the same "config, then implied
+ * default" order `readLayoutParams` uses for `l`/`sv`.
+ */
+function readFamilyParams(
+  familyParam: string | null,
+  rotaryParam: string | null,
+  rotorParam: string | null,
+): {
+  engineFamily?: EngineFamily;
+  rotaryConfig?: RotaryConfig;
+  rotaryRotorCount?: RotaryRotorCount;
+} {
+  const result: {
+    engineFamily?: EngineFamily;
+    rotaryConfig?: RotaryConfig;
+    rotaryRotorCount?: RotaryRotorCount;
+  } = {};
+
+  const family = parseFamilyParam(familyParam);
+  if (family !== null) {
+    result.engineFamily = family;
+  }
+  if (family !== "rotary") {
+    return result;
+  }
+
+  if (rotaryParam !== null) {
+    const config = decodeRotaryConfig(rotaryParam);
+    if (config) {
+      result.rotaryConfig = config;
+    }
+  }
+
+  // The rotor count is NOT gated on the geometry param: engine A's slot
+  // always exists, so a valid explicit count applies on its own — the
+  // `bl`-style "only alongside a decoded engine" guard is about engine B
+  // not existing, and has no analog here. An explicit count wins; a link
+  // that carried geometry but no count gets the count that geometry
+  // implies (its preset's, else the single-rotor default); a link with
+  // neither leaves the current session's count untouched.
+  const rawRotorCount = rotorParam !== null ? Number(rotorParam) : NaN;
+  if (isRotaryRotorCount(rawRotorCount)) {
+    result.rotaryRotorCount = rawRotorCount;
+  } else if (result.rotaryConfig) {
+    result.rotaryRotorCount = defaultRotaryRotorCountFor(result.rotaryConfig);
+  }
+  return result;
+}
+
 /**
  * Parses a query string into whatever state it validly carried. Unknown,
  * malformed, or out-of-range parameters are ignored rather than throwing,
@@ -517,6 +777,43 @@ export function decodeShareState(query: string): PartialShareState {
     }
     if (decodedB.singleCylinderView !== undefined) {
       state.comparisonSingleCylinderView = decodedB.singleCylinderView;
+    }
+  }
+
+  // Family/rotary-geometry/rotor-count params (§27): engine A's are read
+  // unconditionally (a slot's family is meaningful with or without engine
+  // B); engine B's only apply alongside a successfully decoded `b`, same
+  // guard as `bl`/`bsv` above, so a stray `bfam`/`rb`/`brn` can never leave
+  // a future comparison silently pre-configured with no engine B to show.
+  const familyA = readFamilyParams(
+    params.get("fam"),
+    params.get("ra"),
+    params.get("rn"),
+  );
+  if (familyA.engineFamily !== undefined) {
+    state.engineFamily = familyA.engineFamily;
+  }
+  if (familyA.rotaryConfig !== undefined) {
+    state.rotaryConfig = familyA.rotaryConfig;
+  }
+  if (familyA.rotaryRotorCount !== undefined) {
+    state.rotaryRotorCount = familyA.rotaryRotorCount;
+  }
+
+  if (state.comparisonConfig) {
+    const familyB = readFamilyParams(
+      params.get("bfam"),
+      params.get("rb"),
+      params.get("brn"),
+    );
+    if (familyB.engineFamily !== undefined) {
+      state.comparisonEngineFamily = familyB.engineFamily;
+    }
+    if (familyB.rotaryConfig !== undefined) {
+      state.comparisonRotaryConfig = familyB.rotaryConfig;
+    }
+    if (familyB.rotaryRotorCount !== undefined) {
+      state.comparisonRotaryRotorCount = familyB.rotaryRotorCount;
     }
   }
 

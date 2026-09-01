@@ -8,6 +8,7 @@ import { DEFAULT_ANIMATION, DEFAULT_CONFIG } from "../../engine/constants";
 function resetStore() {
   useEngineStore.setState({
     config: { ...DEFAULT_CONFIG },
+    engineFamily: "piston",
     preferences: {
       displayUnit: "mm",
       showLabels: true,
@@ -17,7 +18,7 @@ function resetStore() {
     rpm: DEFAULT_ANIMATION.rpm,
     isPlaying: false,
     crankAngleRad: DEFAULT_ANIMATION.crankAngleRad,
-    crankRevolutionParity: 0,
+    crankRevolutionIndex: 0,
   });
 }
 
@@ -45,7 +46,7 @@ describe("StrokeBadge", () => {
         uprightFlatEngines: false,
       },
       crankAngleRad: 0,
-      crankRevolutionParity: 0,
+      crankRevolutionIndex: 0,
     });
     render(<StrokeBadge />);
 
@@ -62,7 +63,7 @@ describe("StrokeBadge", () => {
         uprightFlatEngines: false,
       },
       crankAngleRad: Math.PI + 0.1, // just past BDC
-      crankRevolutionParity: 0,
+      crankRevolutionIndex: 0,
     });
     render(<StrokeBadge />);
 
@@ -78,7 +79,7 @@ describe("StrokeBadge", () => {
         uprightFlatEngines: false,
       },
       crankAngleRad: Math.PI / 2, // 90 degrees
-      crankRevolutionParity: 1, // + 360 degrees = 450 degrees of the cycle
+      crankRevolutionIndex: 1, // + 360 degrees = 450 degrees of the cycle
     });
     render(<StrokeBadge />);
 
@@ -95,12 +96,40 @@ describe("StrokeBadge", () => {
         uprightFlatEngines: false,
       },
       crankAngleRad: Math.PI + Math.PI / 2, // 270 degrees
-      crankRevolutionParity: 1, // + 360 = 630 degrees of the cycle
+      crankRevolutionIndex: 1, // + 360 = 630 degrees of the cycle
     });
     render(<StrokeBadge />);
 
     expect(screen.getByText(/exhaust/i)).toBeInTheDocument();
     expect(screen.getByText(/630°\s*\/\s*720°/)).toBeInTheDocument();
+  });
+
+  it("reads the four-stroke parity as `% 2` of the loop's mod-6 revolution index", () => {
+    // The loop's counter runs 0..5 so one counter can serve both engine
+    // families; the badge must see 3 and 5 as the *second* crank revolution
+    // exactly as it sees 1, and 2 and 4 as the first exactly as it sees 0.
+    for (const [index, expected] of [
+      [0, /0°\s*\/\s*720°/],
+      [1, /360°\s*\/\s*720°/],
+      [2, /0°\s*\/\s*720°/],
+      [3, /360°\s*\/\s*720°/],
+      [4, /0°\s*\/\s*720°/],
+      [5, /360°\s*\/\s*720°/],
+    ] as const) {
+      cleanup();
+      useEngineStore.setState({
+        preferences: {
+          displayUnit: "mm",
+          showLabels: true,
+          showCycle: true,
+          uprightFlatEngines: false,
+        },
+        crankAngleRad: 0,
+        crankRevolutionIndex: index,
+      });
+      render(<StrokeBadge />);
+      expect(screen.getByText(expected)).toBeInTheDocument();
+    }
   });
 
   it("hides again once the preference is turned back off", () => {
@@ -126,6 +155,22 @@ describe("StrokeBadge", () => {
       });
     });
 
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders nothing while engine A is rotary, even with the preference on (§27, piston-only for now)", () => {
+    useEngineStore.setState({
+      engineFamily: "rotary",
+      preferences: {
+        displayUnit: "mm",
+        showLabels: true,
+        showCycle: true,
+        uprightFlatEngines: false,
+      },
+      crankAngleRad: 0,
+      crankRevolutionIndex: 0,
+    });
+    const { container } = render(<StrokeBadge />);
     expect(container).toBeEmptyDOMElement();
   });
 });
