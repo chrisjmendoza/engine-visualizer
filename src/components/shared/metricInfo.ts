@@ -48,6 +48,11 @@ export const METRIC_INFO: readonly MetricInfo[] = [
     body: "The same average piston speed, computed at the engine's rated redline — the great equalizer between engines. Most production performance engines converge on roughly 20–25 m/s here regardless of layout: the S2000 revs to 9,000 rpm because its stroke is short, while the LS7's long stroke reaches a similar piston speed by 7,000. If this number is unusually high, the engine is working its reciprocating parts hard.",
   },
   {
+    id: "compressionRatio",
+    label: "Compression ratio",
+    body: "How much the cylinder squeezes the intake charge: the ratio of cylinder volume at bottom dead center to the volume left at top dead center — the input that clearance volume and clearance height, just below, are both derived from. Higher compression extracts more work from the same charge, which is why the naturally aspirated ND Miata pushes it to 13.0:1; forced induction already raises the charge's pressure before the piston starts squeezing, so boosted engines back the ratio off to avoid knock instead — 8.5:1 on the 2JZ-GTE, well below any naturally aspirated engine in this roster.",
+  },
+  {
     id: "clearanceVolume",
     label: "Clearance volume",
     body: "The space left above the piston at top dead center — swept volume divided by (compression ratio − 1). Squeezing the charge into a smaller clearance volume raises compression, which extracts more work from the same fuel, until the fuel's knock resistance sets the ceiling. This is why high-compression engines want premium fuel and boosted engines (like the 8.5:1 2JZ-GTE) start low.",

@@ -177,6 +177,19 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
       value: `${formatRounded(meanPistonSpeedAtRedlineMps, 2)} m/s`,
     },
     {
+      // Compression ratio is what produces the two rows below it (clearance
+      // volume, then clearance height) — grouped here, right above them,
+      // rather than with bore-to-stroke/rod-to-stroke above, so the ratio
+      // and the two figures it implies read as one sequence: ratio, the
+      // volume it implies, the height at TDC that volume implies. Like
+      // redline below, this is an input value rather than a derived one,
+      // but the panel already shows redline this way, so this is consistent
+      // with existing precedent rather than a new category of row.
+      id: "compressionRatio",
+      label: "Compression ratio",
+      value: `${formatRounded(slotConfig.compressionRatio, 1)}:1`,
+    },
+    {
       id: "clearanceVolume",
       label: "Clearance volume",
       value: `${formatRounded(clearanceVolumeCc, 1)} cc`,

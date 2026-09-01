@@ -302,6 +302,24 @@ export function ComparisonTable() {
       ),
     },
     {
+      // Compression ratio is what produces the two rows below it (clearance
+      // volume, then clearance height) — grouped here, right above them,
+      // rather than with bore-to-stroke/rod-to-stroke above, so the ratio
+      // and the two figures it implies read as one sequence: ratio, the
+      // volume it implies, the height at TDC that volume implies. Like
+      // redline below, this is an input value rather than a derived one,
+      // but the table already shows redline this way, so this is consistent
+      // with existing precedent rather than a new category of row.
+      id: "compressionRatio",
+      label: "Compression ratio",
+      a: `${formatRounded(config.compressionRatio, 1)}:1`,
+      b: `${formatRounded(configB.compressionRatio, 1)}:1`,
+      difference: percentDifference(
+        config.compressionRatio,
+        configB.compressionRatio,
+      ),
+    },
+    {
       id: "clearanceVolume",
       label: "Clearance volume",
       a: `${formatRounded(metricsA.clearanceVolumeCc, 1)} cc`,

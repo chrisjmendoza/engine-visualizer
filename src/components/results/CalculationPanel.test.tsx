@@ -174,6 +174,29 @@ describe("CalculationPanel", () => {
     expect(getResultValue("Clearance height (TDC)")).toBe("9.05 mm");
   });
 
+  it("displays the compression ratio for the default configuration", () => {
+    render(<CalculationPanel />);
+
+    // DEFAULT_CONFIG.compressionRatio = 10.5.
+    expect(getResultValue("Compression ratio")).toBe("10.5:1");
+  });
+
+  it("places compression ratio immediately above clearance volume", () => {
+    render(<CalculationPanel />);
+
+    const labels = screen
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+    const ratioIndex = labels.findIndex((label) =>
+      label?.includes("Compression ratio"),
+    );
+    const clearanceIndex = labels.findIndex((label) =>
+      label?.includes("Clearance volume"),
+    );
+    expect(ratioIndex).toBeGreaterThanOrEqual(0);
+    expect(clearanceIndex).toBe(ratioIndex + 1);
+  });
+
   it("displays the clearance height in inches when the display unit is inches", () => {
     useEngineStore.setState({
       preferences: {
@@ -298,6 +321,9 @@ describe("CalculationPanel", () => {
     // rather than by calling the function under test.
     expect(getResultValue("Cylinder displacement")).toBe("706.9 cc");
     expect(getResultValue("Bore-to-stroke ratio")).toBe("1.11:1 · oversquare");
+    // Engine B's own compressionRatio (9), not engine A's (DEFAULT_CONFIG's
+    // 10.5).
+    expect(getResultValue("Compression ratio")).toBe("9.0:1");
     // Piston-to-head range reflects engine B's own stroke/CR (90 mm, 9:1:
     // clearance = 90/8 = 11.25 mm, so 11.25 - 101.25 mm), not engine A's.
     expect(getResultValue("Piston-to-head distance")).toBe("11.25 – 101.25 mm");

@@ -8,6 +8,12 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### feat: compression ratio in the results
+
+- **Compression ratio** now appears as a row in both the comparison table and the single-engine panel, where it was previously only visible as an input field — so two engines' compression could not be read side by side.
+- Placed directly above **Clearance volume**, so the three rows read as one group: the ratio, the clearance volume it implies, and the clearance height it leaves at top dead center. Grouping it with the other dimensionless ratios would have separated it from the two rows derived from it.
+- The comparison it makes obvious: the boosted engines run markedly lower compression to leave room for boost — the EJ257 at 8.2:1 and the 2JZ-GTE at 8.5:1 against the ND Miata's 13.0:1 — so a WRX beside a BRZ inverts the usual expectation, the smaller and less powerful engine carrying by far the higher ratio. Full suite: 1,194 tests.
+
 ### fix: cylinder displacement and engine displacement are separate metrics
 
 - The displacement row showed "X cc/cyl · Y cc total" but computed its difference from the **per-cylinder** figure alone. Comparing a Golf GTI (496 cc/cyl, 1,984 cc) against an RB26 (428 cc/cyl, 2,569 cc) therefore reported a _negative_ difference beside totals that plainly showed engine B as the larger engine. The percentage was arithmetically right for cylinder size and described neither number the reader was looking at.

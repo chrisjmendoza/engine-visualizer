@@ -233,6 +233,49 @@ describe("ComparisonTable", () => {
     });
   });
 
+  describe("compression ratio", () => {
+    it("shows each engine's own compression ratio and a signed percentage difference", () => {
+      const miataNd = ENGINE_PRESETS.find(
+        (preset) => preset.id === "miata-nd-2-0",
+      );
+      const supra = ENGINE_PRESETS.find(
+        (preset) => preset.id === "supra-2jzgte",
+      );
+      if (!miataNd || !supra) {
+        throw new Error("Fixture presets must exist");
+      }
+      // A clearly higher-compression naturally aspirated engine (ND
+      // Miata, 13.0:1) against a clearly lower-compression turbo engine
+      // (2JZ-GTE, 8.5:1), so the sign of the difference is unambiguous.
+      useEngineStore.setState({ config: miataNd.config });
+      enableComparisonWith(supra.config);
+      render(<ComparisonTable />);
+
+      expect(getRow("Compression ratio")).toEqual([
+        "13.0:1",
+        "8.5:1",
+        "−34.6%",
+      ]);
+    });
+
+    it("places compression ratio immediately above clearance volume", () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      render(<ComparisonTable />);
+
+      const rowHeaders = screen
+        .getAllByRole("rowheader")
+        .map((header) => header.textContent);
+      const ratioIndex = rowHeaders.findIndex((label) =>
+        label?.includes("Compression ratio"),
+      );
+      const clearanceIndex = rowHeaders.findIndex((label) =>
+        label?.includes("Clearance volume"),
+      );
+      expect(ratioIndex).toBeGreaterThanOrEqual(0);
+      expect(clearanceIndex).toBe(ratioIndex + 1);
+    });
+  });
+
   it('shows "—" instead of a bogus percentage when the baseline is zero (piston displacement at TDC)', () => {
     enableComparisonWith(STROKE_90_CONFIG);
     render(<ComparisonTable />);
