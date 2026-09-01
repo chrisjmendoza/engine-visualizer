@@ -127,43 +127,110 @@ describe("ComparisonTable", () => {
     ]);
   });
 
-  it("shows each side's own total displacement once its layout has more than one cylinder (§24a)", () => {
+  it("hides the engine displacement row when both engines are single-cylinder", () => {
+    // resetStore's default is a single cylinder on each side, so the row
+    // would be pure duplication of "Cylinder displacement" above it.
     enableComparisonWith(STROKE_90_CONFIG);
-    useEngineStore.setState({
-      layoutId: "inline-4",
-      comparisonLayoutId: "v6-60",
-      singleCylinderView: false,
-      comparisonSingleCylinderView: false,
-    });
     render(<ComparisonTable />);
 
-    // Per-cylinder values are the same as the plain two-engine test above
-    // (499.6 cc / 522.8 cc); each side additionally multiplies by its own
-    // layout's cylinder count for "total", and the difference column stays
-    // per-cylinder.
-    expect(getRow("Cylinder displacement")).toEqual([
-      "499.6 cc/cyl · 1998.2 cc total",
-      "522.8 cc/cyl · 3136.8 cc total",
-      "+4.7%",
-    ]);
+    expect(
+      screen.queryByRole("rowheader", { name: "Engine displacement" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("counts only what each side is showing when a cylinder view is on (§24a)", () => {
-    enableComparisonWith(STROKE_90_CONFIG);
-    useEngineStore.setState({
-      layoutId: "inline-4",
-      comparisonLayoutId: "v6-60",
-      // Engine A is being studied one cylinder at a time; engine B is not.
-      singleCylinderView: true,
-      comparisonSingleCylinderView: false,
-    });
-    render(<ComparisonTable />);
+  describe("cylinder displacement vs. engine displacement (§24a)", () => {
+    it("adds a separate engine displacement row, computed on each side's own total, once both layouts have more than one cylinder", () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      useEngineStore.setState({
+        layoutId: "inline-4",
+        comparisonLayoutId: "v6-60",
+        singleCylinderView: false,
+        comparisonSingleCylinderView: false,
+      });
+      render(<ComparisonTable />);
 
-    expect(getRow("Cylinder displacement")).toEqual([
-      "499.6 cc",
-      "522.8 cc/cyl · 3136.8 cc total",
-      "+4.7%",
-    ]);
+      // Cylinder displacement never carries a "total" any more: it is the
+      // same per-cylinder cc regardless of layout, and its difference is
+      // the plain per-cylinder percentage.
+      expect(getRow("Cylinder displacement")).toEqual([
+        "499.6 cc",
+        "522.8 cc",
+        "+4.7%",
+      ]);
+      // Engine displacement is a distinct row and a distinct percentage:
+      // each side's per-cylinder cc times its own layout's cylinder count
+      // (4 for A, 6 for B), with the difference computed on those totals —
+      // not the same +4.7% as the row above, since the two sides scale by
+      // different cylinder counts.
+      expect(getRow("Engine displacement")).toEqual([
+        "1998.2 cc",
+        "3136.8 cc",
+        "+57.0%",
+      ]);
+    });
+
+    it("shows the engine displacement row even when only one side is multi-cylinder", () => {
+      enableComparisonWith(STROKE_90_CONFIG);
+      useEngineStore.setState({
+        layoutId: "inline-4",
+        comparisonLayoutId: "v6-60",
+        // Engine A is being studied one cylinder at a time; engine B is not.
+        singleCylinderView: true,
+        comparisonSingleCylinderView: false,
+      });
+      render(<ComparisonTable />);
+
+      // Still per-cylinder only, on both sides.
+      expect(getRow("Cylinder displacement")).toEqual([
+        "499.6 cc",
+        "522.8 cc",
+        "+4.7%",
+      ]);
+      // Engine A shows one cylinder, so its total equals its cylinder
+      // figure; engine B's total is its per-cylinder cc times 6. The row
+      // must appear here — hiding it would drop exactly the comparison an
+      // owner reading a single-cylinder A against a six-cylinder B wants.
+      expect(getRow("Engine displacement")).toEqual([
+        "499.6 cc",
+        "3136.8 cc",
+        "+527.9%",
+      ]);
+    });
+
+    it("matches the owner's reported case: a smaller-total 4-cylinder against a larger-total 6-cylinder shows a negative cylinder difference and a positive engine difference", () => {
+      const golfGti = ENGINE_PRESETS.find(
+        (preset) => preset.id === "golf-gti-mk7-ea888",
+      );
+      const rb26 = ENGINE_PRESETS.find(
+        (preset) => preset.id === "skyline-gtr-rb26dett",
+      );
+      if (!golfGti || !rb26) {
+        throw new Error("Fixture presets must exist");
+      }
+      useEngineStore.setState({ config: golfGti.config });
+      enableComparisonWith(rb26.config);
+      useEngineStore.setState({
+        layoutId: golfGti.layoutId,
+        comparisonLayoutId: rb26.layoutId,
+        singleCylinderView: false,
+        comparisonSingleCylinderView: false,
+      });
+      render(<ComparisonTable />);
+
+      // Golf GTI: 496.1 cc/cyl, 1984.3 cc total (4 cylinders).
+      // RB26DETT: 428.1 cc/cyl, 2568.7 cc total (6 cylinders) — the smaller
+      // cylinder but the substantially larger engine.
+      expect(getRow("Cylinder displacement")).toEqual([
+        "496.1 cc",
+        "428.1 cc",
+        "−13.7%",
+      ]);
+      expect(getRow("Engine displacement")).toEqual([
+        "1984.3 cc",
+        "2568.7 cc",
+        "+29.4%",
+      ]);
+    });
   });
 
   it('shows "—" instead of a bogus percentage when the baseline is zero (piston displacement at TDC)', () => {

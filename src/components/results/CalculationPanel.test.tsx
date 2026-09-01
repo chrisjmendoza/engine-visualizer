@@ -76,7 +76,7 @@ describe("CalculationPanel", () => {
     );
   });
 
-  it("shows per-cylinder and total displacement, relabeled, once the layout has more than one cylinder (§24a)", () => {
+  it("shows cylinder displacement unchanged and adds an engine displacement row once the layout has more than one cylinder (§24a)", () => {
     useEngineStore.setState({
       layoutId: "inline-4",
       singleCylinderView: false,
@@ -87,18 +87,22 @@ describe("CalculationPanel", () => {
       DEFAULT_CONFIG.boreMm,
       DEFAULT_CONFIG.strokeMm,
     );
-    expect(
-      screen.queryByRole("button", { name: "Cylinder displacement" }),
-    ).not.toBeInTheDocument();
-    expect(getResultValue("Displacement")).toBe(
-      `${formatRounded(perCylinder, 1)} cc/cyl · ${formatRounded(perCylinder * 4, 1)} cc total`,
+    // Cylinder displacement keeps its own label and per-cylinder value —
+    // engine displacement is now a separate row, not a relabel of this one.
+    expect(getResultValue("Cylinder displacement")).toBe(
+      `${formatRounded(perCylinder, 1)} cc`,
+    );
+    expect(getResultValue("Engine displacement")).toBe(
+      `${formatRounded(perCylinder * 4, 1)} cc`,
     );
   });
 
-  it("counts only the cylinder on stage while the single-cylinder view is on (§24a)", () => {
+  it("hides the engine displacement row while the single-cylinder view is on (§24a)", () => {
     // Same architecture as the test above — a real inline-4 — but only one of
     // its cylinders is being shown, so a whole-engine total would describe
-    // something that isn't on screen.
+    // something that isn't on screen; with the visible count at 1, engine
+    // displacement would just repeat cylinder displacement above it, so it's
+    // left out rather than shown as pure duplication.
     useEngineStore.setState({
       layoutId: "inline-4",
       singleCylinderView: true,
@@ -112,6 +116,29 @@ describe("CalculationPanel", () => {
     expect(getResultValue("Cylinder displacement")).toBe(
       `${formatRounded(perCylinder, 1)} cc`,
     );
+    expect(
+      screen.queryByRole("button", { name: "Engine displacement" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("places engine displacement immediately below cylinder displacement", () => {
+    useEngineStore.setState({
+      layoutId: "inline-4",
+      singleCylinderView: false,
+    });
+    render(<CalculationPanel />);
+
+    const labels = screen
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+    const cylinderIndex = labels.findIndex((label) =>
+      label?.includes("Cylinder displacement"),
+    );
+    const engineIndex = labels.findIndex((label) =>
+      label?.includes("Engine displacement"),
+    );
+    expect(cylinderIndex).toBeGreaterThanOrEqual(0);
+    expect(engineIndex).toBe(cylinderIndex + 1);
   });
 
   it("reads the comparison slot's own layout, not engine A's", () => {
@@ -127,8 +154,11 @@ describe("CalculationPanel", () => {
       DEFAULT_CONFIG.boreMm,
       DEFAULT_CONFIG.strokeMm,
     );
-    expect(getResultValue("Displacement")).toBe(
-      `${formatRounded(perCylinder, 1)} cc/cyl · ${formatRounded(perCylinder * 6, 1)} cc total`,
+    expect(getResultValue("Cylinder displacement")).toBe(
+      `${formatRounded(perCylinder, 1)} cc`,
+    );
+    expect(getResultValue("Engine displacement")).toBe(
+      `${formatRounded(perCylinder * 6, 1)} cc`,
     );
   });
 

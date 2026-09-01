@@ -15,7 +15,6 @@ import {
   createEngineLayout,
   visibleCylinderCount,
 } from "../../engine/engineLayout";
-import type { EngineLayoutId } from "../../engine/engineLayout";
 import type { CrankMechanismConfig, MechanismState } from "../../engine/types";
 import {
   classifyBoreStrokeRatio,
@@ -95,35 +94,6 @@ function computeMetrics(
       mechanism.pistonDisplacementMm,
     ),
   };
-}
-
-/**
- * One side's displacement cell (§24a): unchanged for a single cylinder, and
- * additionally showing the whole engine's total swept volume (per-cylinder
- * cc times cylinder count) once that side has more than one — the same
- * "cc/cyl · cc total" formatting `CalculationPanel` uses for the same
- * metric. The row's shared label column stays "Cylinder displacement"
- * regardless of either side's count, since one row can't carry two
- * different labels for its two value columns; a multi-cylinder engine's
- * per-side value is where "total" appears.
- */
-function displacementCellValue(
-  displacementCc: number,
-  layoutId: EngineLayoutId,
-  singleCylinderView: boolean,
-): string {
-  // Cylinder count comes from the layout itself (§24a) — a V8 has eight
-  // because `v8-cross` has eight — never from a separate stored number, and
-  // then filtered by the cylinder-view preference through the engine layer's
-  // own helper, so the total describes exactly what is on stage.
-  const cylinderCount = visibleCylinderCount(
-    createEngineLayout(layoutId),
-    singleCylinderView,
-  );
-  if (cylinderCount <= 1) {
-    return `${formatRounded(displacementCc, 1)} cc`;
-  }
-  return `${formatRounded(displacementCc, 1)} cc/cyl · ${formatRounded(displacementCc * cylinderCount, 1)} cc total`;
 }
 
 /** Signed percentage, one decimal, using a true minus sign (e.g. "+7.2%", "−12.4%"). */
@@ -227,29 +197,61 @@ export function ComparisonTable() {
   const angleDegA = `${formatRounded(radToDeg(crankAngleRad), 1)}°`;
   const angleDegB = `${formatRounded(radToDeg(angleRadB), 1)}°`;
 
+  // Cylinder count comes from each side's own layout (§24a) — a V8 has eight
+  // because `v8-cross` has eight — never from a separately stored number, and
+  // then filtered by that side's own cylinder-view preference through the
+  // engine layer's own helper, so each side's total describes exactly what
+  // is on stage for that side.
+  const cylinderCountA = visibleCylinderCount(
+    createEngineLayout(layoutId),
+    singleCylinderView,
+  );
+  const cylinderCountB = visibleCylinderCount(
+    createEngineLayout(comparisonLayoutId),
+    comparisonSingleCylinderView,
+  );
+  const engineDisplacementCcA = metricsA.displacementCc * cylinderCountA;
+  const engineDisplacementCcB = metricsB.displacementCc * cylinderCountB;
+  // Engine displacement only says something beyond cylinder displacement
+  // once at least one side has more than one cylinder on stage; with both
+  // sides single-cylinder the row would just repeat the row above it, so it
+  // is left out rather than shown as pure duplication. The moment either
+  // side is multi-cylinder, though, the row is exactly the comparison being
+  // made (e.g. a 4-cylinder's smaller total vs. a 6-cylinder's larger one)
+  // and must appear even though the other side's own total still equals its
+  // cylinder figure.
+  const showEngineDisplacement = cylinderCountA > 1 || cylinderCountB > 1;
+
   const rows: TableRow[] = [
     {
       id: "cylinderDisplacement",
       label: "Cylinder displacement",
-      a: displacementCellValue(
-        metricsA.displacementCc,
-        layoutId,
-        singleCylinderView,
-      ),
-      b: displacementCellValue(
-        metricsB.displacementCc,
-        comparisonLayoutId,
-        comparisonSingleCylinderView,
-      ),
-      // Difference stays per-cylinder (not total), matching every other row
-      // here: this table compares the two engines' fundamentals, and the
-      // cylinder-count multiplier is layout, not geometry, the same
-      // distinction §24a draws elsewhere.
+      a: `${formatRounded(metricsA.displacementCc, 1)} cc`,
+      b: `${formatRounded(metricsB.displacementCc, 1)} cc`,
       difference: percentDifference(
         metricsA.displacementCc,
         metricsB.displacementCc,
       ),
     },
+    ...(showEngineDisplacement
+      ? [
+          {
+            id: "engineDisplacement",
+            label: "Engine displacement",
+            a: `${formatRounded(engineDisplacementCcA, 1)} cc`,
+            b: `${formatRounded(engineDisplacementCcB, 1)} cc`,
+            // Unlike every row above, this difference is computed on each
+            // side's own total (per-cylinder cc times that side's own
+            // visible cylinder count) — the whole point of this row's
+            // existence is to compare the two engines' actual swept
+            // volumes, not their per-cylinder geometry a second time.
+            difference: percentDifference(
+              engineDisplacementCcA,
+              engineDisplacementCcB,
+            ),
+          },
+        ]
+      : []),
     {
       id: "boreStrokeRatio",
       label: "Bore-to-stroke ratio",

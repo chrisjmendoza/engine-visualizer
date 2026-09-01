@@ -8,6 +8,13 @@ The format is inspired by [Keep a Changelog](https://keepachangelog.com/) and fo
 
 ## 2026-08-31
 
+### fix: cylinder displacement and engine displacement are separate metrics
+
+- The displacement row showed "X cc/cyl · Y cc total" but computed its difference from the **per-cylinder** figure alone. Comparing a Golf GTI (496 cc/cyl, 1,984 cc) against an RB26 (428 cc/cyl, 2,569 cc) therefore reported a _negative_ difference beside totals that plainly showed engine B as the larger engine. The percentage was arithmetically right for cylinder size and described neither number the reader was looking at.
+- They are two different quantities and now get two rows: **Cylinder displacement**, per-cylinder with a per-cylinder difference, and **Engine displacement** directly beneath it, whole-engine swept volume with its difference computed on the totals. On that pairing the cylinder row reads −13.7% and the engine row +29.4% — both true, each now attached to the quantity it describes.
+- The old row's own doc comment had already conceded the cause: one row cannot carry two labels for two different quantities.
+- Engine displacement is hidden only when _both_ engines show a single cylinder, where it would merely repeat the row above; it appears whenever either side is multi-cylinder, since one engine studied per-cylinder against a whole engine is exactly the comparison that went wrong. Full suite: 1,190 tests.
+
 ### fix: stacked rows centered on their crank span; crank-direction arrow removed
 
 - **Each stacked row is now centered on the midpoint between its first and last crank centers.** Anchoring both rows at their first throw left the shorter engine short of the far edge, which read as lopsided. Centering is measured from crank centers rather than drawn bounds on purpose: bounds swell with bank tilt and with the upright-flat rotation, so a V's wide tilted throws would otherwise drag the row off-center relative to the crankshaft it's built on.

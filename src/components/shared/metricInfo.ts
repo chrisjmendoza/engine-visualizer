@@ -20,7 +20,12 @@ export const METRIC_INFO: readonly MetricInfo[] = [
   {
     id: "cylinderDisplacement",
     label: "Cylinder displacement",
-    body: "The volume one piston sweeps between top and bottom dead center (π/4 × bore² × stroke). More swept volume means more air and fuel can be burned per cycle, which is the most direct route to more torque. Multiply by the cylinder count for the engine's advertised size — eight of the LS3's 770 cc cylinders make its 6.2 liters.",
+    body: "The volume one piston sweeps between top and bottom dead center (π/4 × bore² × stroke). More swept volume means more air and fuel one cylinder can burn per cycle, which is what actually determines that individual mechanism's behavior — piston speed, torque per cylinder, how the rod loads up. See engine displacement, just below, for what all the cylinders add up to.",
+  },
+  {
+    id: "engineDisplacement",
+    label: "Engine displacement",
+    body: "The whole engine's total swept volume: cylinder displacement multiplied by the number of cylinders. This is the figure a car is usually sold by — a \"2.0 litre\" or \"6.2 litre\" engine is being named by its engine displacement, not any one cylinder's — while cylinder displacement above is what determines the individual mechanism's behavior. Eight of the LS3's 770 cc cylinders make its 6.2 liters.",
   },
   {
     id: "boreStrokeRatio",

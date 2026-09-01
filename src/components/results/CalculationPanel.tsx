@@ -134,18 +134,23 @@ export function CalculationPanel({ slot = "primary" }: CalculationPanelProps) {
   const results: { id: string; label: string; value: string }[] = [
     {
       id: "cylinderDisplacement",
-      // Single-cylinder engines keep the original label/value exactly; a
-      // multi-cylinder engine (§24a) additionally shows the whole engine's
-      // swept volume (per-cylinder cc times cylinder count) as "total",
-      // which is what the "2.0 L", "6.2 L" etc. advertised figures mean —
-      // see this metric's METRIC_INFO_BY_ID entry, which already explains
-      // that relationship.
-      label: slotCylinderCount > 1 ? "Displacement" : "Cylinder displacement",
-      value:
-        slotCylinderCount > 1
-          ? `${formatRounded(displacementCc, 1)} cc/cyl · ${formatRounded(displacementCc * slotCylinderCount, 1)} cc total`
-          : `${formatRounded(displacementCc, 1)} cc`,
+      label: "Cylinder displacement",
+      value: `${formatRounded(displacementCc, 1)} cc`,
     },
+    // Engine displacement (per-cylinder cc times visible cylinder count) is
+    // only a distinct figure once there is more than one cylinder on stage;
+    // with exactly one it would equal the row above, so it's left out
+    // rather than shown as pure duplication (§24a) — see this metric's
+    // METRIC_INFO_BY_ID entry for what the total means.
+    ...(slotCylinderCount > 1
+      ? [
+          {
+            id: "engineDisplacement",
+            label: "Engine displacement",
+            value: `${formatRounded(displacementCc * slotCylinderCount, 1)} cc`,
+          },
+        ]
+      : []),
     {
       id: "boreStrokeRatio",
       label: "Bore-to-stroke ratio",
